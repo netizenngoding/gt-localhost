@@ -1,0 +1,22 @@
+{
+  "name": "creative-growtopia-web",
+  "version": "1.50.0",
+  "private": true,
+  "description": "Authentic CreativeGrowtopia (ReGrowtopia 1.50) WASM WebGL Client + Authoritative ENet-over-WebSocket Multiplayer Server",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=server/server_runtime.cjs",
+    "start": "node server/server_runtime.cjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.17.10",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  }
+}

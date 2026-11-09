@@ -1,0 +1,20 @@
+{
+  "serverName": "MagnoliaPS",
+  "logoPath": "branding/logo.png",
+  "skipIntro": true,
+  "hideLegacyCustomItemWarning": true,
+  "splashes": [
+    "Developer build {serverName} bjir"
+  ],
+  "version": "V1.1",
+  "menuButton": {
+    "text": "@salakpatty",
+    "url": "https://www.tiktok.com/@salakpatty",
+    "color": "#121212",
+    "textColor": "#FFFFFF",
+    "iconPath": "branding/tiktok.svg",
+    "iconEnabled": true
+  },
+  "autofillLabel": "Autofill",
+  "autofillAccent": "#E3B5FF"
+}

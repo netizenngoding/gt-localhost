@@ -1,0 +1,1 @@
+# Legacy file: active splash lines now come from config/server.json.

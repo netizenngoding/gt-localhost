@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Game Server</title>
+    <script src="/server-config.js"></script>
+    <link rel="icon" type="image/png" href="branding/favicon.png">
+    <meta name="application-name" content="Game Server">
+    <script>
+      // Technical upstream bundle basename; not the displayed product name.
+      var appName = "MagnoliaClient";
+    </script>
+    <style>
+      html {
+        box-sizing: border-box;
+      }
+      *, *:before, *:after {
+        box-sizing: inherit;
+      }
+      body {
+        margin: 0;
+        background: #0b1824;
+        overflow: hidden;
+        font-family: "Century Gothic", "Trebuchet MS", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #gameContainer {
+        width: 100vw;
+        height: 100vh;
+      }
+      canvas.emscripten {
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: none;
+      }
+      .logo {
+        display: block;
+        max-width: 85vw;
+        max-height: 45vh;
+        object-fit: contain;
+      }
+      .progress {
+        margin: 1.5em;
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        width: min(50vw, 480px);
+        display: none;
+        border-radius: 4px;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.35);
+      }
+      .progress .full {
+        margin: 2px;
+        background: #58d64d;
+        height: 1em;
+        transform-origin: top left;
+        transition: transform 0.08s linear;
+      }
+      .loaderStyle {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(180deg, #4db8ff 0%, #1d6fa5 55%, #0b2438 100%);
+        z-index: 100;
+      }
+      #loader {
+        pointer-events: none;
+      }
+      #errortext {
+        color: #ff5555;
+        font-weight: 900;
+        font-size: 20px;
+      }
+      .overlayBackground {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        opacity: 0.5;
+      }
+      .loadingtext {
+        color: white;
+        text-align: center;
+        z-index: 99;
+        font-size: 15px;
+        font-weight: 700;
+        margin-top: 8px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+      }
+      .spinner,
+      .spinner:after {
+        border-radius: 50%;
+        width: 5em;
+        height: 5em;
+      }
+      .spinner {
+        margin: 14px;
+        font-size: 10px;
+        position: relative;
+        text-indent: -9999em;
+        border-top: 1.1em solid rgba(255, 255, 255, 0.25);
+        border-right: 1.1em solid rgba(255, 255, 255, 0.25);
+        border-bottom: 1.1em solid rgba(255, 255, 255, 0.25);
+        border-left: 1.1em solid #ffffff;
+        transform: translateZ(0);
+        animation: spinner-spin 1.1s infinite linear;
+      }
+      @keyframes spinner-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .textInputContainer {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+        z-index: 10001;
+      }
+      .textInput {
+        opacity: 0.01;
+        width: 1px;
+        height: 1px;
+        font-size: 16px;
+        padding: 0;
+        margin: 0;
+        border: 0;
+      }
+      .startButton {
+        z-index: 99;
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #hideAll {
+        z-index: 9999;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader" class="loaderStyle">
+      <img class="logo" data-server-logo alt="Server logo">
+      <div class="spinner"></div>
+      <div data-server-loading class="loadingtext">Loading Game Server V1.50...</div>
+      <div class="progress"><div class="full"></div></div>
+    </div>
+    <div id="interstitial" class="loaderStyle" style="display:none">
+      <img class="logo" data-server-logo alt="Server logo">
+      <br/>
+      <div data-server-loading class="loadingtext" id="errortext"></div>
+      <br/>
+      <div data-server-loading class="loadingtext">Rotate device to landscape mode, then tap Start:</div>
+      <br/>
+      <button class="startButton" onclick="dismissInterstitial()">Start <span data-server-name>Game Server</span>!</button>
+    </div>
+    <div id="enterFullScreenPopup" class="loaderStyle" style="display:none">
+      <div class="overlayBackground"></div>
+      <div data-server-loading class="loadingtext">Please ensure your device is in landscape mode, then enter fullscreen mode.</div>
+      <br/>
+      <button class="startButton" onclick="enterFullscreenMode()">Enter full-screen mode</button>
+    </div>
+    <div id="gameContainer">
+      <div class="textInputContainer">
+        <input class="textInput" id="textInput" type="text" enterkeyhint="done"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </div>
+      <canvas class="emscripten" id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+    <div id="hideAll"></div>
+    <script src="WebLoaderData/BrandingAssets.js?v=2100"></script>
+    <script src="WebLoaderData/UIAssets.js?v=2100"></script>
+    <script src="WebLoaderData/ServerBranding.js?v=2100"></script>
+    <script src="WebLoaderData/GameSDK.js?v=2100"></script>
+    <script src="WebLoaderData/NativeAutofill.js?v=2400"></script>
+    <script src="WebLoaderData/GameInterstitial.js?v=2100"></script>
+  </body>
+</html>

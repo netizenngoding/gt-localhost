@@ -25,7 +25,7 @@ try {
  assert.equal(canUseSkin(a,0xffffff00),false);assert.equal(canUseSkin(a,-1),false);setSkin(ctx,s,0xffffffff);assert.equal(a.skinColor,0xffffffff);
  const plain=normalizeAccount({userId:124,name:'Plain'});assert.equal(canUseSkin(plain,0xffffffff),false);assert.ok(canUseSkin(plain,2190853119));
  // Hair animation flag must not grant Rayman's Fist effects.
- a.inventory.push({itemId:5482,count:1,equipped:true});assert.ok(db.get(5482).isRayman);assert.equal(buildCharacterStateForSession(s,db).punchEffect,0);a.inventory.push({itemId:5480,count:1,equipped:true});assert.equal(buildCharacterStateForSession(s,db).punchEffect,4);
+ a.inventory.push({itemId:5482,count:1,equipped:true});assert.ok(db.get(5482).isRayman);assert.equal(buildCharacterStateForSession(s,db).punchEffect,0);a.inventory.push({itemId:5480,count:1,equipped:true});assert.equal(buildCharacterStateForSession(s,db).punchEffect,80);
  ctx.joinWorld(s,'CONSUMETEST');s.x=0;s.y=0;
  a.inventory.push({itemId:196,count:2,equipped:false});assert.ok(useConsumable(ctx,s,196,0,0));assert.equal(effectiveSkin(a),4278190335);assert.equal(a.inventory.find(i=>i.itemId===196).count,1);assert.equal(a.progression.counters.consumables_used,1);
  a.playmods[0].expiresAt=Date.now()-1;expireMods(ctx);assert.equal(effectiveSkin(a),0xffffffff);assert.equal(a.playmods.length,0);

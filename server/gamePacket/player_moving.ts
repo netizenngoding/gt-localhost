@@ -1,4 +1,3 @@
-import { activeMods } from '../playmods/model';
 import { TANK_FLAG_FACING_LEFT, type TankPacket } from "../proton/packet";
 import type { PlayerSession } from "../database/peer";
 import { OnSetPos } from "../onVariant";
@@ -19,10 +18,11 @@ export function handlePlayerMoving(
     return;
   }
 
-  if(activeMods(session.account).some(m=>m.flags&(1<<11))){
-    if(nx!==session.x || ny!==session.y)OnSetPos(session,session.x,session.y);
-    return;
-  }
+  // The native Frozen state bit suppresses player input. Do not pin or rewind
+  // position here: the client continues to integrate momentum and gravity,
+  // especially when frozen in mid-air. Repeated OnSetPos fights that physics
+  // and causes visible jitter/desynchronisation. As with ordinary movement,
+  // this server accepts client physics; the state bit is not anti-cheat.
   session.x = nx;
   session.y = ny;
   session.facingLeft = ((tank.flags ?? 0) & TANK_FLAG_FACING_LEFT) !== 0;

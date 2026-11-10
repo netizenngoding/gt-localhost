@@ -301,7 +301,7 @@ export function makeVariantPacket(args: VariantArg[], netId = -1, delayMs = 0): 
 // Verified instruction-by-instruction against Func #4565 (Table[1720])
 export interface CharacterStateParams {
   netId: number;
-  punchEffect?: number;    // avatar[352] (0=default, 1=flame, 2=horn, 4=rayman, 13=zeus, etc.)
+  punchEffect?: number;    // avatar[352]; byte ID from the selected server-side punch mapping
   buildRangeTiles?: number; // 2 = normal (byte 128), 10 = far build (byte 136)
   punchRangeTiles?: number; // 2 = normal (byte 128), 10 = far punch (byte 136); encoding does not imply item effects
   pupilColor?: number;     // avatar[1692]

@@ -3,15 +3,24 @@ import type { PlayerSession } from '../database/peer';
 import { hasPermission } from '../ranks';
 import { OnConsoleMessage, OnDialogRequest, OnSetBux, broadcastNameChanged } from '../onVariant';
 import { DialogBuilder } from '../tools/create_dialog';
-import { ACHIEVEMENTS } from './catalog';
+import { ACHIEVEMENTS, achievementTitle, achievementDescription, classicAchievementIcon, lockedAchievementIcon } from './catalog';
 import { MAX_LEVEL, xpRequired } from './model';
 import { progression, recordProgress } from './service';
 export function showAchievements(s: PlayerSession): void {
  const p = progression(s.account);
- const dlg = new DialogBuilder().addLabelWithIcon('big','Achievements',982)
-   .addSmalltext(`${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length} implemented goals earned`);
- for (const a of ACHIEVEMENTS) dlg.addSmalltext(`${p.earned[a.id] ? '`2Earned' : '`o'+Math.min(a.target,p.counters[a.metric]||0)+'/'+a.target} - ${a.title} (${a.division})\`\``);
- OnDialogRequest(s, dlg.addQuickExit().endDialog('achievements','Close',''));
+ const dlg = new DialogBuilder().setDefaultColor('`o');
+ // Render the same native two-line achievement rows as the client, with a
+ // division-coloured question mark until earned. Unsupported goals are not
+ // presented as obtainable: only server-tracked achievements appear here.
+ const order: Record<string,number> = {Bronze:0, Silver:1, Gold:2};
+ const rows = [...ACHIEVEMENTS].sort((a,b)=>(order[a.division]??99)-(order[b.division]??99)||a.classicId-b.classicId);
+ for (const a of rows) {
+   const earned = !!p.earned[a.id];
+   const progress = Math.max(0, Math.min(a.target, p.counters[a.metric] || 0));
+   const status = earned ? achievementDescription(a) : a.target === 1 ? 'Not achieved!' : `Progress: ${Math.floor(progress / a.target * 100)}%`;
+   dlg.addAchievement(achievementTitle(a), status, earned ? classicAchievementIcon(a.classicId) : lockedAchievementIcon(a.division));
+ }
+ OnDialogRequest(s, dlg.addQuickExit().endDialog('achievements','Back',''));
 }
 export function handleProgressionCommand(ctx: ServerContext, s: PlayerSession, cmd: string, parts: string[]): boolean {
  if (cmd === 'hidestatus') {

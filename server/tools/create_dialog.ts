@@ -25,6 +25,14 @@ export class DialogBuilder {
     return this;
   }
 
+  /** Native add_achieve uses game/amorkolg.rttex, not an inventory item. */
+  public addAchievement(title: string, status: string, icon: number): this {
+    if (!Number.isInteger(icon) || icon < 0 || icon > 127) throw new RangeError("Invalid achievement atlas index");
+    const clean = (value: string) => value.replace(/[|\r\n\0]/g, " ");
+    this.lines.push(`add_achieve|${clean(title)}|${clean(status)}|left|${icon}|`);
+    return this;
+  }
+
   public addTextbox(text: string, align: "left" | "center" | "right" = "left"): this {
     this.lines.push(`add_textbox|${text}|${align}|`);
     return this;

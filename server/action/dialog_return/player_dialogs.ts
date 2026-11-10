@@ -13,7 +13,7 @@ import { DialogBuilder } from "../../tools/create_dialog";
 import { stripGtColors } from "../../tools/string";
 import { handleBuy } from "../buy";
 import { showGrowIdApplyModal } from "../growid";
-import { handleTradeStart } from "../wrench";
+import { handleTradeStart, handleWrenchPlayer } from "../wrench";
 import { openItemFinderDialog } from "./find_item";
 
 export function openCheatsMenu(session: PlayerSession): void {
@@ -95,6 +95,10 @@ export function handlePlayerDialogsReturn(
       const name=btn.slice(6),world=ctx.worlds.get(name);
       if(world?.ownerUserId===session.account.userId)ctx.joinWorld(session,name);
     }
+    return true;
+  }
+  if (dlgName === 'achievements') {
+    if (!btn || btn === 'cancel') handleWrenchPlayer(ctx, session, {netid: String(session.netId)});
     return true;
   }
   if (dlgName === 'popup') {

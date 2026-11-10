@@ -1,8 +1,10 @@
 import type { PlayerAccount, PlayerSession } from '../database/peer';
+import { activeMods } from '../playmods/model';
 import type { ServerContext } from '../database/context';
 import { OnConsoleMessage, OnSetBux, broadcastNameChanged } from '../onVariant';
 import { makeVariantPacket, makeParticleEffectPacket, NATIVE_EFFECT_ACHIEVEMENT } from '../proton/packet';
-import { ACHIEVEMENTS } from './catalog';
+import { ACHIEVEMENTS, achievementTitle } from './catalog';
+import { displayName } from '../ranks';
 import { addXp, normalizeProgression, type Progression } from './model';
 export function progression(account: PlayerAccount): Progression {
   return account.progression ??= normalizeProgression();
@@ -29,6 +31,14 @@ const notificationUntil = new WeakMap<PlayerSession, number>();
 export function recordProgress(ctx: ServerContext, s: PlayerSession, metric?: MetricEvent, amount = 1, xp = 0): void {
   const p = progression(s.account), beforeLevel = p.level, beforeSupporter = p.superSupporter;
   if (metric && Number.isSafeInteger(amount) && amount > 0 && amount <= 10000000) p.counters[metric] = Math.min(Number.MAX_SAFE_INTEGER, (p.counters[metric] || 0) + amount);
+  // Only gameplay events receive food XP bonuses, never /givexp or level commands.
+  // Probabilities apply once per action, not once per awarded XP point.
+  if (metric && Number.isSafeInteger(xp) && xp>0) {
+    for (const mod of activeMods(s.account)) {
+      if (metric==='consumables_used' && mod.consumableXpMultiplier) xp *= mod.consumableXpMultiplier;
+      if (mod.xpMultiplier && mod.xpMultiplierChance && Math.random()<mod.xpMultiplierChance) xp *= mod.xpMultiplier;
+    }
+  }
   addXp(p, xp);
   const unlocked = evaluate(s.account, Math.max(0, (s.world?.peers.size ?? 1) - 1));
   ctx.dirty = true;
@@ -36,7 +46,7 @@ export function recordProgress(ctx: ServerContext, s: PlayerSession, metric?: Me
   ctx.savePlayersNow();
   for (const id of unlocked) {
     const a = ACHIEVEMENTS.find(a => a.id === id)!;
-    const text = `\`2Earned achievement: \`w${a.title}\`\``;
+    const text = `${displayName(s)} earned the achievement \`w"${achievementTitle(a)}"\`\`!`;
     OnConsoleMessage(s, text);
     const delay = Math.max(0, (notificationUntil.get(s) || 0) - Date.now());
     notificationUntil.set(s, Date.now() + delay + 6000);

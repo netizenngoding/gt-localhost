@@ -1179,6 +1179,7 @@ var require_receiver = __commonJS({
             unmask(data, this._mask);
           }
         }
+        this._mask = void 0;
         if (this._opcode > 7) {
           this.controlMessage(data, cb);
           return;
@@ -2276,6 +2277,7 @@ var require_websocket = __commonJS({
     var https = require("https");
     var http2 = require("http");
     var net = require("net");
+    var querystring = require("querystring");
     var tls = require("tls");
     var { randomBytes, createHash } = require("crypto");
     var { Duplex, Readable: Readable2 } = require("stream");
@@ -2802,10 +2804,9 @@ var require_websocket = __commonJS({
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
-      if (parsedUrl.protocol === "http:") {
-        parsedUrl.protocol = "ws:";
-      } else if (parsedUrl.protocol === "https:") {
-        parsedUrl.protocol = "wss:";
+      if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
+        parsedUrl = new URL3(parsedUrl);
+        parsedUrl.protocol = parsedUrl.protocol === "http:" ? "ws:" : "wss:";
       }
       websocket._url = parsedUrl.href;
       const isSecure = parsedUrl.protocol === "wss:";
@@ -2874,7 +2875,9 @@ var require_websocket = __commonJS({
         }
       }
       if (parsedUrl.username || parsedUrl.password) {
-        opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
+        const username = querystring.unescape(parsedUrl.username);
+        const password = querystring.unescape(parsedUrl.password);
+        opts.auth = `${username}:${password}`;
       }
       if (isIpcUrl) {
         const i = opts.path.indexOf(":");
@@ -3079,8 +3082,13 @@ var require_websocket = __commonJS({
     function receiverOnConclude(code, reason) {
       const websocket = this[kWebSocket];
       websocket._closeFrameReceived = true;
-      websocket._closeMessage = reason;
       websocket._closeCode = code;
+      if (reason.length === 0) {
+        websocket._closeMessage = EMPTY_BUFFER;
+      } else {
+        websocket._closeMessage = Buffer.allocUnsafeSlow(reason.length);
+        websocket._closeMessage.set(reason);
+      }
       if (websocket._socket[kWebSocket] === void 0) return;
       websocket._socket.removeListener("data", socketOnData);
       process.nextTick(resume, websocket._socket);
@@ -26583,6 +26591,189 @@ var require_express2 = __commonJS({
 
 // server/playmods/model.ts
 var MODS = [
+  // GTPS3 ae49cffa World.h info_about_playmods 25/28.
+  {
+    id: "gtps3-antidote",
+    item: 782,
+    title: "Antidote!",
+    seconds: 3600,
+    flags: 0,
+    onAdd: "You are now immune to zombie bites! Temporarily...",
+    onRemove: "Your immunity is gone.",
+    icon: 782,
+    sound: "",
+    action: "drop",
+    effect: 25,
+    text: ""
+  },
+  {
+    id: "gtps3-infected",
+    item: 764,
+    title: "Infected!",
+    seconds: 60,
+    flags: 1 << 16,
+    onAdd: "You've been infected by the g-Virus. Punch others to infect them, too! Braiiiins...",
+    onRemove: "You've been cured.",
+    icon: 764,
+    sound: "",
+    action: "drop",
+    effect: 0,
+    text: ""
+  },
+  // https://growtopia.fandom.com/wiki/Lucky_Clover and Rabbit's Foot/Songpyeon
+  ...[528, 750, 1056].map((item) => ({
+    id: `lucky-${item}`,
+    item,
+    title: "Lucky!",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "You're luckier than before!",
+    onRemove: "Your luck has worn off.",
+    icon: item,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: "",
+    group: "luck",
+    luckyBreaks: true
+  })),
+  // https://growtopia.fandom.com/wiki/Gemmin%27_Juice
+  {
+    id: "gem-bonus",
+    item: 4348,
+    title: "Gem Bonus",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "Chance of bonus gems from breaking blocks!",
+    onRemove: "Just regular old gems.",
+    icon: 4348,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: "",
+    doubleGemsChance: 0.1
+  },
+  // https://growtopia.fandom.com/wiki/Biotronic_Brain_Enhancer. 50% on
+  // average is approximated as a 50% chance of double per action.
+  {
+    id: "biotronic-xp",
+    item: 4324,
+    title: "Biotronic Brain Enhancer",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "Your brain has been enhanced!",
+    onRemove: "You're getting dumber by the second.",
+    icon: 4324,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: "",
+    xpMultiplierChance: 0.5,
+    xpMultiplier: 2
+  },
+  // https://growtopia.fandom.com/wiki/Apple_Strudel
+  {
+    id: "food-tree-growth",
+    item: 4594,
+    title: "Food: Tree Growth",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "Trees you plant grow 5% faster!",
+    onRemove: "Your stomach's rumbling.",
+    icon: 4594,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    group: "food",
+    treeGrowthDiscount: 0.05
+  },
+  // https://growtopia.fandom.com/wiki/Arroz_Con_Pollo
+  {
+    id: "food-breaking-gems",
+    item: 4604,
+    title: "Food: Breaking Gems",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "10% chance of a gem when you break a block.",
+    onRemove: "Your stomach's rumbling.",
+    icon: 4604,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    group: "food",
+    extraBreakGemChance: 0.1
+  },
+  // https://growtopia.fandom.com/wiki/Eggs_Benedict
+  {
+    id: "food-xp-eggs",
+    item: 1474,
+    title: "Food: Extra XP",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "25% chance of double XP for all actions.",
+    onRemove: "Your stomach's rumbling.",
+    icon: 1474,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    group: "food",
+    xpMultiplierChance: 0.25,
+    xpMultiplier: 2
+  },
+  // https://growtopia.fandom.com/wiki/Gingerbread_Cookie
+  {
+    id: "food-xp-gingerbread",
+    item: 5452,
+    title: "Food: Extra XP",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "10% chance of triple XP for all actions.",
+    onRemove: "Your body craves sugar!",
+    icon: 5452,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    group: "food",
+    xpMultiplierChance: 0.1,
+    xpMultiplier: 3
+  },
+  // https://growtopia.fandom.com/wiki/Pineapple_Turnover
+  {
+    id: "food-consumable-xp",
+    item: 4768,
+    title: "Food: Consumable XP",
+    seconds: 1800,
+    flags: 0,
+    onAdd: "Get triple XP for using consumables.",
+    onRemove: "Your stomach's rumbling.",
+    icon: 4768,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    group: "food",
+    consumableXpMultiplier: 3
+  },
+  // https://growtopia.fandom.com/wiki/Blood_Truffle_Biscuits_with_Sweet_Radish_Pie
+  {
+    id: "truffle-punch-damage",
+    item: 12156,
+    title: "Blood Truffle Biscuits: Punch Damage",
+    seconds: 600,
+    flags: 0,
+    onAdd: "Punch like a mechanic!!",
+    onRemove: "Out of energy!",
+    icon: 12156,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ":D`#YUM!``",
+    punchDamage: true
+  },
   {
     "id": "stinky",
     "item": 388,
@@ -26596,6 +26787,23 @@ var MODS = [
     "action": "",
     "effect": 0,
     "text": ""
+  },
+  // GTPS3 World.h info_about_playmods entry 3: Freeze Wand is a usable
+  // actionType 8 item, not a wearable. One use consumes one wand.
+  {
+    id: "gtps3-3",
+    item: 274,
+    title: "Frozen",
+    seconds: 10,
+    flags: 1 << 11,
+    onAdd: "Freeze!",
+    onRemove: "You've thawed out.",
+    icon: 274,
+    sound: "freeze.wav",
+    action: "",
+    effect: 0,
+    text: "",
+    skin: 4284769380
   },
   {
     "id": "gtps3-2",
@@ -26951,6 +27159,8 @@ var MODS = [
   }
 ];
 var SIMPLE_FOODS = [
+  // Player-consumption behaviour documented by the individual wiki pages.
+  ...[406, 3228, 3420, 3474, 4982].map((item) => ({ item, text: ":D`#YUM!``" })),
   {
     "item": 3404,
     "text": ":D`#YUM!``"
@@ -27090,10 +27300,12 @@ var SIMPLE_FOODS = [
 ];
 function normalizeMods(raw, now = Date.now()) {
   if (!Array.isArray(raw)) return [];
-  const seen = /* @__PURE__ */ new Set();
+  const seen = /* @__PURE__ */ new Set(), seenGroups = /* @__PURE__ */ new Set();
   return raw.filter((m) => {
     const def = MODS.find((d) => d.id === m?.id);
     if (!def || seen.has(m.id) || !Number.isSafeInteger(m.expiresAt) || m.expiresAt <= now || m.expiresAt > now + def.seconds * 1e3) return false;
+    if (def.group && seenGroups.has(def.group)) return false;
+    if (def.group) seenGroups.add(def.group);
     seen.add(m.id);
     return true;
   }).map((m) => ({ id: m.id, expiresAt: m.expiresAt }));
@@ -27527,25 +27739,2342 @@ function makeInventoryPacket(backpackSize, slots) {
   });
 }
 
+// server/playmods/gtps3-punch.generated.ts
+var GTPS3_PUNCH_EFFECTS = {
+  138: 1,
+  366: 2,
+  472: 3,
+  594: 4,
+  768: 5,
+  900: 6,
+  910: 7,
+  930: 8,
+  1010: 8,
+  1016: 9,
+  1204: 10,
+  1378: 11,
+  1440: 12,
+  1464: 2,
+  1484: 13,
+  1512: 14,
+  1542: 15,
+  1570: 18,
+  1576: 16,
+  1648: 14,
+  1676: 17,
+  1710: 18,
+  1712: 18,
+  1714: 18,
+  1748: 19,
+  1780: 20,
+  1782: 21,
+  1804: 22,
+  1868: 23,
+  1874: 24,
+  1946: 25,
+  1952: 26,
+  1956: 27,
+  1960: 28,
+  1980: 30,
+  1998: 23,
+  2066: 31,
+  2212: 32,
+  2218: 33,
+  2220: 34,
+  2266: 35,
+  2386: 36,
+  2388: 37,
+  2450: 38,
+  2476: 39,
+  2512: 41,
+  2572: 42,
+  2592: 43,
+  2596: 43,
+  2720: 44,
+  2752: 45,
+  2754: 46,
+  2756: 47,
+  2800: 25,
+  2802: 49,
+  2854: 26,
+  2866: 50,
+  2876: 51,
+  2878: 52,
+  2880: 52,
+  2886: 54,
+  2890: 55,
+  2906: 53,
+  2908: 29,
+  2910: 56,
+  2952: 29,
+  3066: 57,
+  3108: 29,
+  3124: 58,
+  3162: 29,
+  3166: 93,
+  3168: 59,
+  3214: 60,
+  3238: 61,
+  3274: 62,
+  3300: 64,
+  3418: 65,
+  3466: 29,
+  3476: 66,
+  3596: 67,
+  3680: 77,
+  3686: 68,
+  3716: 69,
+  3932: 29,
+  3934: 29,
+  4136: 4,
+  4150: 31,
+  4166: 29,
+  4170: 53,
+  4208: 39,
+  4278: 53,
+  4290: 71,
+  4294: 40,
+  4332: 7,
+  4464: 73,
+  4474: 72,
+  4506: 29,
+  4644: 18,
+  4746: 75,
+  4748: 40,
+  4778: 76,
+  4840: 78,
+  4956: 29,
+  4996: 77,
+  5002: 6,
+  5004: 32,
+  5006: 32,
+  5008: 32,
+  5156: 21,
+  5160: 13,
+  5174: 32,
+  5176: 77,
+  5192: 153,
+  5194: 22,
+  5206: 79,
+  5276: 131,
+  5424: 4,
+  5456: 4,
+  5480: 80,
+  6026: 76,
+  6044: 18,
+  6058: 9,
+  6110: 81,
+  6298: 84,
+  6308: 82,
+  6310: 83,
+  6312: 29,
+  6338: 41,
+  6358: 106,
+  6382: 8,
+  6756: 85,
+  6804: 106,
+  6892: 87,
+  6966: 88,
+  7044: 86,
+  7088: 89,
+  7098: 90,
+  7136: 92,
+  7192: 91,
+  7196: 95,
+  7216: 94,
+  7384: 98,
+  7392: 96,
+  7402: 100,
+  7408: 61,
+  7414: 99,
+  7424: 101,
+  7470: 102,
+  7488: 103,
+  7504: 17,
+  7568: 107,
+  7570: 107,
+  7572: 107,
+  7574: 107,
+  7584: 110,
+  7586: 104,
+  7646: 104,
+  7650: 105,
+  7660: 109,
+  7668: 108,
+  7736: 111,
+  7758: 6,
+  7760: 6,
+  7784: 76,
+  7826: 111,
+  7828: 111,
+  7830: 111,
+  7832: 111,
+  7836: 112,
+  7838: 112,
+  7840: 112,
+  7842: 112,
+  7912: 111,
+  7950: 113,
+  8002: 114,
+  8006: 19,
+  8008: 19,
+  8010: 19,
+  8012: 19,
+  8022: 116,
+  8036: 118,
+  8038: 120,
+  8372: 119,
+  8432: 132,
+  8434: 132,
+  8436: 132,
+  8440: 29,
+  8554: 29,
+  8732: 29,
+  8816: 128,
+  8818: 128,
+  8820: 128,
+  8822: 128,
+  8910: 129,
+  8942: 130,
+  8944: 131,
+  8946: 133,
+  8950: 132,
+  8960: 134,
+  9006: 135,
+  9032: 90,
+  9058: 136,
+  9060: 109,
+  9066: 138,
+  9082: 137,
+  9116: 111,
+  9118: 111,
+  9120: 111,
+  9122: 111,
+  9136: 139,
+  9138: 140,
+  9172: 141,
+  9194: 60,
+  9236: 145,
+  9254: 143,
+  9256: 144,
+  9272: 6,
+  9304: 137,
+  9340: 95,
+  9342: 146,
+  9348: 119,
+  9376: 149,
+  9378: 148,
+  9396: 43,
+  9410: 150,
+  9462: 151,
+  9496: 29,
+  9500: 73,
+  9520: 29,
+  9522: 29,
+  9524: 180,
+  9534: 10,
+  9536: 29,
+  9542: 147,
+  9544: 172,
+  9546: 218,
+  9548: 43,
+  9550: 203,
+  9574: 218,
+  9576: 133,
+  9596: 226,
+  9598: 180,
+  9604: 96,
+  9606: 152,
+  9636: 226,
+  9716: 153,
+  9732: 41,
+  9738: 92,
+  9766: 29,
+  9770: 80,
+  9772: 80,
+  9774: 213,
+  9776: 21,
+  9778: 104,
+  9782: 21,
+  9784: 22,
+  9802: 13,
+  9804: 39,
+  9810: 21,
+  9812: 43,
+  10046: 169,
+  10048: 167,
+  10050: 170,
+  10052: 4,
+  10064: 168,
+  10128: 171,
+  10130: 4,
+  10210: 172,
+  10330: 178,
+  10334: 111,
+  10336: 39,
+  10388: 180,
+  10398: 179,
+  10442: 184,
+  10498: 111,
+  10506: 185,
+  10578: 111,
+  10626: 111,
+  10652: 188,
+  10670: 111,
+  10676: 191,
+  10680: 111,
+  10694: 193,
+  10714: 194,
+  10722: 196,
+  10724: 195,
+  10754: 197,
+  10800: 198,
+  10886: 200,
+  10888: 199,
+  10890: 202,
+  10922: 203,
+  10952: 207,
+  10954: 215,
+  10956: 213,
+  10958: 214,
+  10960: 212,
+  10990: 205,
+  10998: 206,
+  11e3: 208,
+  11006: 209,
+  11020: 89,
+  11046: 210,
+  11052: 211,
+  11076: 216,
+  11078: 31,
+  11080: 31,
+  11082: 31,
+  11084: 217,
+  11116: 220,
+  11118: 218,
+  11120: 219,
+  11140: 225,
+  11142: 223,
+  11158: 221,
+  11162: 222,
+  11232: 224,
+  11240: 227,
+  11248: 226,
+  11250: 228,
+  11284: 229,
+  11292: 231,
+  11298: 111,
+  11308: 200,
+  11312: 111,
+  11314: 233,
+  11316: 234,
+  11324: 235,
+  11326: 111,
+  11354: 236,
+  11380: 111,
+  11438: 237,
+  11440: 111,
+  11442: 111,
+  11460: 237,
+  11464: 237,
+  11506: 245,
+  11508: 245,
+  11548: 242,
+  11552: 242,
+  11562: 245,
+  11622: 237,
+  11630: 237,
+  11674: 237,
+  11704: 243,
+  11706: 243,
+  11716: 237,
+  11718: 237,
+  11720: 245,
+  11760: 237,
+  11762: 237,
+  11768: 245,
+  11786: 237,
+  11814: 241,
+  11818: 248,
+  11872: 237,
+  11876: 248,
+  11882: 245,
+  11884: 245,
+  11994: 237,
+  12e3: 248,
+  12014: 237,
+  12016: 237,
+  12018: 237,
+  12020: 237,
+  12022: 237,
+  12024: 237,
+  12172: 237,
+  12176: 237,
+  12180: 244,
+  12184: 237,
+  12230: 237,
+  12232: 241,
+  12240: 248,
+  12242: 237,
+  12246: 237,
+  12248: 237,
+  12300: 237,
+  12302: 241,
+  12308: 39,
+  12342: 111,
+  12344: 244,
+  12346: 244,
+  12350: 237,
+  12356: 237,
+  12368: 29,
+  12374: 237,
+  12432: 246,
+  12434: 246,
+  12642: 248,
+  12644: 248
+};
+
+// server/playmods/wearable-catalog.ts
+var PUNCH_DAMAGE_IDS = /* @__PURE__ */ new Set([
+  98,
+  // Pickaxe
+  734,
+  // Cybernetic Arm
+  900,
+  // Dragon Hand
+  930,
+  // Death Ray
+  1378,
+  // Ice Dragon Hand
+  1438,
+  // Golden Pickaxe
+  1484,
+  // Atomic Shadow Scythe
+  1576,
+  // Fiesta Dragon
+  1708,
+  // Explorer's Shovel
+  1748,
+  // Flamethrower
+  1780,
+  // Legendbot-009
+  1782,
+  // Dragon of Legend
+  1836,
+  // Diamond Flashaxe
+  1874,
+  // Ring Of Force
+  1956,
+  // Chaos Cursed Wand
+  1998,
+  // Skeletal Dragon Claw
+  2212,
+  // Black Crystal Dragon
+  2218,
+  // Mighty Snow Rod
+  2386,
+  // Heavenly Scythe
+  2388,
+  // Heartbreaker Hammer
+  2450,
+  // Diamond Dragon
+  2572,
+  // Flame Scythe
+  2592,
+  // Legendary Katana
+  2754,
+  // Demonic Arm
+  2854,
+  // Phoenix Pacifier
+  2910,
+  // Emerald Staff
+  3166,
+  // Pet Slime
+  3168,
+  // Strawberry Slime
+  3214,
+  // Axe Of Winter
+  3418,
+  // Serpent Staff
+  3588,
+  // Climbing Picks
+  3686,
+  // Toy Lock-Bot
+  4166,
+  // Death's Scythe
+  4170,
+  // Logarithmic Wheel
+  4590,
+  // Zraei's Dragoscarf
+  4956,
+  // Emerald Pickaxe
+  4996,
+  // Burning Hands
+  5424,
+  // Winter Frost Bow
+  6240,
+  // Exquisite Hammer
+  6260,
+  // Amulet of Force
+  6312,
+  // Phoenix Sword
+  6358,
+  // Startopian Empire - Combat Rifle
+  6368,
+  // Greezak Horde - Shoulder Cannon
+  6756,
+  // Scepter of the Honor Guard
+  6804,
+  // Bubble Gun
+  6892,
+  // Sorcerer's Tunic of Mystery
+  6966,
+  // Riding Bull
+  7044,
+  // Jade Crescent Axe
+  7098,
+  // Apocalypse Scythe
+  7216,
+  // Mad Hatter
+  7392,
+  // Mage's Orb
+  7396,
+  // Snowflake Eyes
+  7568,
+  // Hovernator Drone - White
+  7570,
+  // Hovernator Drone - Black
+  7572,
+  // Hovernator Drone - Red
+  7574,
+  // Hovernator Drone - Golden
+  7586,
+  // Sonic Buster Sword
+  7650,
+  // Mjolnir
+  7826,
+  // Heartstaff
+  7828,
+  // Golden Heartstaff
+  7830,
+  // Heartsword
+  7832,
+  // Golden Heartsword
+  7912,
+  // War Hammers of Darkness
+  7940,
+  // Flaming Boxing Gloves
+  7950,
+  // Ionic Pulse Cannon Tank
+  8366,
+  // Extra Undead Arms
+  8372,
+  // Giant Eye Head
+  8432,
+  // Galactic Destructor - Green
+  8434,
+  // Galactic Destructor - Purple
+  8436,
+  // Galactic Destructor - Red
+  8438,
+  // Galactic Destructor - Blue
+  8492,
+  // Wormtouch
+  8604,
+  // Crab Claw & Shield
+  8814,
+  // Slithering Serpent Hair
+  8816,
+  // Astro Shades - Red
+  8818,
+  // Astro Shades - Orange
+  8820,
+  // Astro Shades - Purple
+  8822,
+  // Astro Shades - Green
+  8942,
+  // Dual Crescent Blade
+  8944,
+  // Sun Blade
+  8946,
+  // Storm Breaker
+  9006,
+  // Spirit of Anubis
+  9032,
+  // Scythe of the Underworld
+  9058,
+  // Cursed Katana
+  9082,
+  // Rocket-Powered Warhammer
+  9176,
+  // Armored WinterBot - Fists
+  9194,
+  // Hammer Of Winter
+  9254,
+  // Euphoric Dragon
+  9272,
+  // Draconic Claw
+  9316,
+  // Beefy Biceps
+  9326,
+  // Golden Heartthrob Helm
+  9340,
+  // Datemaster's Rose
+  9342,
+  // Datemaster's Bling
+  9376,
+  // Mining Mech
+  9410,
+  // Radiant Doom Staff
+  9462,
+  // Boastful Brawler Hair
+  9464,
+  // Powerful Ponytail Hair
+  9606,
+  // Doomsday Warhammer
+  9654,
+  // Pineapple Superhero
+  9698,
+  // Arm Blaster
+  9714,
+  // My Pet Sputnik
+  9716,
+  // Crystal Infused Sword
+  9734,
+  // Starfish Leash
+  9738,
+  // Staff of the Deep
+  9758,
+  // Neptune's Trident
+  10048,
+  // Tactical Stealth Espionage Device
+  10050,
+  // Really Dangerous Pet Llama
+  10064,
+  // Capuchin Leash
+  10128,
+  // Mechanical Butler
+  10130,
+  // Sun Shooter Bow
+  10166,
+  // Haunted Jack O' Lantern
+  10232,
+  // Reanimated Howly Hat
+  10278,
+  // Torch of Enlightenment
+  10330,
+  // Shadow Crown
+  10388,
+  // Swordfish Sword
+  10402,
+  // Christmas Tree Sword
+  10406,
+  // Staff of Deepest Winter
+  10494,
+  // Walktopian
+  10506,
+  // Spruce Goose
+  10578,
+  // Mystic Battle Lance
+  10618,
+  // Perilous Pirate Ship
+  10652,
+  // Love Charged Hands
+  10676,
+  // Shamrock Shuriken
+  10686,
+  // Shady Agent Shades
+  10694,
+  // Mini Minokawa
+  10714,
+  // Steampunk Arm
+  10722,
+  // Bunny Ear Magnifying Glass
+  10780,
+  // Giving Growaxe
+  10802,
+  // Sombrero Assault
+  10888,
+  // Giant Pineapple Pizza Paddle
+  10894,
+  // Pineapple Shoulder Cannon
+  10922,
+  // Pegasus Lance
+  10994,
+  // Unknown Space Pet
+  10996,
+  // Space Rover
+  11006,
+  // Soul Scythe
+  11046,
+  // Hydro Cannon
+  11076,
+  // Ambu-Lance
+  11084,
+  // Beowulf's Blade
+  11116,
+  // Crystal Crown
+  11118,
+  // Sonic Buster Katana
+  11120,
+  // Primordial Jade Lance
+  11140,
+  // Legendary Destroyer
+  11244,
+  // Crystal of Hoa
+  11290,
+  // Robot Lord Cape
+  11298,
+  // Sakura's Revenge
+  11306,
+  // Clam Cruiser
+  11308,
+  // Royal Clam Cruiser
+  11314,
+  // Cauldron Cannon
+  11316,
+  // Skull of Burning Horrors
+  11358,
+  // Super Slapshot Stick
+  11384,
+  // Matrix Visor
+  11458,
+  // Santa's Super Sack
+  11464,
+  // Ice Dragon Scythe
+  11482,
+  // Cloak of S'mores
+  11536,
+  // Beat Box Mask
+  11562,
+  // Pet Blood Dragon
+  11626,
+  // Mythic Tiger Crown
+  11630,
+  // Monkey Warrior's Staff
+  11672,
+  // Stained Glass Crown
+  11674,
+  // Fancy Flute
+  11704,
+  // Alpha Wolf
+  11706,
+  // Royal Alpha Wolf
+  11716,
+  // Mallet of Sucelles
+  11764,
+  // Edison, The Lightbulb
+  11872,
+  // Comida Crusher
+  11876,
+  // Serpent Shoulders
+  11994,
+  // Pineapple of Locksley
+  12016,
+  // Gwyn's Heirloom
+  12018,
+  // Rok's Fists
+  12022,
+  // Mek'leth
+  12052,
+  // Drednok's Chestplate
+  12102,
+  // Zero's Arms
+  12176,
+  // Poppin' Popsicle Pickaxe
+  12230,
+  // Ghost Pirate Scimitar
+  12232,
+  // Neon Manta Ray
+  12238,
+  // Cruisin' Crab
+  12242,
+  // bllade's Celestius
+  12284,
+  // Pet Royal Guard
+  12286,
+  // Pet Pink Crocodile
+  12342,
+  // Mageblade
+  12356,
+  // Garuda Battle Axe
+  12368,
+  // Strange Eddie Axe
+  12374,
+  // Mighty Legend Gauntlets
+  12420,
+  // Skull Surged Veins
+  12628,
+  // Shattered Spear
+  12658,
+  // Fist of Vengeance
+  12850,
+  // Growtronic Food Replicator
+  12862,
+  // Scepter of Shadows
+  12880,
+  // Freezing Fists
+  12884,
+  // Candle Crown
+  12886,
+  // Icicle Lance
+  12958,
+  // Infinity Crown
+  12990,
+  // Disco Fever
+  12992,
+  // Lightning Guitar
+  12994,
+  // Rave Cap
+  13050,
+  // Mythic Vermillion Crown
+  13060,
+  // Lunar Drum
+  13114,
+  // Stained Glass Scepter
+  13116,
+  // Crimson Thief Mask
+  13118,
+  // Bear That Cares
+  13136,
+  // Golden Stained Glass Scepter
+  13190
+  // Dagger of Time
+]);
+var PUNCH_RANGE_IDS = /* @__PURE__ */ new Set([
+  138,
+  // Cyclopean Visor
+  366,
+  // Heartbow
+  1464,
+  // Golden Heartbow
+  1542,
+  // Battle Trout
+  1676,
+  // Squirt Gun
+  1780,
+  // Legendbot-009
+  1782,
+  // Dragon of Legend
+  2266,
+  // Crystal Glaive
+  2450,
+  // Diamond Dragon
+  2476,
+  // Burning Eyes
+  2592,
+  // Legendary Katana
+  2720,
+  // Electric Bow
+  2754,
+  // Demonic Arm
+  2802,
+  // Poseidon's Trident
+  2854,
+  // Phoenix Pacifier
+  2976,
+  // Cybernetic Eye
+  3066,
+  // Fire Hose
+  3124,
+  // Soul Orb
+  3476,
+  // Spring Bouquet
+  3678,
+  // Thinking Cap
+  3680,
+  // Phlogiston
+  4126,
+  // Stone Spear
+  4136,
+  // Heatbow
+  4278,
+  // Yo-Yo
+  4464,
+  // AK-8087
+  4778,
+  // Adventurer's Whip
+  5206,
+  // Cloak of Falling Waters
+  5424,
+  // Winter Frost Bow
+  5456,
+  // Silverstar Bow
+  6110,
+  // Pineapple Spear
+  6754,
+  // Squirrel King
+  7088,
+  // Ezio's Armguards
+  7106,
+  // Cat Eyes
+  7142,
+  // Tamed Looming Triffid
+  7392,
+  // Mage's Orb
+  7504,
+  // Super Squirt Rifle 500
+  7646,
+  // Tyr's Spear
+  7660,
+  // Super Party Launcher
+  7736,
+  // Dragon Knight's Spear
+  8006,
+  // Hellfire Horns - Black
+  8008,
+  // Hellfire Horns - Blue
+  8010,
+  // Hellfire Horns - Orange
+  8012,
+  // Hellfire Horns - Ruby
+  8306,
+  // Legendary Comet Hair
+  8432,
+  // Galactic Destructor - Green
+  8434,
+  // Galactic Destructor - Purple
+  8436,
+  // Galactic Destructor - Red
+  8438,
+  // Galactic Destructor - Blue
+  8464,
+  // Clockwork Eyes
+  8894,
+  // Panda Leash
+  8912,
+  // Scarecrow Pet
+  8950,
+  // Sniper Rifle
+  8960,
+  // Spring-Loaded Fists
+  10046,
+  // Growboy
+  10052,
+  // Eldritch Crossbow
+  10128,
+  // Mechanical Butler
+  10130,
+  // Sun Shooter Bow
+  10250,
+  // Ultra Sportsball Bat
+  10260,
+  // All You Can Eat Bib
+  10330,
+  // Shadow Crown
+  10336,
+  // Black Burning Eyes
+  10392,
+  // Water Gun Hat
+  10442,
+  // Winter Light Launcher
+  10586,
+  // Oxen Battle Helm
+  10626,
+  // Rose Rifle
+  10670,
+  // Bow of the Rainbow
+  10680,
+  // Finias' Red Javelin
+  10694,
+  // Mini Minokawa
+  10724,
+  // Lil Growpeep's Baaaa Blaster
+  10748,
+  // One Winged Angel
+  10800,
+  // Cactus Cannon
+  10804,
+  // Waay Chivo Mask
+  10886,
+  // Pineapple Chakram
+  10952,
+  // Space Badger
+  10954,
+  // Space Mouse
+  10956,
+  // Space Dog
+  10958,
+  // Space Pig
+  10960,
+  // Space Rabbit
+  10998,
+  // Suspicious Weather Balloon
+  11e3,
+  // Channel G News Van
+  11020,
+  // Dark Assassin's Armguards
+  11052,
+  // Super Duper Ice Cream Scooper
+  11078,
+  // Cute Mutant Wonky
+  11080,
+  // Cute Mutant Plonky
+  11082,
+  // Cute Mutant Boogle
+  11158,
+  // Zodiac Ring
+  11162,
+  // Finger Gun
+  11240,
+  // Seed Gatling Gun
+  11248,
+  // Staff of S'mores
+  11250,
+  // Harvest Jade Hat
+  11284,
+  // Paper Wasp Pet
+  11312,
+  // Spider Sniper
+  11320,
+  // Waay Chivo Skull
+  11324,
+  // Pharaoh's Pendant
+  11326,
+  // Ferryman of the Underworld
+  11380,
+  // Black Bow of the Rainbow
+  11384,
+  // Matrix Visor
+  11438,
+  // Digital Bow
+  11440,
+  // Mystic Bow
+  11442,
+  // Royal Mystic Bow
+  11460,
+  // Snow Cone Pet
+  11466,
+  // Aura Antlers
+  11506,
+  // Mask of The Dragon
+  11508,
+  // Royal Mask of The Dragon
+  11534,
+  // Growby
+  11542,
+  // Neon Party Yo-Yo
+  11546,
+  // Mood Mask
+  11548,
+  // Guardian Armor
+  11552,
+  // Royal Guardian Armor
+  11554,
+  // Bodvar
+  11556,
+  // Val
+  11558,
+  // Sam Fisher
+  11560,
+  // Ezio
+  11594,
+  // Riding Rabbid
+  11622,
+  // Draconic Soul Cannon
+  11672,
+  // Stained Glass Crown
+  11710,
+  // Mr. Grownopoly's Suitcase
+  11718,
+  // Harp of Aibell
+  11720,
+  // Eye of Balor
+  11762,
+  // Growing Guardian Gauntlets
+  11768,
+  // Fish Tank Head
+  11786,
+  // Soft-boiled Scepter
+  11814,
+  // Rabbit Top Hat
+  11876,
+  // Serpent Shoulders
+  11882,
+  // Neurovision
+  11884,
+  // Royal Neurovision
+  11990,
+  // Baby Guzzler
+  11994,
+  // Pineapple of Locksley
+  12e3,
+  // Pineapple Warrior Charm
+  12014,
+  // Dal's Phasers
+  12020,
+  // Jankom Pog's Multi-Mitt
+  12024,
+  // Mine Laser Drill
+  12052,
+  // Drednok's Chestplate
+  12172,
+  // Ethereal Chains
+  12180,
+  // Great Ball of Fire
+  12184,
+  // Pearl Bracelet
+  12188,
+  // Neptune's Crown
+  12228,
+  // Ghost Pirate Head
+  12240,
+  // Oceanaura
+  12246,
+  // Staff of Gale
+  12248,
+  // Royal Staff of Gale
+  12288,
+  // Pet Punching Ghost
+  12296,
+  // Braided Golden Hair
+  12300,
+  // Arm Blades
+  12302,
+  // Lightning Horns
+  12308,
+  // Eldritch Eyes
+  12382,
+  // Toad King Pet
+  12384,
+  // Mystical Lantern
+  12402,
+  // Waay Chivo Cannon
+  12410,
+  // Hands of the Mummy
+  12412,
+  // Wizard's Wand
+  12416,
+  // Growmlin
+  12434,
+  // Royal Master Magic
+  12576,
+  // Garuda Mask
+  12628,
+  // Shattered Spear
+  12642,
+  // Growtronic Halo
+  12644,
+  // Royal Growtronic Halo
+  12646,
+  // Altair
+  12648,
+  // Eivor
+  12650,
+  // Bayek
+  12834,
+  // Cape of Dunes
+  12836,
+  // Royal Cape of Dunes
+  12846,
+  // Star Spangled Shield
+  12860,
+  // Black Neon Party Yo-Yo
+  12866,
+  // Street Dog
+  12868,
+  // Street Rabbit
+  12870,
+  // Candy Cane Bow
+  12876,
+  // Royal Winter Seal Pet
+  12886,
+  // Icicle Lance
+  12992,
+  // Lightning Guitar
+  13058,
+  // Riding Nian
+  13060,
+  // Lunar Drum
+  13118,
+  // Bear That Cares
+  13190,
+  // Dagger of Time
+  13196
+  // Rabbid Buddy
+]);
+var BUILD_RANGE_IDS = /* @__PURE__ */ new Set([
+  4746,
+  // Diamond Horn
+  6830,
+  // Exquisite Trowel
+  7192,
+  // Shadow Spirit of the Underworld
+  7938,
+  // Paintball Power Popper
+  9116,
+  // Red Laser Scimitar
+  9118,
+  // Green Laser Scimitar
+  9120,
+  // Blue Laser Scimitar
+  9122,
+  // Purple Laser Scimitar
+  9378,
+  // Lightning Gauntlets
+  9758,
+  // Neptune's Trident
+  10578,
+  // Mystic Battle Lance
+  10594,
+  // Golden Ox Pendant
+  10678,
+  // Hooves of Cernunnos
+  10726,
+  // Bloom Aura
+  10748,
+  // One Winged Angel
+  10810,
+  // Plasma Heart
+  11030,
+  // Pegasus Crown
+  11232,
+  // Ouroboros Charm
+  11386,
+  // Shadow Cubes Aura
+  11624,
+  // Tiger Pauldrons
+  11750,
+  // Crescent Charm
+  11752,
+  // Royal Crescent Charm
+  11760,
+  // Growing Guardian Armor
+  11788,
+  // Easter Creature
+  11820,
+  // Crown of Spring
+  11822,
+  // Crown of Summer
+  11824,
+  // Crown of Autumn
+  11826,
+  // Crown of Winter
+  11878,
+  // Artist's Hair
+  11882,
+  // Neurovision
+  11884,
+  // Royal Neurovision
+  12e3,
+  // Pineapple Warrior Charm
+  12014,
+  // Dal's Phasers
+  12016,
+  // Gwyn's Heirloom
+  12020,
+  // Jankom Pog's Multi-Mitt
+  12172,
+  // Ethereal Chains
+  12178,
+  // Parrot Dude!
+  12182,
+  // Pearl Tiki Crown
+  12188,
+  // Neptune's Crown
+  12190,
+  // Ultraviolet Charm
+  12240,
+  // Oceanaura
+  12296,
+  // Braided Golden Hair
+  12302,
+  // Lightning Horns
+  12304,
+  // Owls of Athena
+  12386,
+  // Mooncake Paper Lanterns
+  12656,
+  // Pontianak Pet
+  12834,
+  // Cape of Dunes
+  12836,
+  // Royal Cape of Dunes
+  12858,
+  // Black Ultraviolet Charm
+  12888,
+  // Boots of Deepest Winter
+  13076,
+  // Wujing's Beads
+  13168
+  // Pet Chorizo
+]);
+var DOUBLE_JUMP_IDS = /* @__PURE__ */ new Set([
+  156,
+  // Fairy Wings
+  362,
+  // Angel Wings
+  678,
+  // Crimson Eagle Wings
+  736,
+  // Play Wings
+  818,
+  // Ripper Wings
+  820,
+  // Seil's Magic Orbs
+  1166,
+  // Vampire Cape
+  1206,
+  // Devil Wings
+  1460,
+  // Golden Angel Wings
+  1550,
+  // Bubble Wings
+  1574,
+  // Parrot Wings
+  1672,
+  // Rainbow Wings
+  1674,
+  // Phoenix Wings
+  1738,
+  // Crystal Cape
+  1780,
+  // Legendbot-009
+  1784,
+  // Legendary Wings
+  1824,
+  // Autumn Wings
+  1934,
+  // Orbs Of Elixir
+  1936,
+  // Blazing Electro Wings
+  1938,
+  // Diamond Wings
+  1958,
+  // Genuine Rings
+  1970,
+  // Nightmare Devil Wings
+  2158,
+  // Super Cape - Red
+  2160,
+  // Super Cape - Blue
+  2162,
+  // Super Cape - Green
+  2164,
+  // Super Cape - Purple
+  2166,
+  // Super Cape - Black
+  2168,
+  // Super Cape - Gold
+  2254,
+  // Red Crystal Wings
+  2256,
+  // Blue Crystal Wings
+  2258,
+  // Green Crystal Wings
+  2260,
+  // Purple Crystal Wings
+  2262,
+  // Golden Crystal Wings
+  2264,
+  // Aqua Crystal Wings
+  2390,
+  // Teeny Angel Wings
+  2392,
+  // Teeny Golden Wings
+  2438,
+  // Super Cape - Emerald
+  2538,
+  // Super Cape - Pink
+  2642,
+  // Cape of Shadows
+  2722,
+  // Golden Aura
+  2778,
+  // Super Cape - Pineapple
+  3104,
+  // Flaming Cape
+  3112,
+  // Inside-Out Vampire Cape
+  3114,
+  // Black Aura
+  3120,
+  // Teeny Devil Wings
+  3134,
+  // Wolf Spirit
+  3144,
+  // Cosmic Cape
+  3442,
+  // Riding Bumblebee
+  3512,
+  // Saturday Wings
+  3858,
+  // Super Cape - Autumn
+  4184,
+  // Riding Raven
+  4412,
+  // Pegasus
+  4414,
+  // Golden Pegasus
+  4534,
+  // Golden Razor Wings
+  4628,
+  // Kudo's Carriage
+  4970,
+  // Pink Aura
+  4972,
+  // Blue Aura
+  4986,
+  // Inside-Out Devil Wings
+  5020,
+  // Prismatic Aura
+  5322,
+  // Zephyr Helm
+  5738,
+  // Rainbow Cape
+  5754,
+  // Draconic Wings
+  6004,
+  // Bear Spirit
+  6144,
+  // Aurora Wings
+  6284,
+  // Flaming Aura
+  6334,
+  // Danieldd's Chimera Wings
+  6694,
+  // Super Utility Wings
+  6758,
+  // Cloak of Hoveration
+  6818,
+  // Nightwings
+  6842,
+  // Raven Wings
+  7084,
+  // Ezio's Cape
+  7104,
+  // Dark Aurora Wings
+  7150,
+  // Stone Gargoyle Wings
+  7196,
+  // Monarch Butterfly Wings
+  7304,
+  // Tiger Spirit
+  7350,
+  // Turkey Wings
+  7414,
+  // Chipmunk
+  7416,
+  // Snow Leopard Tail
+  7502,
+  // OVEROLL's Wings
+  7582,
+  // Robotic MK.IV Wings
+  7648,
+  // Huginn and Muninn - Odin's Ravens
+  7670,
+  // Floating Speakers
+  7676,
+  // Dragon Warrior's Shield - Crimson
+  7678,
+  // Dragon Warrior's Shield - Purple
+  7680,
+  // Dragon Warrior's Shield - Silver
+  7682,
+  // Dragon Warrior's Shield - Diamond
+  7696,
+  // Draconic Rocket Parasol
+  7734,
+  // Legendary Dragon Knight's Wings
+  7834,
+  // Stained Glass Heartwings
+  7910,
+  // Eagle Spirit
+  7914,
+  // Condor Wings
+  7916,
+  // Airplane Wings
+  8024,
+  // Purple Aura
+  8026,
+  // Green Aura
+  8194,
+  // Glowy Cape
+  8286,
+  // Da Vinci Wings
+  8302,
+  // Steampunk Wings
+  8308,
+  // Reg4shi's Archangel Wings
+  8362,
+  // The Fly
+  8366,
+  // Extra Undead Arms
+  8552,
+  // Angel of Mercy's Wings
+  8576,
+  // Nightking's Cape - Dark Red
+  8578,
+  // Nightking's Cape - Dark Purple
+  8580,
+  // Nightking's Cape - Black
+  8582,
+  // Nightking's Cape - Midnight Blue
+  8586,
+  // EzCookOven's Robotic Tentacles
+  8588,
+  // Phoenix Hair
+  8862,
+  // Valkyrie's Wings
+  8914,
+  // Mosquito King's Wings
+  9006,
+  // Spirit of Anubis
+  9008,
+  // Cursed Spirit Pendant - Red
+  9010,
+  // Cursed Spirit Pendant - Green
+  9012,
+  // Cursed Spirit Pendant - Purple
+  9014,
+  // Cursed Spirit Pendant - Blue
+  9064,
+  // Rainbow Crystal Cloak
+  9094,
+  // Dark Doctor's Cloak
+  9114,
+  // Nightmare Teeny Devil Wings
+  9132,
+  // Turkey Hat
+  9172,
+  // Armored WinterBot - Back
+  9182,
+  // Frosty Wings
+  9184,
+  // Riding Eagle Owl
+  9190,
+  // Cloak of Fire and Ice
+  9210,
+  // Winter Radiance Aura
+  9320,
+  // Cloud Nine Cape
+  9322,
+  // Golden Sunset Cape
+  9344,
+  // Datemaster's Heart Locket
+  9352,
+  // Pink Teeny Angel Wings
+  9394,
+  // Balrog Wings
+  9408,
+  // Galaxy Aura
+  9422,
+  // Shamrock Wings
+  9428,
+  // Money Aura
+  9446,
+  // Egg Champion Cape
+  9610,
+  // Mexican Hot Sauce Rocket Pack
+  9656,
+  // Pineapple Coronet
+  9712,
+  // Crystal Aura
+  9730,
+  // Phoenix Scarf
+  9732,
+  // Greg, The Octopus
+  9760,
+  // Pegasus Wings
+  10054,
+  // Zodiac Wings
+  10148,
+  // Harvest Shawl
+  10168,
+  // Bling Wings
+  10170,
+  // Aqua Wings
+  10172,
+  // Neon Wings
+  10178,
+  // Growtopia Fried Wings
+  10180,
+  // Party Plume Wings
+  10182,
+  // Musical Wings
+  10184,
+  // Dark Sunset Cape
+  10186,
+  // Darkest Skull Parasol
+  10188,
+  // Ghoulish Wings
+  10210,
+  // Cloak of Equilibrium
+  10332,
+  // Matrix Aura
+  10338,
+  // Black Egg Champion Cape
+  10424,
+  // Rift Cape
+  10426,
+  // Mystic Snow Fox
+  10496,
+  // Crown of the Cosmos
+  10500,
+  // Snow Aura
+  10502,
+  // Neon Tree Aura
+  10534,
+  // Confetti Jump Pack
+  10576,
+  // Draconic Soul Aura
+  10632,
+  // Silk Scarf
+  10634,
+  // Golden Silk Scarf
+  10644,
+  // Golden Heart Aura
+  10666,
+  // Grow Air Balloon
+  10674,
+  // Crown of Seasons
+  10684,
+  // Mothman Wings
+  10754,
+  // Helping Hand
+  10806,
+  // Volcanic Cape
+  10892,
+  // Pineapple Aura
+  10952,
+  // Space Badger
+  10954,
+  // Space Mouse
+  10956,
+  // Space Dog
+  10958,
+  // Space Pig
+  10960,
+  // Space Rabbit
+  11016,
+  // Dark Assassin's Cape
+  11048,
+  // Summer Glider
+  11050,
+  // Ultraviolet Aura
+  11134,
+  // Samille's Soul Abductor
+  11142,
+  // Legendary Owl
+  11238,
+  // Fall Wings
+  11288,
+  // Wyvern Wings
+  11292,
+  // Lightning Umbrella
+  11294,
+  // Lucid Wings
+  11300,
+  // Neon Party Cape
+  11302,
+  // Sacred Scarf
+  11318,
+  // Possessing Scarf
+  11350,
+  // American Eagle Wings
+  11352,
+  // Star Aura
+  11356,
+  // Ameri-car
+  11378,
+  // Black Harvest Shawl
+  11462,
+  // Wings of Deepest Winter
+  11478,
+  // Rift Wings
+  11480,
+  // Northern Lights Aura
+  11504,
+  // Fairy Light Wings
+  11506,
+  // Mask of The Dragon
+  11508,
+  // Royal Mask of The Dragon
+  11544,
+  // Partydactyl Wings
+  11548,
+  // Guardian Armor
+  11552,
+  // Royal Guardian Armor
+  11554,
+  // Bodvar
+  11556,
+  // Val
+  11558,
+  // Sam Fisher
+  11560,
+  // Ezio
+  11588,
+  // Wings of Daidalos
+  11660,
+  // Shattered Wings
+  11662,
+  // Royal Shattered Wings
+  11664,
+  // Heartbreak Wings
+  11666,
+  // Golden Heartbreak Wings
+  11714,
+  // Shamrock Shields
+  11724,
+  // Cauldron of the Dagda
+  11766,
+  // Other Winged Angel
+  11790,
+  // Mechanical Dove Wings
+  11792,
+  // Easter Kite Aura
+  11818,
+  // Equinox Scarf
+  11870,
+  // Volcanic Wings
+  11906,
+  // Nocturnal Crown
+  11908,
+  // Royal Nocturnal Crown
+  11988,
+  // Pineapple Parasol
+  11992,
+  // Pineapple Wings
+  12174,
+  // Pearl Butterfly Wings
+  12186,
+  // Phoenix Feet
+  12224,
+  // Fire Chakram
+  12234,
+  // Atlantean Wings
+  12246,
+  // Staff of Gale
+  12248,
+  // Royal Staff of Gale
+  12304,
+  // Owls of Athena
+  12306,
+  // DIY Wings
+  12350,
+  // Personal Storm Cloud
+  12354,
+  // Garuda Wings
+  12376,
+  // Harvest Blossom Wings
+  12380,
+  // Astral Aura - Rabbit
+  12388,
+  // Astral Aura - Dragon
+  12390,
+  // Astral Aura - Lion
+  12406,
+  // Ghastly Wings
+  12414,
+  // Cursed Heartbreak Wings
+  12418,
+  // Shawl of Shadows
+  12432,
+  // Master Magic
+  12434,
+  // Royal Master Magic
+  12630,
+  // Kanji Scarf
+  12632,
+  // Starfire Crown
+  12634,
+  // EQ Aura
+  12638,
+  // Lightning Wings
+  12640,
+  // Minokawa Wings
+  12646,
+  // Altair
+  12648,
+  // Eivor
+  12650,
+  // Bayek
+  12842,
+  // Sgt. Stuffins' Wings
+  12848,
+  // Stars and Stripes Cape
+  12856,
+  // Noir American Eagle Wings
+  12864,
+  // Matrix Trenchcoat
+  12866,
+  // Street Dog
+  12868,
+  // Street Rabbit
+  12872,
+  // Red Panda Spirit
+  12874,
+  // Royal Red Panda Spirit
+  12892,
+  // Snow Monarch's Mantle
+  12996,
+  // Aluminiwings
+  13002,
+  // Sprinkle Jetpack
+  13022,
+  // Scarf of Chains
+  13024,
+  // Royal Scarf of Chains
+  13062,
+  // Firework Wings
+  13068,
+  // Draconic Crown
+  13106,
+  // Wings of Glory
+  13108,
+  // Royal Wings of Glory
+  13112,
+  // Dynamite Sparks
+  13140,
+  // Cotton Candy Cape
+  13162,
+  // Slopestyle Bike
+  13196,
+  // Rabbid Buddy
+  13228
+  // Archangel Wings
+]);
+var SPEEDY_IDS = /* @__PURE__ */ new Set([
+  496,
+  // Air Robinsons
+  592,
+  // Tiny Horsie
+  760,
+  // Pleiadian Star Ship
+  766,
+  // Little Red Corvette
+  1012,
+  // Stick Horse
+  1018,
+  // Tiny Appaloosa
+  1176,
+  // Aimster's Nightmare
+  1178,
+  // Skeletal Horsie
+  1272,
+  // Ambulance
+  1274,
+  // Edison Zoomster
+  1320,
+  // Riding Raptor
+  1496,
+  // Rushboard
+  1582,
+  // Pink Cadillac
+  1740,
+  // StarBoard
+  1758,
+  // Growboard
+  1780,
+  // Legendbot-009
+  1822,
+  // Golden Air Robinsons
+  1940,
+  // Diamond Rocket Shoes
+  1950,
+  // Growley Motorcycle
+  1978,
+  // Avenie Golden Horse
+  2048,
+  // Riding Comet
+  2064,
+  // Riding Meteor
+  2214,
+  // Ice Horse
+  2220,
+  // Tiny Tank
+  2230,
+  // Snowmobile
+  2384,
+  // Love Bug
+  2394,
+  // Golden Love Bug
+  2402,
+  // Irish Sport Horsie
+  2574,
+  // Ride'O'Gold
+  2868,
+  // White Fury
+  2878,
+  // FC Cleats
+  2880,
+  // Man U Cleats
+  2974,
+  // Red Bicycle
+  2984,
+  // Riding War Wolf
+  3068,
+  // Fire Truck
+  3074,
+  // Floating Leaf
+  3118,
+  // Riding Demon Dog
+  3230,
+  // Toboggan
+  3250,
+  // Riding Winter Wolf
+  3650,
+  // Riding Silkworm - Red
+  3652,
+  // Riding Silkworm - Green
+  3654,
+  // Riding Silkworm - Blue
+  3656,
+  // Riding Silkworm - Black
+  3658,
+  // Riding Silkworm - White
+  3660,
+  // Riding Silkworm - Grey
+  3662,
+  // Riding Silkworm - Purple
+  3664,
+  // Riding Silkworm - Yellow
+  3666,
+  // Riding Silkworm - Aqua
+  3696,
+  // Riding Phoenix
+  3788,
+  // Riding Broomstick
+  3894,
+  // Harvest Robinsons
+  4112,
+  // Blue Riding Raptor
+  4114,
+  // Brown Riding Raptor
+  4116,
+  // Red Riding Raptor
+  4118,
+  // Golden Riding Raptor
+  4152,
+  // Apocalypse Steed
+  4168,
+  // Demon Chariot
+  4262,
+  // Toy Train
+  4536,
+  // Cosmic Sky Horse
+  4662,
+  // Riding Fiesta Burrito
+  4714,
+  // Minecart
+  4948,
+  // Solar Chariot
+  4988,
+  // Speed Medallion
+  4990,
+  // Skateboard
+  5012,
+  // Flaming Horsie
+  5018,
+  // Riding Chicken
+  5210,
+  // El Pollo Diablo
+  5264,
+  // Neon Nerves
+  5648,
+  // USMom's Talaria
+  5650,
+  // Golden Talaria
+  6112,
+  // Pine-ch Buggy
+  6196,
+  // Guild Night Stallion
+  6294,
+  // Raptor Legs
+  6298,
+  // Smoog the Great Dragon
+  6376,
+  // MagTron LightCycle
+  6670,
+  // World Cup Cleats
+  6780,
+  // Dabstep Low Top Sneakers
+  6782,
+  // Horns of Infinity
+  6982,
+  // Wheelchair Speedster
+  6996,
+  // Fishing Dinghy
+  7100,
+  // Famine's Steed
+  7146,
+  // Mountain Dire Wolf
+  7296,
+  // Scavenger Wheels
+  7298,
+  // Scavenger Lord's Wheels
+  7348,
+  // Riding Turkey
+  7384,
+  // Go-Go-Growformer!
+  7432,
+  // Snow Husky Sledge
+  7642,
+  // Golden Battle Boar
+  7654,
+  // Thor's Chariot
+  7906,
+  // Guild Show Horse
+  7908,
+  // Guild Noble's Carriage
+  7918,
+  // Sturdy Crackfire Fighter
+  8016,
+  // Ultra Spring Flinger Shoes
+  8018,
+  // S.P.I.D.E.R. Legs
+  8288,
+  // Genie's Lamp - Green
+  8290,
+  // Genie's Lamp - Yellow
+  8292,
+  // Genie's Lamp - Red
+  8294,
+  // Genie's Lamp - Blue
+  8356,
+  // Riding Poop
+  8368,
+  // Riding 'roach
+  8488,
+  // Chaos Corruption
+  8494,
+  // Snakewolf
+  8512,
+  // Slippery Pineapple Squishers
+  8812,
+  // Riding Firefly
+  8830,
+  // Black Shoes
+  8834,
+  // TK69's Mystical Etherboard
+  8856,
+  // Samurai's Waraji
+  8898,
+  // Riding World Lock - Green Light
+  8900,
+  // Riding World Lock - Purple Light
+  8902,
+  // Riding World Lock - White Light
+  8904,
+  // Riding World Lock - Yellow Light
+  8948,
+  // Speeder
+  8952,
+  // Monster Truck
+  8956,
+  // Ghost Mobile
+  8958,
+  // Ghost Rider Bike
+  9034,
+  // Tarantula Legs
+  9036,
+  // Horns of Growganoth
+  9038,
+  // Supernaturally Speedy Black High Heels
+  9056,
+  // Demon Night Stallion
+  9134,
+  // Riding Bell
+  9136,
+  // Dueling Star Fighter - Rebel Raider
+  9138,
+  // Dueling Star Fighter - Imperial Enforcer
+  9174,
+  // Armored WinterBot - Feet
+  9208,
+  // Cute Riding Polar Bear
+  9252,
+  // Confetti Rocket Shoes
+  9344,
+  // Datemaster's Heart Locket
+  9360,
+  // Armored Riding Troll
+  9426,
+  // Dala Horsie
+  9442,
+  // Chick Tricycle
+  9452,
+  // Loafers
+  9608,
+  // Chip-and-Dip
+  9612,
+  // Mexican Pointy Boots
+  9648,
+  // Go Anywhere Surfboard
+  10044,
+  // Golem's Gift
+  10066,
+  // Riding Gorilla
+  10132,
+  // Yin Yang Pendant
+  10236,
+  // Zombie Horse
+  10248,
+  // Riding RV
+  10438,
+  // Snow Leopard Shawl
+  10492,
+  // Radical Rollers
+  10600,
+  // 2014 - Zodiac Year of the Horse
+  10602,
+  // 2015 - Zodiac Year of the Goat
+  10604,
+  // 2016 - Zodiac Year of the Monkey
+  10606,
+  // 2017 - Zodiac Year of the Rooster
+  10608,
+  // 2018 - Zodiac Year of the Dog
+  10610,
+  // 2019 - Zodiac Year of the Pig
+  10612,
+  // 2020 - Zodiac Year of the Rat
+  10614,
+  // 2021 - Zodiac Year of the Ox
+  10618,
+  // Perilous Pirate Ship
+  10678,
+  // Hooves of Cernunnos
+  10688,
+  // Cardboard Nessie
+  10720,
+  // Easter Jeepney
+  10728,
+  // Home Made Butter Lamb
+  10774,
+  // Field Medics Mecha Med Scarf
+  10878,
+  // Radical Rider
+  10890,
+  // Rocket Powered Pineapple Vacuum
+  10914,
+  // Pure Being of Light and Shadow
+  10990,
+  // Alien Recon Wagon
+  11006,
+  // Soul Scythe
+  11008,
+  // Phoenix Armor
+  11012,
+  // Neptune's Chariot
+  11028,
+  // Pegasus Shoes
+  11090,
+  // Mecha Med Shoes
+  11132,
+  // Noodle Bowl Hat
+  11142,
+  // Legendary Owl
+  11164,
+  // Rainbow Shoes
+  11168,
+  // Riding Cloud
+  11242,
+  // Harvest Hood-ini
+  11310,
+  // Trick or Treat Troll
+  11354,
+  // Turkey Float
+  11356,
+  // Ameri-car
+  11382,
+  // Black Radical Rollers
+  11456,
+  // Diamond Dog Sledge
+  11468,
+  // Candy Cane Cruiser
+  11532,
+  // Radical Stage
+  11620,
+  // 2022 - Zodiac Year of the Tiger
+  11628,
+  // Fireworks Feet
+  11700,
+  // Enchanted Broomstick
+  11708,
+  // Superstar Sneakers
+  11722,
+  // Rainbow Cloud Rider
+  11724,
+  // Cauldron of the Dagda
+  11784,
+  // Hip Hops
+  11828,
+  // Boots of Spring
+  11830,
+  // Boots of Summer
+  11832,
+  // Boots of Autumn
+  11834,
+  // Boots of Winter
+  11904,
+  // Golden Radical Rider
+  12042,
+  // The Runaway
+  12050,
+  // Class D Loader
+  12186,
+  // Phoenix Feet
+  12236,
+  // Robe of Tentacles
+  12268,
+  // Vacation Van
+  12298,
+  // Typewriter Hat
+  12344,
+  // Lightning Boots
+  12346,
+  // Royal Lightning Boots
+  12372,
+  // Noodle's Loaf Hat
+  12582,
+  // Garuda Boots
+  12630,
+  // Kanji Scarf
+  12632,
+  // Starfire Crown
+  12636,
+  // Super Speeder
+  12878,
+  // Snowboard
+  12882,
+  // Ursal Hood
+  12888,
+  // Boots of Deepest Winter
+  12890,
+  // Riding Gavle Goat
+  13058,
+  // Riding Nian
+  13064,
+  // 2023 - Zodiac Year of the Rabbit
+  13068,
+  // Draconic Crown
+  13104,
+  // Boosted Boots
+  13120,
+  // Centaur Legs
+  13162,
+  // Slopestyle Bike
+  13164
+  // Iroquois Helmet
+]);
+
+// server/playmods/equipment.ts
+var hasRaymanFist = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && s.itemId === 5480);
+var hasEnhancedDigging = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && PUNCH_DAMAGE_IDS.has(s.itemId)) || activeMods(a).some((m) => m.punchDamage);
+function equippedAbilities(a) {
+  const r = { damage: [], punchRange: [], buildRange: [], doubleJump: [], speedy: [] };
+  for (const slot of a.inventory) {
+    if (!slot.equipped || slot.count <= 0) continue;
+    const id = slot.itemId;
+    if (PUNCH_DAMAGE_IDS.has(id)) r.damage.push(id);
+    if (PUNCH_RANGE_IDS.has(id)) r.punchRange.push(id);
+    if (BUILD_RANGE_IDS.has(id)) r.buildRange.push(id);
+    if (DOUBLE_JUMP_IDS.has(id)) r.doubleJump.push(id);
+    if (SPEEDY_IDS.has(id)) r.speedy.push(id);
+  }
+  return r;
+}
+
 // server/progression/catalog.ts
 var groups = [
-  ["blocks_placed", [100, 1e3, 1e5], ["Builder", "Pro Builder", "Expert Builder"]],
-  ["trees_harvested", [100, 1e3, 1e5], ["Farmer", "Farmer In The Dell", "Farmasaurus Rex"]],
-  ["blocks_broken", [100, 1e3, 1e5], ["Demolition", "Wrecking Crew", "Annihilator"]],
-  ["gems_held", [1e3, 25e3, 5e5], ["Packrat", "Hoarder", "Filthy Rich"]],
-  ["gems_spent", [1e4, 1e5, 1e6], ["Big Spender", "Ol' Moneybags", "One MEEELlion"]],
-  ["items_trashed", [5e3, 5e4, 5e5], ["Trashman", "Givin' A Hoot", "OCD"]],
-  ["consumables_used", [100, 1e3, 25e3], ["Paint The Town Blue", "Splat!", "Mad Vandal"]],
-  ["backpack", [26, 86, 196], ["Embiggened", "Space Commander", "Master Of Space And Time"]],
-  ["level", [10, 50, 99], ["Ding!", "Long Time Fan", "Obsessive Growtopian"]],
-  ["other_players", [20, 50, 70], ["Social Butterfly", "Social Monarch", "Kevin Bacon"]]
+  ["blocks_placed", [100, 1e3, 1e5], ["Builder", "Pro Builder", "Expert Builder"], 0],
+  ["trees_harvested", [100, 1e3, 1e5], ["Farmer", "Farmer In The Dell", "Farmasaurus Rex"], 3],
+  ["blocks_broken", [100, 1e3, 1e5], ["Demolition", "Wrecking Crew", "Annihilator"], 6],
+  ["gems_held", [1e3, 25e3, 5e5], ["Packrat", "Hoarder", "Filthy Rich"], 9],
+  ["gems_spent", [1e4, 1e5, 1e6], ["Big Spender", "Ol' Moneybags", "One MEEELlion"], 12],
+  ["items_trashed", [5e3, 5e4, 5e5], ["Trashman", "Givin' A Hoot", "OCD"], 15],
+  ["consumables_used", [100, 1e3, 25e3], ["Paint The Town Blue", "Splat!", "Mad Vandal"], 18],
+  ["backpack", [26, 86, 196], ["Embiggened", "Space Commander", "Master Of Space And Time"], 21],
+  ["level", [10, 50, 99], ["Ding!", "Long Time Fan", "Obsessive Growtopian"], 27],
+  ["other_players", [20, 50, 70], ["Social Butterfly", "Social Monarch", "Kevin Bacon"], 31]
 ];
-var ACHIEVEMENTS = groups.flatMap(([metric, targets, titles]) => targets.map((target, i) => ({ id: `${metric}_${i + 1}`, metric, target, title: titles[i], division: ["Bronze", "Silver", "Gold"][i] })));
+var ACHIEVEMENTS = groups.flatMap(([metric, targets, titles, firstId]) => targets.map((target, i) => ({ id: `${metric}_${i + 1}`, metric, target, title: titles[i], division: ["Bronze", "Silver", "Gold"][i], classicId: firstId + i })));
 ACHIEVEMENTS.push(
-  { id: "lock_used", title: "Mine, All Mine", metric: "locks_used", target: 1, division: "Bronze" },
-  { id: "world_lock_used", title: "This Land Is My Land", metric: "world_locks_used", target: 1, division: "Gold" },
-  { id: "supporter", title: "Supporter", metric: "supporter", target: 1, division: "Gold" }
+  { id: "lock_used", title: "Mine, All Mine", metric: "locks_used", target: 1, division: "Bronze", classicId: 24 },
+  { id: "world_lock_used", title: "This Land Is My Land", metric: "world_locks_used", target: 1, division: "Gold", classicId: 26 },
+  { id: "supporter", title: "Supporter", metric: "supporter", target: 1, division: "Gold", classicId: 30 }
 );
+function classicAchievementIcon(classicId) {
+  if (!Number.isInteger(classicId) || classicId < 0 || classicId > 63) throw new RangeError("Unsupported classic achievement icon");
+  return classicId;
+}
+function lockedAchievementIcon(division) {
+  return { Bronze: 127, Silver: 126, Gold: 125, Ruby: 123, Emerald: 122, Sapphire: 121 }[division] ?? 124;
+}
+var CLASSIC_DESCRIPTIONS = {
+  "Builder": "Earned for placing 100 blocks of any type.",
+  "Pro Builder": "Earned for placing 1,000 blocks of any type.",
+  "Expert Builder": "Earned for placing 100,000 blocks of any type.",
+  "Farmer": "Earned for harvesting 100 trees.",
+  "Farmer In The Dell": "Earned for harvesting 1,000 trees.",
+  "Farmasaurus Rex": "Earned for harvesting 100,000 trees.",
+  "Demolition": "Earned for smashing 100 blocks.",
+  "Wrecking Crew": "Earned for smashing 1,000 blocks.",
+  "Annihilator": "Earned for smashing 100,000 blocks.",
+  "Packrat": "Earned for holding 1,000 gems.",
+  "Hoarder": "Earned for holding 25,000 gems.",
+  "Filthy Rich": "Earned for holding 500,000 gems.",
+  "Big Spender": "Earned for spending 10,000 gems.",
+  "Ol' Moneybags": "Earned for spending 100,000 gems.",
+  "One MEEELlion": "Earned for spending 1,000,000 gems.",
+  "Trashman": "Earned for disposing of 5,000 items.",
+  "Givin' A Hoot": "Earned for disposing of 50,000 items.",
+  "OCD": "Earned for disposing of 500,000 items.",
+  "Paint The Town Blue": "Earned for using 100 consumable items.",
+  "Splat!": "Earned for using 1,000 consumable items.",
+  "Mad Vandal": "Earned for using 25,000 consumable items.",
+  "Embiggened": "Earned for upgrading backpack size to 26 slots.",
+  "Space Commander": "Earned for upgrading backpack size to 86 slots.",
+  "Master Of Space And Time": "Earned for upgrading backpack size to 196 slots.",
+  "Ding!": "Earned for reaching Player Level 10.",
+  "Long Time Fan": "Earned for reaching player level 50.",
+  "Obsessive Growtopian": "Earned for reaching player level 99.",
+  "Social Butterfly": "Earned for being in a world with 20 other people.",
+  "Social Monarch": "Earned for being in a world with 50 other people.",
+  "Kevin Bacon": "Earned for being in a world with 70 other people.",
+  "Mine, All Mine": "Earned for using a lock.",
+  "This Land Is My Land": "Earned for using a World Lock or Signal Jammer.",
+  "Supporter": "Earned for supporting the makers of Growtopia."
+};
+var achievementTitle = (a) => `${a.title} (Classic)`;
+var achievementDescription = (a) => CLASSIC_DESCRIPTIONS[a.title] || "Achieved!";
+
+// server/ranks/definitions.ts
+var RANKS = {
+  player: { label: "Player", prefix: "`w", level: 0 },
+  moderator: { label: "Moderator", prefix: "`#@", level: 1 },
+  developer: { label: "Developer", prefix: "`6@", level: 2 }
+};
+function isRank(value) {
+  return value === "player" || value === "moderator" || value === "developer";
+}
+
+// server/ranks/index.ts
+function rankOf(account) {
+  return isRank(account.rank) ? account.rank : "player";
+}
+function hasPermission(account, permission) {
+  return RANKS[rankOf(account)].level >= (permission === "moderate" ? 1 : 2);
+}
+function canModerate(actor, target) {
+  return hasPermission(actor, "moderate") && RANKS[rankOf(actor)].level > RANKS[rankOf(target)].level;
+}
+function displayName(session) {
+  const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
+  const rank = rankOf(session.account);
+  let prefix = RANKS[rank].prefix;
+  if (rank === "player" && session.world) {
+    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
+    else if (session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
+  }
+  return `${prefix}${name}\`\``;
+}
+function protocolFlags(account) {
+  const level = RANKS[rankOf(account)].level;
+  return { mstate: level >= 1 ? 1 : 0, smstate: level >= 2 ? 1 : 0 };
+}
 
 // server/progression/model.ts
 var MAX_LEVEL = 125;
@@ -27615,13 +30144,19 @@ var notificationUntil = /* @__PURE__ */ new WeakMap();
 function recordProgress(ctx, s, metric, amount = 1, xp = 0) {
   const p = progression(s.account), beforeLevel = p.level, beforeSupporter = p.superSupporter;
   if (metric && Number.isSafeInteger(amount) && amount > 0 && amount <= 1e7) p.counters[metric] = Math.min(Number.MAX_SAFE_INTEGER, (p.counters[metric] || 0) + amount);
+  if (metric && Number.isSafeInteger(xp) && xp > 0) {
+    for (const mod of activeMods(s.account)) {
+      if (metric === "consumables_used" && mod.consumableXpMultiplier) xp *= mod.consumableXpMultiplier;
+      if (mod.xpMultiplier && mod.xpMultiplierChance && Math.random() < mod.xpMultiplierChance) xp *= mod.xpMultiplier;
+    }
+  }
   addXp(p, xp);
   const unlocked = evaluate(s.account, Math.max(0, (s.world?.peers.size ?? 1) - 1));
   ctx.dirty = true;
   ctx.savePlayersNow();
   for (const id of unlocked) {
     const a = ACHIEVEMENTS.find((a2) => a2.id === id);
-    const text = `\`2Earned achievement: \`w${a.title}\`\``;
+    const text = `${displayName(s)} earned the achievement \`w"${achievementTitle(a)}"\`\`!`;
     OnConsoleMessage(s, text);
     const delay = Math.max(0, (notificationUntil.get(s) || 0) - Date.now());
     notificationUntil.set(s, Date.now() + delay + 6e3);
@@ -27645,41 +30180,6 @@ function recordProgress(ctx, s, metric, amount = 1, xp = 0) {
     broadcastNameChanged(s);
     OnConsoleMessage(s, "`5Super Supporter unlocked at level 50!`` Extra skin colors and recycling are now available.");
   }
-}
-
-// server/ranks/definitions.ts
-var RANKS = {
-  player: { label: "Player", prefix: "`w", level: 0 },
-  moderator: { label: "Moderator", prefix: "`#@", level: 1 },
-  developer: { label: "Developer", prefix: "`6@", level: 2 }
-};
-function isRank(value) {
-  return value === "player" || value === "moderator" || value === "developer";
-}
-
-// server/ranks/index.ts
-function rankOf(account) {
-  return isRank(account.rank) ? account.rank : "player";
-}
-function hasPermission(account, permission) {
-  return RANKS[rankOf(account)].level >= (permission === "moderate" ? 1 : 2);
-}
-function canModerate(actor, target) {
-  return hasPermission(actor, "moderate") && RANKS[rankOf(actor)].level > RANKS[rankOf(target)].level;
-}
-function displayName(session) {
-  const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
-  const rank = rankOf(session.account);
-  let prefix = RANKS[rank].prefix;
-  if (rank === "player" && session.world) {
-    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
-    else if (session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
-  }
-  return `${prefix}${name}\`\``;
-}
-function protocolFlags(account) {
-  const level = RANKS[rankOf(account)].level;
-  return { mstate: level >= 1 ? 1 : 0, smstate: level >= 2 ? 1 : 0 };
 }
 
 // server/ranks/interaction.ts
@@ -27803,27 +30303,40 @@ function buildCharacterStateForSession(session, itemsDb) {
   let buildRangeTiles = 2;
   let punchRangeTiles = 2;
   let punchEffect = 0;
+  const abilities = equippedAbilities(session.account);
+  if (abilities.doubleJump.length) stateFlags |= CHAR_STATE_DOUBLE_JUMP;
+  if (session.account.inventory.some((v) => v.itemId === 3774 && v.equipped && v.count > 0)) stateFlags |= 1 << 4;
+  if (abilities.speedy.length) moveSpeed = 325;
+  const ringOfRange = session.account.inventory.some((i) => i.equipped && i.count > 0 && i.itemId === 11094);
+  const ringBonus = ringOfRange ? session.world?.ownerUserId === session.account.userId ? 3 : 1 : 0;
+  const rangeCap = ringBonus === 3 ? 3 : 2;
+  buildRangeTiles += Math.min(rangeCap, abilities.buildRange.length + ringBonus);
+  punchRangeTiles += Math.min(rangeCap, abilities.punchRange.length + ringBonus);
+  if (hasRaymanFist(session.account)) {
+    punchRangeTiles = Math.max(punchRangeTiles, 10);
+  }
+  for (const clothingType of [5, 8, 6, 4, 7, 0, 3, 1, 2, 9]) {
+    const slot = session.account.inventory.find((v) => {
+      if (!v.equipped || v.count <= 0) return false;
+      const item = itemsDb.get(v.itemId);
+      return !!item?.isClothing && (item.actionType === 107 ? 9 : item.clothingType) === clothingType && !!GTPS3_PUNCH_EFFECTS[v.itemId];
+    });
+    if (slot) {
+      punchEffect = GTPS3_PUNCH_EFFECTS[slot.itemId];
+      break;
+    }
+  }
   for (const inv of session.account.inventory) {
     if (!inv.equipped || inv.count <= 0) continue;
     const def = itemsDb.get(inv.itemId);
-    if (!def || !def.isClothing) continue;
-    const nm = def.name.toLowerCase();
-    if (def.id === 5480) {
-      punchRangeTiles = 10;
-      punchEffect = 4;
-    }
-    if (def.id === 17552) {
-      punchRangeTiles = 5;
-    }
-    if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
-    if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325;
-    if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250;
+    if (def?.isClothing && /parasol|umbrella/i.test(def.name) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250;
   }
   for (const mod of activeMods(session.account)) {
     stateFlags |= mod.flags;
     if (mod.gravity !== void 0) gravity = mod.gravity;
     if (mod.speed !== void 0) moveSpeed = mod.speed;
   }
+  if (activeMods(session.account).some((m) => m.id === "gtps3-infected")) moveSpeed = moveSpeed === 420 || moveSpeed === 310 || moveSpeed === 325 ? 190 : 150;
   if (c.noclip) stateFlags |= 1 << 0;
   if (c.speed) moveSpeed = 420;
   if (c.fly) {
@@ -28197,6 +30710,13 @@ var DialogBuilder = class {
     this.lines.push(`add_label_with_icon|${size}|${text}|${align}|${itemId}|`);
     return this;
   }
+  /** Native add_achieve uses game/amorkolg.rttex, not an inventory item. */
+  addAchievement(title, status, icon) {
+    if (!Number.isInteger(icon) || icon < 0 || icon > 127) throw new RangeError("Invalid achievement atlas index");
+    const clean = (value) => value.replace(/[|\r\n\0]/g, " ");
+    this.lines.push(`add_achieve|${clean(title)}|${clean(status)}|left|${icon}|`);
+    return this;
+  }
   addTextbox(text, align = "left") {
     this.lines.push(`add_textbox|${text}|${align}|`);
     return this;
@@ -28327,112 +30847,6 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
-
-// server/playmods/service.ts
-function bubble(s, text, viewers = [s]) {
-  const packet = makeVariantPacket(["OnTalkBubble", { type: "i32", value: s.netId }, text, { type: "i32", value: 0 }, { type: "i32", value: 0 }]);
-  for (const viewer of viewers) viewer.peer.sendPacket(0, packet, true);
-}
-function consumableTarget(s, tx, ty) {
-  return [...s.world?.peers || []].filter(
-    (p) => tx * 32 < p.x + 20 && tx * 32 + 32 > p.x && ty * 32 < p.y + 30 && ty * 32 + 32 > p.y
-  ).sort((a, b) => Math.hypot(a.x + 10 - tx * 32 - 16, a.y + 15 - ty * 32 - 16) - Math.hypot(b.x + 10 - tx * 32 - 16, b.y + 15 - ty * 32 - 16) || a.netId - b.netId)[0];
-}
-function useConsumable(ctx, s, id, tx, ty) {
-  const def = ctx.itemsDb.get(id);
-  if (def?.actionType !== 8) return false;
-  const world = s.world;
-  if (!world || !Number.isInteger(tx) || !Number.isInteger(ty) || tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return true;
-  const mod = MODS.find((m) => m.item === id), food = SIMPLE_FOODS.find((m) => m.item === id);
-  if (!mod && !food) {
-    OnConsoleMessage(s, "This consumable is not implemented yet. Your item was not consumed.");
-    return true;
-  }
-  const target = consumableTarget(s, tx, ty), throwable = mod?.action === "throw";
-  if (!target && !throwable) {
-    bubble(s, "Must be used on a person.");
-    return true;
-  }
-  if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
-  const now = Date.now();
-  if (mod && target && mod.seconds > 0) {
-    target.account.playmods = (target.account.playmods || []).filter((m) => m.expiresAt > now);
-    if (!target.account.playmods.some((m) => m.id === mod.id)) {
-      target.account.playmods.push({ id: mod.id, expiresAt: now + mod.seconds * 1e3 });
-      OnConsoleMessage(target, `${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${mod.seconds}s\`\` left)`);
-      ctx.sendCharacterState(target);
-      applySkinColorUpdate(target, false);
-    }
-  }
-  const personAnimation = !!food || !!target && (mod?.action === "" || mod?.action === "drop");
-  const itemEffect = buildTankPacket({
-    type: 19,
-    netId: 0,
-    count2: personAnimation ? 5 : 4,
-    targetNetId: personAnimation ? target.netId : s.netId,
-    punchX: id,
-    punchY: s.netId,
-    x: personAnimation ? s.x + 10 : tx * 32 + 16,
-    y: personAnimation ? s.y + 16 : ty * 32 + 16
-  });
-  const sound = food ? "eat.wav" : mod?.sound;
-  const text = food?.text || mod?.text;
-  if (text && target) bubble(target, text, world.peers);
-  for (const viewer of world.peers) {
-    viewer.peer.sendPacket(0, itemEffect, true);
-    if (sound && target) viewer.peer.sendPacket(0, makeVariantPacket(["OnPlayPositioned", `audio/${sound}`], target.netId), true);
-    if (throwable && mod.effect) viewer.peer.sendPacket(0, makeParticleEffectPacket(mod.effect, tx * 32 + 16, ty * 32 + 16), true);
-  }
-  recordProgress(ctx, s, "consumables_used", 1, 1);
-  return true;
-}
-function expireMods(ctx) {
-  const now = Date.now();
-  for (const s of ctx.sessions) {
-    const expired = (s.account.playmods || []).filter((m) => m.expiresAt <= now);
-    if (!expired.length) continue;
-    s.account.playmods = s.account.playmods.filter((m) => m.expiresAt > now);
-    ctx.dirty = true;
-    for (const m of expired) {
-      const def = MODS.find((d) => d.id === m.id);
-      if (def?.onRemove) OnConsoleMessage(s, def.onRemove);
-    }
-    ctx.sendCharacterState(s);
-    applySkinColorUpdate(s, false);
-  }
-}
-
-// server/ranks/service.ts
-var import_node_fs2 = __toESM(require("node:fs"));
-var import_node_path2 = __toESM(require("node:path"));
-var RankService = class {
-  assignments = /* @__PURE__ */ new Map();
-  constructor(root) {
-    const file = import_node_path2.default.join(root, "data_store", "ranks.json");
-    if (import_node_fs2.default.existsSync(file)) {
-      const config = JSON.parse(import_node_fs2.default.readFileSync(file, "utf8"));
-      if (config.schemaVersion !== 1 || !config.assignments || typeof config.assignments !== "object" || Array.isArray(config.assignments)) throw new Error("Invalid ranks.json");
-      for (const [key, rank] of Object.entries(config.assignments)) {
-        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)) || !isRank(rank)) throw new Error("Invalid rank assignment");
-        this.assignments.set(Number(key), rank);
-      }
-    }
-    for (const [variable, rank] of [["MODERATOR_USER_IDS", "moderator"], ["ADMIN_USER_IDS", "developer"], ["DEVELOPER_USER_IDS", "developer"]]) {
-      for (const key of (process.env[variable] || "").split(",").map((s) => s.trim()).filter(Boolean)) {
-        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key))) throw new Error(`Invalid ${variable}`);
-        this.assignments.set(Number(key), rank);
-      }
-    }
-  }
-  apply(account) {
-    account.rank = account.isGuest ? "player" : this.assignments.get(account.userId) || "player";
-    account.moderator = account.rank !== "player";
-  }
-};
-
-// server/database/context.ts
-var import_node_fs3 = __toESM(require("node:fs"));
-var import_node_path3 = __toESM(require("node:path"));
 
 // server/database/world.ts
 function generateFreshWorld(name) {
@@ -28663,7 +31077,401 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
   }
 }
 
+// server/playmods/consume-audio.ts
+var GTPS3_SOUNDS = {
+  126: "audio/spray.wav",
+  196: "audio/spray.wav",
+  274: "audio/freeze.wav",
+  276: "audio/eat.wav",
+  278: "audio/eat.wav",
+  338: "audio/balloon.wav",
+  368: "audio/eat.wav",
+  384: "audio/choir.wav",
+  386: "audio/eat.wav",
+  388: "audio/spray.wav",
+  408: "audio/already_used.wav",
+  540: "audio/eat.wav",
+  614: "audio/spray.wav",
+  616: "audio/eat.wav",
+  618: "audio/eat.wav",
+  676: "audio/spray.wav",
+  712: "audio/spray.wav",
+  752: "audio/eat.wav",
+  868: "audio/eat.wav",
+  950: "audio/eat.wav",
+  958: "audio/eat.wav",
+  960: "audio/spray.wav",
+  964: "audio/eat.wav",
+  966: "audio/eat.wav",
+  968: "audio/eat.wav",
+  1058: "audio/eat.wav",
+  1094: "audio/eat.wav",
+  1096: "audio/eat.wav",
+  1098: "audio/eat.wav",
+  1208: "audio/eat.wav",
+  1368: "audio/freeze.wav",
+  1374: "audio/eat.wav",
+  1474: "audio/spray.wav",
+  1580: "audio/eat.wav",
+  1602: "audio/eat.wav",
+  1634: "audio/spray.wav",
+  1772: "audio/balloon.wav",
+  1964: "audio/spray.wav",
+  1988: "audio/spray.wav",
+  2002: "audio/spray.wav",
+  2734: "audio/eat.wav",
+  3240: "audio/eat.wav",
+  3404: "audio/eat.wav",
+  3406: "audio/eat.wav",
+  3428: "audio/eat.wav",
+  3536: "audio/eat.wav",
+  3546: "audio/eat.wav",
+  3600: "audio/eat.wav",
+  3622: "audio/eat.wav",
+  3728: "audio/spray.wav",
+  3816: "audio/eat.wav",
+  3836: "audio/eat.wav",
+  4232: "audio/eat.wav",
+  4256: "audio/eat.wav",
+  4324: "audio/spray.wav",
+  4378: "audio/eat.wav",
+  4410: "audio/eat.wav",
+  4422: "audio/eat.wav",
+  4594: "audio/spray.wav",
+  4596: "audio/spray.wav",
+  4602: "audio/spray.wav",
+  4604: "audio/spray.wav",
+  4668: "audio/eat.wav",
+  4672: "audio/spray.wav",
+  4752: "audio/eat.wav",
+  4764: "audio/eat.wav",
+  4766: "audio/spray.wav",
+  4982: "audio/eat.wav",
+  4984: "audio/eat.wav",
+  5114: "audio/spray.wav",
+  5262: "audio/spray.wav",
+  5406: "audio/spray.wav",
+  5408: "audio/spray.wav",
+  5410: "audio/spray.wav",
+  5412: "audio/spray.wav",
+  5452: "audio/spray.wav",
+  6046: "audio/spray.wav",
+  6048: "audio/spray.wav",
+  6050: "audio/spray.wav",
+  6314: "audio/freeze.wav",
+  6908: "audio/spray.wav",
+  6910: "audio/spray.wav",
+  6912: "audio/spray.wav",
+  7052: "audio/eat.wav",
+  8384: "audio/spray.wav",
+  8500: "audio/eat.wav",
+  8520: "audio/eat.wav",
+  8538: "audio/spray.wav",
+  8540: "audio/spray.wav",
+  8542: "audio/spray.wav",
+  8544: "audio/spray.wav",
+  8546: "audio/spray.wav",
+  8548: "audio/spray.wav",
+  10628: "audio/eat.wav",
+  10988: "audio/eat.wav",
+  11068: "audio/eat.wav",
+  12152: "audio/spray.wav"
+};
+function consumableAudio(itemId) {
+  return GTPS3_SOUNDS[itemId];
+}
+
+// server/playmods/gtps3-recipes.ts
+var GTPS3_CONSUME_RECIPES = {
+  2410: [200, 2408],
+  4490: [200, 4455],
+  2036: [200, 2037],
+  1152: [10, 1150],
+  1212: [25, 1190],
+  2034: [200, 2035],
+  1234: [4, 1206],
+  3110: [25, 1166],
+  5636: [10, 5526],
+  6330: [100, 6332],
+  8936: [200, 8938],
+  3242: [100, 3244],
+  3186: [100, 3190],
+  5282: [100, 5284],
+  4172: [100, 4174],
+  4426: [200, 4428],
+  2412: [4, 528],
+  2e3: [20, 1998],
+  7590: [100, 7592],
+  11656: [100, 11658],
+  2290: [100, 2282],
+  3122: [16, 3120],
+  3762: [100, 3744],
+  8534: [100, 8536],
+  5256: [100, 5224]
+};
+
+// server/playmods/service.ts
+function bubble(s, text, viewers = [s]) {
+  const packet = makeVariantPacket(["OnTalkBubble", { type: "i32", value: s.netId }, text, { type: "i32", value: 0 }, { type: "i32", value: 0 }]);
+  for (const viewer of viewers) viewer.peer.sendPacket(0, packet, true);
+}
+function consumableTarget(s, tx, ty) {
+  return [...s.world?.peers || []].filter(
+    (p) => tx * 32 < p.x + 20 && tx * 32 + 32 > p.x && ty * 32 < p.y + 30 && ty * 32 + 32 > p.y
+  ).sort((a, b) => Math.hypot(a.x + 10 - tx * 32 - 16, a.y + 15 - ty * 32 - 16) - Math.hypot(b.x + 10 - tx * 32 - 16, b.y + 15 - ty * 32 - 16) || a.netId - b.netId)[0];
+}
+var POPCORN_PRIZES = [4194, 4206, 4202, 4200, 4220, 4214, 4218, 4216, 4204, 4198];
+function gtps3PlaymodTime(seconds) {
+  const hour = Math.floor(seconds / 3600), minute = Math.floor(seconds % 3600 / 60), second = seconds % 60;
+  if (!hour && !minute && !second) return "Removing now ";
+  return (hour > 0 ? `${hour} hours` : "") + (minute > 0 ? `${hour > 0 ? ", " : ""}${minute} mins` : "") + (second > 0 ? `${minute > 0 ? ", " : ""}${second} secs ` : " ");
+}
+function useConsumable(ctx, s, id, tx, ty) {
+  const def = ctx.itemsDb.get(id);
+  if (def?.actionType !== 8) return false;
+  const world = s.world;
+  if (!world || !Number.isInteger(tx) || !Number.isInteger(ty) || tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return true;
+  const mod = MODS.find((m) => m.item === id), food = SIMPLE_FOODS.find((m) => m.item === id);
+  const spraySeconds = { 228: 3600, 10672: 3600, 1062: 30 * 86400, 1778: 86400, 5764: 259200 };
+  if (Object.prototype.hasOwnProperty.call(spraySeconds, id)) {
+    const tile = world.tiles[ty * world.width + tx], tree = ctx.itemsDb.get(tile.fg), now2 = Date.now();
+    if (!tree?.isSeed || tile.extra?.kind !== "seed") {
+      bubble(s, "Use this on a growing tree to speed it's growth.");
+      return true;
+    }
+    if (!canModifyWorldTile(s, world, tile)) return true;
+    const growMs = Math.max(1, tree.growTime || 15) * 1e3;
+    if (now2 - tile.extra.plantedAtMs >= growMs) {
+      bubble(s, "This tree has already bloomed, don't waste your spray on it!");
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
+    const projected = tile.extra.plantedAtMs - spraySeconds[id] * 1e3;
+    tile.extra.plantedAtMs = projected;
+    ctx.dirty = true;
+    const name = ctx.itemsDb.get(tile.fg - 1)?.name || tree.name.replace(/ Seed$/, "");
+    const n = spraySeconds[id], unit = n < 86400 ? `${n / 3600}\`\` hours` : `${n / 86400}\`\` days`;
+    const label = now2 - projected <= growMs ? `${name} Tree aged \`$${unit}` : `${name} Tree grew to full size!`;
+    s.peer.sendPacket(0, makeVariantPacket(["OnTextOverlay", label], -1), true);
+    s.peer.sendPacket(0, makeVariantPacket(["OnPlayPositioned", "audio/spray.wav"], s.netId), true);
+    const update = makeTileUpdatePacket(tx, ty, tile, now2);
+    for (const viewer of world.peers) viewer.peer.sendPacket(0, update, true);
+    const remaining = growMs - (now2 - tile.extra.plantedAtMs), expectedStart = tile.extra.plantedAtMs, seedId = tile.fg;
+    if (remaining > 0 && remaining <= 3e5) {
+      const timer = setTimeout(() => {
+        if (tile.fg !== seedId || tile.extra?.kind !== "seed" || tile.extra.plantedAtMs !== expectedStart) return;
+        const matured = makeTileUpdatePacket(tx, ty, tile, Date.now());
+        for (const viewer of world.peers) viewer.peer.sendPacket(0, matured, true);
+      }, remaining + 200);
+      timer.unref();
+    }
+    recordProgress(ctx, s, "consumables_used", 1, 1);
+    return true;
+  }
+  const recipe = GTPS3_CONSUME_RECIPES[id];
+  if (recipe) {
+    const [need, output] = recipe, slot = s.account.inventory.find((v) => v.itemId === id), dst = s.account.inventory.find((v) => v.itemId === output), prize = ctx.itemsDb.get(output);
+    if (!slot || slot.count < need) {
+      bubble(s, `\`4You'll need more ${def.name} than that!\`\``);
+      return true;
+    }
+    if (!prize || (dst ? dst.count >= 200 : s.account.inventory.length >= s.account.backpackSize)) {
+      bubble(s, "You don't have enough inventory space!");
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(s, id, need, true, false)) return true;
+    if (ctx.giveInventoryItem(s, output, 1, true) !== 1) throw new Error("Recipe output invariant failed");
+    bubble(s, `\`5${def.name} combine to create a\`\` \`2${prize.name}\`\`\`5!\`\``);
+    recordProgress(ctx, s, "consumables_used", 1, 1);
+    return true;
+  }
+  if (id === 1828 || id === 11286 || id === 3870) {
+    if (s.account.inventory.some((slot) => slot.itemId === id && slot.count > 0))
+      bubble(s, id === 3870 ? "That's like a hundred years old. No." : "Ew, it has raisins! I'm not eating that.");
+    return true;
+  }
+  if (id === 1066 || id === 1826) {
+    if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
+    const particle = makeVariantPacket(["OnParticleEffect", { type: "i32", value: id === 1066 ? 50 : 92 }, { type: "vec2", x: tx * 32 + 16, y: ty * 32 + 16 }]);
+    for (const viewer of world.peers) viewer.peer.sendPacket(0, particle, true);
+    recordProgress(ctx, s, "consumables_used", 1, 1);
+    return true;
+  }
+  if (id === 3400) {
+    const tile = world.tiles[ty * world.width + tx];
+    if (!s.account.inventory.some((slot) => slot.itemId === id && slot.count > 0)) return true;
+    if (tile.fg !== 10) {
+      bubble(s, "`4This potion is clearly labeled for use only on rocks.``");
+      return true;
+    }
+    if (!canModifyWorldTile(s, world, tile)) return true;
+    if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
+    tile.fg = 392;
+    tile.extra = void 0;
+    tile.damage = 0;
+    ctx.dirty = true;
+    const particle = makeVariantPacket(["OnParticleEffect", { type: "i32", value: 44 }, { type: "vec2", x: tx * 32 + 16, y: ty * 32 + 16 }]);
+    const sfx = makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|play_sfx\nfile|audio/terraform.wav\ndelayMS|0");
+    const update = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const viewer of world.peers) {
+      viewer.peer.sendPacket(0, particle, true);
+      viewer.peer.sendPacket(0, sfx, true);
+      viewer.peer.sendPacket(0, update, true);
+    }
+    recordProgress(ctx, s, "consumables_used", 1, 1);
+    return true;
+  }
+  const popcorn = id === 4256, xpPotion = id === 1488, coin = id === 752;
+  if (!mod && !food && !popcorn && !xpPotion && !coin) {
+    OnConsoleMessage(s, "This consumable is not implemented yet. Your item was not consumed.");
+    return true;
+  }
+  const target = consumableTarget(s, tx, ty), throwable = mod?.action === "throw";
+  if (!target && !throwable) {
+    bubble(s, "Must be used on a person.");
+    return true;
+  }
+  if (xpPotion && target !== s) {
+    bubble(s, "This potion can only be used on yourself.");
+    return true;
+  }
+  if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
+  const now = Date.now();
+  if (mod && target && mod.seconds > 0) {
+    expireSessionMods(ctx, target, now);
+    target.account.playmods ??= [];
+    if (id === 782) {
+      const cured = /* @__PURE__ */ new Set(["gtps3-infected", "gtps3-49", "gtps3-48", "gtps3-71", "gtps3-72", "gtps3-73", "gtps3-4", "envious", "blue", "gtps3-19", "halo", "gtps3-42"]);
+      target.account.playmods = target.account.playmods.filter((m) => !cured.has(m.id));
+    }
+    if (id === 764 && activeMods(target.account).some((m) => m.id === "gtps3-antidote")) {
+      ctx.sendCharacterState(target);
+      applySkinColorUpdate(target, false);
+    } else {
+      if (mod.group) {
+        const equivalentIds = new Set(MODS.filter((d) => d.group === mod.group).map((d) => d.id));
+        target.account.playmods = target.account.playmods.filter((m) => !equivalentIds.has(m.id));
+      }
+      if (!target.account.playmods.some((m) => m.id === mod.id)) {
+        target.account.playmods.push({ id: mod.id, expiresAt: now + mod.seconds * 1e3 });
+        OnConsoleMessage(target, `${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+        ctx.sendCharacterState(target);
+        applySkinColorUpdate(target, false);
+      } else if (id === 782) {
+        ctx.sendCharacterState(target);
+        applySkinColorUpdate(target, false);
+      }
+    }
+  }
+  if (id === 782 && target) {
+    bubble(s, `\`w[${target.account.name} \`wfeels strangely better!]`, world.peers);
+    for (const viewer of world.peers) OnConsoleMessage(viewer, `\`7[\`w${target.account.name} \`ofeels strangely better!\`7]`);
+  }
+  const personAnimation = popcorn || xpPotion || coin || !!food || !!target && (mod?.action === "" || mod?.action === "drop");
+  const itemEffect = buildTankPacket({
+    type: 19,
+    netId: 0,
+    count2: personAnimation ? 5 : 4,
+    targetNetId: personAnimation ? target.netId : s.netId,
+    punchX: id,
+    punchY: s.netId,
+    x: personAnimation ? s.x + 10 : tx * 32 + 16,
+    y: personAnimation ? s.y + 16 : ty * 32 + 16
+  });
+  const sound = consumableAudio(id);
+  const text = coin ? Math.random() < 0.5 ? "HEADS!" : "TAILS!" : food?.text || mod?.text;
+  if (text && target) bubble(target, text, world.peers);
+  for (const viewer of world.peers) {
+    viewer.peer.sendPacket(0, itemEffect, true);
+    if (popcorn && target) viewer.peer.sendPacket(0, makeVariantPacket(["OnAction", "/popcorn"], target.netId), true);
+    if (sound && target) viewer.peer.sendPacket(0, makeVariantPacket(["OnPlayPositioned", sound], target.netId), true);
+    if (throwable && mod.effect) viewer.peer.sendPacket(0, makeParticleEffectPacket(mod.effect, tx * 32 + 16, ty * 32 + 16), true);
+  }
+  if (popcorn && target && Math.random() < 0.02) {
+    const prize = POPCORN_PRIZES[Math.floor(Math.random() * POPCORN_PRIZES.length)];
+    if (ctx.giveInventoryItem(target, prize, 1, true) < 1) {
+      spawnOrMergeWorldDrop(world, prize, 1, target.x + 10, target.y + 16, -1);
+      ctx.dirty = true;
+    }
+    OnConsoleMessage(target, `You found ${ctx.itemsDb.get(prize)?.name || "a prize"} in the popcorn!`);
+  }
+  if (xpPotion) recordProgress(ctx, s, void 0, 0, 1e4);
+  recordProgress(ctx, s, "consumables_used", 1, 1);
+  return true;
+}
+function expireSessionMods(ctx, s, now) {
+  const expired = (s.account.playmods || []).filter((m) => m.expiresAt <= now);
+  if (!expired.length) return;
+  s.account.playmods = s.account.playmods.filter((m) => m.expiresAt > now);
+  ctx.dirty = true;
+  for (const m of expired) {
+    const def = MODS.find((d) => d.id === m.id);
+    if (def) {
+      s.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|play_sfx\nfile|audio/dialog_confirm.wav\ndelayMS|0"), true);
+      OnConsoleMessage(s, `${def.onRemove} (\`$${def.title}\`\` mod removed)`);
+    }
+  }
+  ctx.sendCharacterState(s);
+  applySkinColorUpdate(s, false);
+}
+function expireMods(ctx) {
+  const now = Date.now();
+  for (const s of ctx.sessions) expireSessionMods(ctx, s, now);
+}
+function infectByPunch(ctx, attacker, tx, ty) {
+  const world = attacker.world, now = Date.now();
+  if (!world || !activeMods(attacker.account).some((m) => m.id === "gtps3-infected")) return;
+  if (attacker.lastInfectPunchAt && now - attacker.lastInfectPunchAt < 1500) return;
+  attacker.lastInfectPunchAt = now;
+  const target = [...world.peers].filter((p) => p !== attacker && tx * 32 < p.x + 20 && tx * 32 + 32 > p.x && ty * 32 < p.y + 30 && ty * 32 + 32 > p.y).sort((a, b) => a.netId - b.netId)[0];
+  if (!target || activeMods(target.account).some((m) => m.id === "gtps3-infected")) return;
+  if (activeMods(target.account).some((m) => m.id === "gtps3-antidote")) {
+    const packet = buildTankPacket({ type: 19, netId: -1, count2: 5, targetNetId: target.netId, punchX: 782, x: target.x + 10, y: target.y + 16 });
+    for (const viewer of world.peers) viewer.peer.sendPacket(0, packet, true);
+    return;
+  }
+  expireSessionMods(ctx, target, now);
+  target.account.playmods ??= [];
+  target.account.playmods.push({ id: "gtps3-infected", expiresAt: now + 6e4 });
+  OnConsoleMessage(target, "You've been infected by the g-Virus. Punch others to infect them, too! Braiiiins... (`$Infected!`` mod added, `$1 mins`` left)");
+  target.peer.sendPacket(0, makeVariantPacket(["OnAddNotification", "interface/large/infected.rttex", `\`4You were infected by ${attacker.account.name}!`]), true);
+  ctx.dirty = true;
+  ctx.savePlayersNow();
+  ctx.sendCharacterState(target);
+  applySkinColorUpdate(target, false);
+}
+
+// server/ranks/service.ts
+var import_node_fs2 = __toESM(require("node:fs"));
+var import_node_path2 = __toESM(require("node:path"));
+var RankService = class {
+  assignments = /* @__PURE__ */ new Map();
+  constructor(root) {
+    const file = import_node_path2.default.join(root, "data_store", "ranks.json");
+    if (import_node_fs2.default.existsSync(file)) {
+      const config = JSON.parse(import_node_fs2.default.readFileSync(file, "utf8"));
+      if (config.schemaVersion !== 1 || !config.assignments || typeof config.assignments !== "object" || Array.isArray(config.assignments)) throw new Error("Invalid ranks.json");
+      for (const [key, rank] of Object.entries(config.assignments)) {
+        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)) || !isRank(rank)) throw new Error("Invalid rank assignment");
+        this.assignments.set(Number(key), rank);
+      }
+    }
+    for (const [variable, rank] of [["MODERATOR_USER_IDS", "moderator"], ["ADMIN_USER_IDS", "developer"], ["DEVELOPER_USER_IDS", "developer"]]) {
+      for (const key of (process.env[variable] || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key))) throw new Error(`Invalid ${variable}`);
+        this.assignments.set(Number(key), rank);
+      }
+    }
+  }
+  apply(account) {
+    account.rank = account.isGuest ? "player" : this.assignments.get(account.userId) || "player";
+    account.moderator = account.rank !== "player";
+  }
+};
+
 // server/database/context.ts
+var import_node_fs3 = __toESM(require("node:fs"));
+var import_node_path3 = __toESM(require("node:path"));
 var ServerContext = class {
   itemsDb;
   rootDir;
@@ -29906,9 +32714,16 @@ function handleGrowIdApplyReturn(ctx, session, kv) {
 // server/progression/commands.ts
 function showAchievements(s) {
   const p = progression(s.account);
-  const dlg = new DialogBuilder().addLabelWithIcon("big", "Achievements", 982).addSmalltext(`${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length} implemented goals earned`);
-  for (const a of ACHIEVEMENTS) dlg.addSmalltext(`${p.earned[a.id] ? "`2Earned" : "`o" + Math.min(a.target, p.counters[a.metric] || 0) + "/" + a.target} - ${a.title} (${a.division})\`\``);
-  OnDialogRequest(s, dlg.addQuickExit().endDialog("achievements", "Close", ""));
+  const dlg = new DialogBuilder().setDefaultColor("`o");
+  const order = { Bronze: 0, Silver: 1, Gold: 2 };
+  const rows = [...ACHIEVEMENTS].sort((a, b) => (order[a.division] ?? 99) - (order[b.division] ?? 99) || a.classicId - b.classicId);
+  for (const a of rows) {
+    const earned = !!p.earned[a.id];
+    const progress = Math.max(0, Math.min(a.target, p.counters[a.metric] || 0));
+    const status = earned ? achievementDescription(a) : a.target === 1 ? "Not achieved!" : `Progress: ${Math.floor(progress / a.target * 100)}%`;
+    dlg.addAchievement(achievementTitle(a), status, earned ? classicAchievementIcon(a.classicId) : lockedAchievementIcon(a.division));
+  }
+  OnDialogRequest(s, dlg.addQuickExit().endDialog("achievements", "Back", ""));
 }
 function handleProgressionCommand(ctx, s, cmd, parts) {
   if (cmd === "hidestatus") {
@@ -29972,13 +32787,23 @@ function handleWrenchPlayer(ctx, session, kv) {
   }
   if (target === session) {
     const acct = session.account, p = progression(acct);
-    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").customBreak().addSpacer("small").customSpacing(0, 0);
+    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").raw(`add_custom_label|(${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`).customBreak().addSpacer("small").customSpacing(0, 0);
     const mods = activeMods(acct);
-    if (mods.length) dlg2.addTextbox("`wActive effects:``");
+    const equipmentEffects = [];
+    const abilities = equippedAbilities(acct);
+    if (abilities.damage.length) equipmentEffects.push({ title: "Enhanced Digging", icon: abilities.damage[0] });
+    if (abilities.punchRange.length) equipmentEffects.push({ title: "Punch Range", icon: abilities.punchRange[0] });
+    if (abilities.buildRange.length) equipmentEffects.push({ title: "Build Range", icon: abilities.buildRange[0] });
+    if (abilities.doubleJump.length) equipmentEffects.push({ title: "Double Jump", icon: abilities.doubleJump[0] });
+    if (abilities.speedy.length) equipmentEffects.push({ title: "Speedy", icon: abilities.speedy[0] });
+    if (acct.inventory.some((i) => i.equipped && i.count > 0 && i.itemId === 11094)) equipmentEffects.push({ title: "Extended Punch and Build Range", icon: 11094 });
+    if (hasRaymanFist(acct)) equipmentEffects.push({ title: "Rayman's Fist", icon: 5480 });
+    if (mods.length || equipmentEffects.length) dlg2.addTextbox("`wActive effects:``");
     for (const mod of mods) {
       const remaining = Math.max(0, Math.ceil((acct.playmods.find((m) => m.id === mod.id).expiresAt - Date.now()) / 1e3));
-      dlg2.addLabelWithIcon("small", `${mod.title}\`\` (\`w${remaining}s\`\` left)`, mod.icon);
+      dlg2.addLabelWithIcon("small", `\`w${mod.title}\`\` (\`w${remaining}s\`\` left)`, mod.icon);
     }
+    for (const effect of equipmentEffects) dlg2.addLabelWithIcon("small", `\`w${effect.title}\`\``, effect.icon);
     dlg2.addSpacer("small").addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`).addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x / 32)}, ${Math.floor(session.y / 32)}) (${world.peers.size} person)`).addTextbox(p.superSupporter ? "You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``." : "You are not yet a `2Supporter`` or `5Super Supporter``.");
     if (acct.isGuest) dlg2.addButtonWithIcon("acct_growid", "`2Get Free GrowID!``", 206);
     OnDialogRequest(session, dlg2.addQuickExit().endDialog("popup", "", "Continue"));
@@ -30095,6 +32920,10 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
       const name = btn.slice(6), world = ctx.worlds.get(name);
       if (world?.ownerUserId === session.account.userId) ctx.joinWorld(session, name);
     }
+    return true;
+  }
+  if (dlgName === "achievements") {
+    if (!btn || btn === "cancel") handleWrenchPlayer(ctx, session, { netid: String(session.netId) });
     return true;
   }
   if (dlgName === "popup") {
@@ -30960,8 +33789,10 @@ msg|\`6${echo}\`\`
   }
   const world = session.world;
   if (!world) return;
-  const msg = sanitizeChatText(trimmed, 120);
-  if (!msg) return;
+  const clean = sanitizeChatText(trimmed, 120);
+  if (!clean) return;
+  const infected = activeMods(session.account).some((m) => m.id === "gtps3-infected");
+  const msg = infected ? `\`2${Math.random() < 0.25 ? "Brraaiinnss..." : ""}${clean}\`\`` : clean;
   broadcastTalkBubble(world, session.netId, msg, 0, false);
   broadcastConsoleMessage(
     world,
@@ -31330,6 +34161,24 @@ netID|${session.netId}`
   }
 }
 
+// server/playmods/wearable-messages.ts
+var WEARABLE_MESSAGES = {
+  98: ["Enhanced Digging", "You can smash bricks more quickly.", "Smash time is over."],
+  4590: ["Dragoscarf", "This dragon's got your back!", "Your neck feels empty."],
+  2976: ["Eye Beam", "Your eyes can reach further.", "Your eyes go back to normal."],
+  1542: ["Fishy", "You hold a very dead fish.", "The fish is gone."],
+  10780: ["Giving Growaxe", "A dark blade is in your hand.", "Your hand is empty again."],
+  818: ["Double Jump", "You can jump once more in mid-air.", "You're back on the ground."],
+  3894: ["Speedy", "You move faster.", "You move at normal speed."],
+  496: ["Speedy", "You move faster.", "You move at normal speed."],
+  10132: ["Speedy Pendant", "You move faster.", "You move at normal speed."],
+  1204: ["Focused Eyes", "Your gaze sharpens.", "Your eyes relax."],
+  2388: ["Hammer Time", "Hammer time!", "Hammer time is over."],
+  9058: ["Cursed Blade", "A curse hums in your hand.", "The curse lifts."],
+  8924: ["Moon Charm", "Luck is on your side.", "Your luck runs out."],
+  4748: ["Extra Reach", "You can build a little farther.", "You can't reach as far."]
+};
+
 // server/gamePacket/item_activate.ts
 function toggleWearableItem(ctx, session, itemId) {
   const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
@@ -31343,11 +34192,17 @@ function toggleWearableItem(ctx, session, itemId) {
         const otherDef = ctx.itemsDb.get(other.itemId);
         if (otherDef && otherDef.isClothing && (otherDef.actionType === 107 ? 9 : otherDef.clothingType) === targetSlotIndex) {
           other.equipped = false;
+          const old = WEARABLE_MESSAGES[other.itemId];
+          if (old && old[2]) OnConsoleMessage(session, `${old[2]} (\`$${old[0]}\`\` mod removed)`);
         }
       }
     }
   }
   slot.equipped = equipping;
+  const msg = WEARABLE_MESSAGES[itemId];
+  if (msg && msg[equipping ? 1 : 2]) {
+    OnConsoleMessage(session, `${msg[equipping ? 1 : 2]} (\`$${msg[0]}\`\` mod ${equipping ? "added" : "removed"})`);
+  }
   ctx.savePlayersNow();
   if (session.world) {
     broadcastSetClothing(session.world, session, ctx.itemsDb, true);
@@ -31482,10 +34337,6 @@ function handlePlayerMoving(session, rawData, tank) {
     OnSetPos(session, session.x, session.y);
     return;
   }
-  if (activeMods(session.account).some((m) => m.flags & 1 << 11)) {
-    if (nx !== session.x || ny !== session.y) OnSetPos(session, session.x, session.y);
-    return;
-  }
   session.x = nx;
   session.y = ny;
   session.facingLeft = ((tank.flags ?? 0) & TANK_FLAG_FACING_LEFT) !== 0;
@@ -31499,10 +34350,6 @@ function handlePlayerMoving(session, rawData, tank) {
     }
   }
 }
-
-// server/playmods/equipment.ts
-var hasRaymanFist = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && s.itemId === 5480);
-var hasEnhancedDigging = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && [98, 1438].includes(s.itemId));
 
 // server/gamePacket/tile_change_req.ts
 var GEM_ITEM_ID2 = 112;
@@ -31616,6 +34463,7 @@ function handleTileChangeRequest(ctx, session, tank) {
     return;
   }
   if (itemId === 18) {
+    infectByPunch(ctx, session, tx, ty);
     if (tile.fg === 6) {
       OnTalkBubble(session, session.netId, "(stand over and punch to use)", 0, true);
       return;
@@ -31793,8 +34641,11 @@ function handleTileChangeRequest(ctx, session, tank) {
     tile.fg = itemId;
     tile.damage = 0;
     tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
-    tile.extra = { kind: "seed", plantedAtMs: now, fruitCount: rollFruitCount(), spliced: false };
-    scheduleMaturitySync(itemId, def.growTime);
+    const discount = activeMods(session.account).reduce((n, m) => Math.max(n, m.treeGrowthDiscount || 0), 0);
+    const originalGrowSec = Math.max(1, def.growTime || 15);
+    const bonusMs = Math.floor(originalGrowSec * 1e3 * discount);
+    tile.extra = { kind: "seed", plantedAtMs: now - bonusMs, fruitCount: rollFruitCount(), spliced: false };
+    scheduleMaturitySync(itemId, originalGrowSec * (1 - discount));
   } else {
     if (tile.fg !== 0) return;
     if (def.collisionType === 1) {
@@ -31911,6 +34762,9 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId) {
   }
   ctx.dirty = true;
   if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
+  if (!def.isSeed && activeMods(session.account).some((m) => m.extraBreakGemChance && Math.random() < m.extraBreakGemChance)) {
+    spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, 1, tx * 32 + 12, ty * 32 + 10, -1);
+  }
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
   if (def.isLock || targetId === 12 || targetId === 20) {
@@ -31926,8 +34780,15 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId) {
     } else if (roll < 0.48 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
       spawnOrMergeWorldDrop(world, targetId + 1, 1, tx * 32 + 10, ty * 32 + 8, -1);
     }
+    const mods = activeMods(session.account);
+    if (mods.some((m) => m.luckyBreaks) && Math.random() < 0.1) {
+      spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 6, ty * 32 + 8, -1);
+    }
     if (Math.random() < 0.55) {
-      const gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
+      let gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
+      const lucky = mods.some((m) => m.luckyBreaks) && Math.random() < 0.1;
+      const doubled = mods.some((m) => m.doubleGemsChance && Math.random() < m.doubleGemsChance);
+      gemAmt *= lucky ? 5 : doubled ? 2 : 1;
       spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, gemAmt, tx * 32 + 12, ty * 32 + 10, -1);
     }
   }
@@ -32165,11 +35026,16 @@ function leb(n) {
 }
 function patchItemAppearance(input) {
   const parts = [input.subarray(0, 8)];
-  let p = 8, patched = false;
+  let p = 8, patched = false, neckPatched = false;
   while (p < input.length) {
     const id = input[p++], [len, start] = read(input, p);
     p = start + len;
     let section = input.subarray(start, p);
+    if (id === 6) {
+      const [count, end] = read(section, 0);
+      if (count !== 12) throw Error("Unexpected client globals");
+      section = Buffer.concat([leb(count + 1), section.subarray(end), Buffer.from("7f0141000b", "hex")]);
+    }
     if (id === 10) {
       const [count, header] = read(section, 0), bodies = [section.subarray(0, header)];
       let q = header;
@@ -32184,7 +35050,36 @@ function patchItemAppearance(input) {
           if (op < 0 || body.indexOf(anchor, op + 1) >= 0) throw Error("Item kind lookup signature changed");
           const tint = Buffer.from("200b2d0024410e460440200028022021040b", "hex");
           body = Buffer.concat([body.subarray(0, op), tint, body.subarray(op)]);
+          const guard = Buffer.from("200b2d002441146b220841134b0d0041012008744185813071450d00", "hex");
+          const guardAt = body.indexOf(guard);
+          if (guardAt < 0 || body.indexOf(guard, guardAt + 1) >= 0) throw Error("Face overlay signature changed");
+          const overlayGuard = Buffer.from("200341f8ce0046210a200b2d002441146b220841134b200a45710d004101200874418581307145200a45710d00", "hex");
+          body = Buffer.concat([body.subarray(0, guardAt), overlayGuard, body.subarray(guardAt + guard.length)]);
+          const color = Buffer.from("2006430000803f10ee022104", "hex");
+          const colorAt = body.indexOf(color, guardAt);
+          if (colorAt < 0 || body.indexOf(color, colorAt + 1) >= 0) throw Error("Face overlay color signature changed");
+          const overlayColor = Buffer.from("200641ff017141807e722006200a1b430000803f10ee022104", "hex");
+          body = Buffer.concat([body.subarray(0, colorAt), overlayColor, body.subarray(colorAt + color.length)]);
+          const catAnchor = Buffer.from("200220082a029801922102", "hex");
+          const catAt = body.indexOf(catAnchor);
+          if (catAt < 0 || body.indexOf(catAnchor, catAt + 1) >= 0) throw Error("Cat Eyes frame signature changed");
+          const cat = Buffer.from("200341c237460440230a2206410036020041d804100a2006280200200641003602004101460d02230a220641003602002d00e403410173210e2006280200200641003602004101460d02230a2206410036020041ca0c200e10032006280200200641003602004101460d0241ac026e210e230c4504404180c00010a903240c230c0440230c41004180c000fc0b000b0b230c0440200841037641ff0771210a4100210602400340230c200a4103746a220d280200450440200d20083602000c020b200d2802002008460d01200a41016a41ff0771210a200641016a2206418008490d00200d2008360200200d41003602040b0b200e200d28020441036a7021092009450440200d410310d40241016a3602040b200941034f0440410021090b0b20082d007c4109460440410221090b0b", "hex");
+          body = Buffer.concat([body.subarray(0, catAt), cat, body.subarray(catAt)]);
           patched = true;
+        }
+        if (i + 308 === 1940) {
+          if (import_node_crypto3.default.createHash("sha256").update(body).digest("hex") !== "fd614dcda2e71282a2dce521abb59d94ebc4bf44f5945eb97754d69e2afc8bd6") throw Error("Neck renderer signature changed");
+          const table = Buffer.from("220641046b0e040001010001", "hex");
+          const tableAt = body.indexOf(table);
+          if (tableAt < 0 || body.indexOf(table, tableAt + 1) >= 0) throw Error("Neck animation dispatch signature changed");
+          const dispatch = Buffer.from("2206410446200641074672200641184672450d01", "hex");
+          body = Buffer.concat([body.subarray(0, tableAt), dispatch, body.subarray(tableAt + table.length)]);
+          const positionAnchor = Buffer.from("200641ff017141c801460440", "hex");
+          const at = body.indexOf(positionAnchor, tableAt);
+          if (at < 0 || body.indexOf(positionAnchor, at + 1) >= 0) throw Error("Neck position signature changed");
+          const offset = Buffer.from("200a2d0024411746200a2d0024411846720440200220002a023c4300008041949321020b", "hex");
+          body = Buffer.concat([body.subarray(0, at), offset, body.subarray(at)]);
+          neckPatched = true;
         }
         bodies.push(leb(body.length), body);
       }
@@ -32192,7 +35087,7 @@ function patchItemAppearance(input) {
     }
     parts.push(Buffer.from([id]), leb(section.length), section);
   }
-  if (!patched) throw Error("Face renderer not found");
+  if (!patched || !neckPatched) throw Error("Appearance renderer not found");
   const result = Buffer.concat(parts);
   if (!WebAssembly.validate(result)) throw Error("Invalid appearance patch");
   return result;

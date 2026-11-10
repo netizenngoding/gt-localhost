@@ -1,5 +1,7 @@
 import { activeMods } from '../playmods/model';
 import { progression } from "../progression/service";
+import { ACHIEVEMENTS } from "../progression/catalog";
+import { equippedAbilities, hasRaymanFist } from "../playmods/equipment";
 import { xpRequired } from "../progression/model";
 import { hasPermission, canModerate, displayName, rankOf, RANKS } from "../ranks";
 import type { ServerContext } from "../database/context";
@@ -34,13 +36,24 @@ export function handleWrenchPlayer(
       .customButton('notebook_edit','gui_wrench_notebook')
       .customButton('my_worlds','gui_wrench_my_worlds')
       .customButton('alist','gui_wrench_achievements')
+      .raw(`add_custom_label|(${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`)
       .customBreak().addSpacer('small').customSpacing(0,0);
     const mods=activeMods(acct);
-    if(mods.length)dlg.addTextbox('`wActive effects:``');
+    const equipmentEffects: Array<{title:string; icon:number}> = [];
+    const abilities=equippedAbilities(acct);
+    if(abilities.damage.length) equipmentEffects.push({title:'Enhanced Digging',icon:abilities.damage[0]});
+    if(abilities.punchRange.length) equipmentEffects.push({title:'Punch Range',icon:abilities.punchRange[0]});
+    if(abilities.buildRange.length) equipmentEffects.push({title:'Build Range',icon:abilities.buildRange[0]});
+    if(abilities.doubleJump.length) equipmentEffects.push({title:'Double Jump',icon:abilities.doubleJump[0]});
+    if(abilities.speedy.length) equipmentEffects.push({title:'Speedy',icon:abilities.speedy[0]});
+    if(acct.inventory.some(i=>i.equipped && i.count>0 && i.itemId===11094)) equipmentEffects.push({title:'Extended Punch and Build Range',icon:11094});
+    if(hasRaymanFist(acct)) equipmentEffects.push({title:"Rayman's Fist",icon:5480});
+    if(mods.length || equipmentEffects.length)dlg.addTextbox('`wActive effects:``');
     for(const mod of mods){
       const remaining=Math.max(0,Math.ceil((acct.playmods!.find(m=>m.id===mod.id)!.expiresAt-Date.now())/1000));
-      dlg.addLabelWithIcon('small',`${mod.title}\`\` (\`w${remaining}s\`\` left)`,mod.icon);
+      dlg.addLabelWithIcon('small',`\`w${mod.title}\`\` (\`w${remaining}s\`\` left)`,mod.icon);
     }
+    for(const effect of equipmentEffects) dlg.addLabelWithIcon('small',`\`w${effect.title}\`\``,effect.icon);
     dlg.addSpacer('small')
       .addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`)
       .addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x/32)}, ${Math.floor(session.y/32)}) (${world.peers.size} person)`)

@@ -1,3 +1,5 @@
+import { GTPS3_PUNCH_EFFECTS } from '../playmods/gtps3-punch.generated';
+import { equippedAbilities, hasRaymanFist } from '../playmods/equipment';
 import { normalizeMods, activeMods, type TimedMod } from "../playmods/model";
 import { isSuperSupporter } from "../progression/service";
 import { normalizeProgression, type Progression } from "../progression/model";
@@ -84,6 +86,7 @@ export interface PlayerSession {
   peer: ENetServerPeer;
   enteredGame?: boolean;
   chatTimestamps?: number[];
+  lastInfectPunchAt?: number;
   respawnUntil?: number;
   respawnGeneration?: number;
   account: PlayerAccount;
@@ -199,23 +202,39 @@ export function buildCharacterStateForSession(
     let punchRangeTiles = 2;
     let punchEffect = 0;
 
+    const abilities = equippedAbilities(session.account);
+    if (abilities.doubleJump.length) stateFlags |= CHAR_STATE_DOUBLE_JUMP;
+    // GTPS3 World.h form_state(): Mark of Growganoth uses state bit 4.
+    // No-Face is the face-slot item that hides eyes/mouth; verify client visual.
+    if (session.account.inventory.some(v=>v.itemId===3774 && v.equipped && v.count>0)) stateFlags |= 1<<4;
+    if (abilities.speedy.length) moveSpeed = 325.0;
+    // Ordinary punch range stacks up to two extra tiles. Ring of Range has
+    // a separate owner-world rule and is deliberately absent from the table.
+    const ringOfRange = session.account.inventory.some(i=>i.equipped && i.count>0 && i.itemId===11094);
+    const ringBonus = ringOfRange ? (session.world?.ownerUserId === session.account.userId ? 3 : 1) : 0;
+    const rangeCap = ringBonus === 3 ? 3 : 2;
+    buildRangeTiles += Math.min(rangeCap, abilities.buildRange.length + ringBonus);
+    punchRangeTiles += Math.min(rangeCap, abilities.punchRange.length + ringBonus);
+    if (hasRaymanFist(session.account)) {
+      punchRangeTiles = Math.max(punchRangeTiles, 10);
+      // Punch animation is selected separately by the GTPS3 slot priority below.
+    }
+    // GTPS3 World.h update_clothes slot precedence: hand, neck, back, face,
+    // mask, hair, feet, shirt, pants, ances. Numeric type values are items.dat.
+    for (const clothingType of [5, 8, 6, 4, 7, 0, 3, 1, 2, 9]) {
+      const slot = session.account.inventory.find(v => {
+        if (!v.equipped || v.count <= 0) return false;
+        const item = itemsDb.get(v.itemId);
+        return !!item?.isClothing && (item.actionType === 107 ? 9 : item.clothingType) === clothingType && !!GTPS3_PUNCH_EFFECTS[v.itemId];
+      });
+      if (slot) { punchEffect = GTPS3_PUNCH_EFFECTS[slot.itemId]; break; }
+    }
+    // Preserve the existing slow-fall approximation; its exact jump-held
+    // behavior has not yet been reconstructed from the original server.
     for (const inv of session.account.inventory) {
       if (!inv.equipped || inv.count <= 0) continue;
-      const def = itemsDb.get(inv.itemId);
-      if (!def || !def.isClothing) continue;
-      const nm = def.name.toLowerCase();
-      if (def.id === 5480) {
-        punchRangeTiles = 10;
-        punchEffect = 4;
-      }
-      // Pickaxe (98) is Enhanced Digging, not a range modifier.
-      // GTOSLatest player.h::isPickaxe / tile.h reduce required break hits.
-      if (def.id === 17552) {
-        punchRangeTiles = 5;
-      }
-      if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
-      if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325.0;
-      if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250.0;
+      const def=itemsDb.get(inv.itemId);
+      if (def?.isClothing && /parasol|umbrella/i.test(def.name) && (def.clothingType===5 || def.clothingType===6)) gravity=250.0;
     }
 
     for (const mod of activeMods(session.account)) {
@@ -223,6 +242,8 @@ export function buildCharacterStateForSession(
       if (mod.gravity!==undefined) gravity = mod.gravity;
       if (mod.speed!==undefined) moveSpeed = mod.speed;
     }
+    // GTPS3 World.h update_clothes, Infected movement speed.
+    if (activeMods(session.account).some(m=>m.id==='gtps3-infected')) moveSpeed=(moveSpeed===420||moveSpeed===310||moveSpeed===325)?190:150;
     if (c.noclip) stateFlags |= 1 << 0;
     if (c.speed) moveSpeed = 420.0;
     if (c.fly) {

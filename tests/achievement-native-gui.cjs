@@ -1,0 +1,43 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),esbuild=require('esbuild');
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'achievement-native-'));
+function load(src){const out=path.join(tmp,path.basename(src)+Math.random()+'.cjs');esbuild.buildSync({entryPoints:[src],outfile:out,bundle:true,platform:'node'});return require(out)}
+try {
+ const {normalizeAccount}=load('server/database/peer.ts');
+ const {ItemDatabase}=load('server/database/items.ts');
+ const {ServerContext}=load('server/database/context.ts');
+ const {showAchievements}=load('server/progression/commands.ts');
+ const {handlePlayerDialogsReturn}=load('server/action/dialog_return/player_dialogs.ts');
+ const {classicAchievementIcon,lockedAchievementIcon,ACHIEVEMENTS}=load('server/progression/catalog.ts');
+ const {recordProgress}=load('server/progression/service.ts');
+ const {DialogBuilder}=load('server/tools/create_dialog.ts');
+ const db=new ItemDatabase(),ctx=new ServerContext(db,tmp), account=normalizeAccount({userId:1,name:'Alice'});
+ const actor={account,netId:7,world:null,x:0,y:0,cheats:{noclip:false,speed:false,fly:false},peer:{packets:[],sendPacket(c,p){this.packets.push(p)}}};
+ ctx.sessions.add(actor);ctx.accounts.set('alice',account);ctx.joinWorld(actor,'TEST');actor.peer.packets.length=0;
+ account.progression.counters.blocks_placed=25;
+ showAchievements(actor);
+ let text=actor.peer.packets.at(-1).toString();
+ assert.match(text,/add_achieve\|Builder \(Classic\)\|Progress: 25%\|left\|127\|/);
+ assert.match(text,/add_achieve\|Mine, All Mine \(Classic\)\|Not achieved!\|left\|127\|/);
+ assert.match(text,/add_achieve\|Pro Builder \(Classic\)\|Progress: 2%\|left\|126\|/);
+ assert.match(text,/add_achieve\|Expert Builder \(Classic\)\|Progress: 0%\|left\|125\|/);
+ assert.equal((text.match(/add_achieve\|/g)||[]).length,ACHIEVEMENTS.length);
+ assert.match(text,/add_quick_exit\|/);assert.match(text,/end_dialog\|achievements\|Back\|\|/);
+ assert.equal(classicAchievementIcon(0),0);assert.equal(classicAchievementIcon(2),2);
+ assert.equal(classicAchievementIcon(5),5);assert.equal(classicAchievementIcon(24),24);
+ assert.equal(classicAchievementIcon(27),27);assert.equal(classicAchievementIcon(33),33);
+ assert.equal(lockedAchievementIcon('Bronze'),127);assert.equal(lockedAchievementIcon('Silver'),126);assert.equal(lockedAchievementIcon('Gold'),125);
+ assert.throws(()=>classicAchievementIcon(64));assert.throws(()=>new DialogBuilder().addAchievement('x','y',128));
+ const clean=new DialogBuilder().addAchievement('name|bad','status\nno',15).endDialog('x');assert.doesNotMatch(clean,/name\|bad|status\nno/);
+ actor.peer.packets.length=0;recordProgress(ctx,actor,'blocks_placed',75);
+ let bubble=actor.peer.packets.find(p=>p.includes(Buffer.from('OnTalkBubble'))).toString();
+ assert.match(bubble,/Alice.*earned the achievement.*"Builder \(Classic\)"/);
+ assert.equal(actor.peer.packets.filter(p=>p[4]===17 && p.readFloatLE(40)===48).length,1);
+ actor.peer.packets.length=0;
+ assert.equal(handlePlayerDialogsReturn(ctx,actor,'popup',{buttonClicked:'alist'}),true);
+ text=actor.peer.packets.at(-1).toString();assert.match(text,/add_achieve\|Builder \(Classic\)\|Earned for placing 100 blocks of any type.\|left\|0\|/);
+ assert.match(text,/add_achieve\|Pro Builder \(Classic\)\|Progress: 10%\|left\|126\|/);
+ actor.peer.packets.length=0;assert.equal(handlePlayerDialogsReturn(ctx,actor,'achievements',{}),true);
+ assert.ok(actor.peer.packets.some(p=>p.includes(Buffer.from('gui_wrench_achievements'))),'Back returns to self-wrench');
+ const restored=new ServerContext(db,tmp).accounts.get('alice');assert.ok(restored.progression.earned.blocks_placed_1);
+ console.log('PASS: native achievement rows, division placeholders, classic atlas indices, status/progress, quoted bubble, particle, wrench entry, persistence');
+} finally {fs.rmSync(tmp,{recursive:true,force:true});}

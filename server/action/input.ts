@@ -5,6 +5,7 @@ import type { PlayerSession } from "../database/peer";
 import { broadcastConsoleMessage, broadcastTalkBubble, chatPortrait } from "../onVariant";
 import { sanitizeChatText } from "../tools/string";
 import { dispatchCommand } from "../commands";
+import { activeMods } from "../playmods/model";
 
 export function handleInput(
   ctx: ServerContext,
@@ -37,8 +38,11 @@ export function handleInput(
   const world = session.world;
   if (!world) return;
 
-  const msg = sanitizeChatText(trimmed, 120);
-  if (!msg) return;
+  const clean = sanitizeChatText(trimmed, 120);
+  if (!clean) return;
+  // GTPS3 Source.cpp: 1/4 chance of a zombie prefix and green chat.
+  const infected=activeMods(session.account).some(m=>m.id==='gtps3-infected');
+  const msg=infected ? `\`2${Math.random()<0.25?'Brraaiinnss...':''}${clean}\`\`` : clean;
 
   // This pinned client renders C++ protocol prefixes literally in bubbles.
   broadcastTalkBubble(world, session.netId, msg, 0, false);

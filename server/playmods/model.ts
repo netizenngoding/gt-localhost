@@ -6,8 +6,46 @@ export interface ModDefinition {
  id:string; item:number; title:string; seconds:number; flags:number;
  onAdd:string; onRemove:string; icon:number; sound:string; action:string;
  effect:number; text:string; skin?:number; gravity?:number; speed?:number;
+ // Food-buff gameplay metadata is server-side; the client only renders the
+ // generic item/character state. Durations and magnitudes are wiki-derived.
+ group?: 'food'|'luck'; treeGrowthDiscount?: number; extraBreakGemChance?: number;
+ xpMultiplierChance?: number; xpMultiplier?: number; consumableXpMultiplier?: number;
+ punchDamage?: boolean; luckyBreaks?: boolean; doubleGemsChance?: number;
 }
 export const MODS: readonly ModDefinition[] = [
+ // GTPS3 ae49cffa World.h info_about_playmods 25/28.
+ {id:'gtps3-antidote',item:782,title:'Antidote!',seconds:3600,flags:0,
+  onAdd:'You are now immune to zombie bites! Temporarily...',onRemove:'Your immunity is gone.',icon:782,sound:'',action:'drop',effect:25,text:''},
+ {id:'gtps3-infected',item:764,title:'Infected!',seconds:60,flags:1<<16,
+  onAdd:"You've been infected by the g-Virus. Punch others to infect them, too! Braiiiins...",onRemove:"You've been cured.",icon:764,sound:'',action:'drop',effect:0,text:''},
+ // https://growtopia.fandom.com/wiki/Lucky_Clover and Rabbit's Foot/Songpyeon
+ ...[528,750,1056].map(item=>({id:`lucky-${item}`,item,title:'Lucky!',seconds:1800,flags:0,
+  onAdd:"You're luckier than before!",onRemove:'Your luck has worn off.',icon:item,sound:'',action:'',effect:0,text:'',group:'luck' as const,luckyBreaks:true})),
+ // https://growtopia.fandom.com/wiki/Gemmin%27_Juice
+ {id:'gem-bonus',item:4348,title:'Gem Bonus',seconds:1800,flags:0,
+  onAdd:'Chance of bonus gems from breaking blocks!',onRemove:'Just regular old gems.',icon:4348,sound:'',action:'',effect:0,text:'',doubleGemsChance:0.1},
+ // https://growtopia.fandom.com/wiki/Biotronic_Brain_Enhancer. 50% on
+ // average is approximated as a 50% chance of double per action.
+ {id:'biotronic-xp',item:4324,title:'Biotronic Brain Enhancer',seconds:1800,flags:0,
+  onAdd:'Your brain has been enhanced!',onRemove:"You're getting dumber by the second.",icon:4324,sound:'',action:'',effect:0,text:'',xpMultiplierChance:0.5,xpMultiplier:2},
+ // https://growtopia.fandom.com/wiki/Apple_Strudel
+ {id:'food-tree-growth',item:4594,title:'Food: Tree Growth',seconds:1800,flags:0,
+  onAdd:'Trees you plant grow 5% faster!',onRemove:"Your stomach's rumbling.",icon:4594,sound:'',action:'',effect:0,text:':D`#YUM!``',group:'food',treeGrowthDiscount:0.05},
+ // https://growtopia.fandom.com/wiki/Arroz_Con_Pollo
+ {id:'food-breaking-gems',item:4604,title:'Food: Breaking Gems',seconds:1800,flags:0,
+  onAdd:'10% chance of a gem when you break a block.',onRemove:"Your stomach's rumbling.",icon:4604,sound:'',action:'',effect:0,text:':D`#YUM!``',group:'food',extraBreakGemChance:0.1},
+ // https://growtopia.fandom.com/wiki/Eggs_Benedict
+ {id:'food-xp-eggs',item:1474,title:'Food: Extra XP',seconds:1800,flags:0,
+  onAdd:'25% chance of double XP for all actions.',onRemove:"Your stomach's rumbling.",icon:1474,sound:'',action:'',effect:0,text:':D`#YUM!``',group:'food',xpMultiplierChance:0.25,xpMultiplier:2},
+ // https://growtopia.fandom.com/wiki/Gingerbread_Cookie
+ {id:'food-xp-gingerbread',item:5452,title:'Food: Extra XP',seconds:1800,flags:0,
+  onAdd:'10% chance of triple XP for all actions.',onRemove:'Your body craves sugar!',icon:5452,sound:'',action:'',effect:0,text:':D`#YUM!``',group:'food',xpMultiplierChance:0.1,xpMultiplier:3},
+ // https://growtopia.fandom.com/wiki/Pineapple_Turnover
+ {id:'food-consumable-xp',item:4768,title:'Food: Consumable XP',seconds:1800,flags:0,
+  onAdd:'Get triple XP for using consumables.',onRemove:"Your stomach's rumbling.",icon:4768,sound:'',action:'',effect:0,text:':D`#YUM!``',group:'food',consumableXpMultiplier:3},
+ // https://growtopia.fandom.com/wiki/Blood_Truffle_Biscuits_with_Sweet_Radish_Pie
+ {id:'truffle-punch-damage',item:12156,title:'Blood Truffle Biscuits: Punch Damage',seconds:600,flags:0,
+  onAdd:'Punch like a mechanic!!',onRemove:'Out of energy!',icon:12156,sound:'',action:'',effect:0,text:':D`#YUM!``',punchDamage:true},
  {
   "id": "stinky",
   "item": 388,
@@ -22,6 +60,10 @@ export const MODS: readonly ModDefinition[] = [
   "effect": 0,
   "text": ""
  },
+ // GTPS3 World.h info_about_playmods entry 3: Freeze Wand is a usable
+ // actionType 8 item, not a wearable. One use consumes one wand.
+ {id:'gtps3-3',item:274,title:'Frozen',seconds:10,flags:1<<11,
+  onAdd:'Freeze!',onRemove:"You've thawed out.",icon:274,sound:'freeze.wav',action:'',effect:0,text:'',skin:4284769380},
  {
   "id": "gtps3-2",
   "item": 1368,
@@ -376,6 +418,8 @@ export const MODS: readonly ModDefinition[] = [
  }
 ];
 export const SIMPLE_FOODS: readonly {item:number;text:string}[] = [
+ // Player-consumption behaviour documented by the individual wiki pages.
+ ...[406,3228,3420,3474,4982].map(item=>({item,text:':D`#YUM!``'})),
  {
   "item": 3404,
   "text": ":D`#YUM!``"
@@ -516,10 +560,12 @@ export const SIMPLE_FOODS: readonly {item:number;text:string}[] = [
 export interface TimedMod { id: string; expiresAt: number; }
 export function normalizeMods(raw: unknown, now=Date.now()): TimedMod[] {
  if(!Array.isArray(raw))return [];
- const seen=new Set<string>();
+ const seen=new Set<string>(), seenGroups=new Set<string>();
  return raw.filter(m=>{
   const def=MODS.find(d=>d.id===m?.id);
   if(!def || seen.has(m.id) || !Number.isSafeInteger(m.expiresAt) || m.expiresAt<=now || m.expiresAt>now+def.seconds*1000) return false;
+  if(def.group && seenGroups.has(def.group)) return false;
+  if(def.group) seenGroups.add(def.group);
   seen.add(m.id);return true;
  }).map(m=>({id:m.id,expiresAt:m.expiresAt}));
 }

@@ -1,5 +1,6 @@
 import { hasRaymanFist, hasEnhancedDigging } from "../playmods/equipment";
-import { useConsumable } from "../playmods/service";
+import { activeMods } from "../playmods/model";
+import { infectByPunch, useConsumable } from "../playmods/service";
 import { recordProgress } from "../progression/service";
 import { farmingXp } from "../progression/model";
 import { staffInteractionReach } from "../ranks/interaction";
@@ -196,6 +197,7 @@ export function handleTileChangeRequest(
 
   // 2. Fist / Punch (id 18)
   if (itemId === 18) {
+    infectByPunch(ctx,session,tx,ty);
     if (tile.fg === 6) {
       // Punch requests are not activation requests. The client sends type 7
       // when entering the door; remote punches must never exit the world.
@@ -394,8 +396,14 @@ export function handleTileChangeRequest(
     tile.fg = itemId;
     tile.damage = 0;
     tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
-    tile.extra = { kind: "seed", plantedAtMs: now, fruitCount: rollFruitCount(), spliced: false };
-    scheduleMaturitySync(itemId, def.growTime);
+    // Client uses elapsed time versus items.dat growTime. Advancing the stored
+    // start time by 5% gives the documented 5% shorter maturity deadline and
+    // survives world save/reload; the initial visible growth is approximate.
+    const discount = activeMods(session.account).reduce((n,m)=>Math.max(n,m.treeGrowthDiscount || 0),0);
+    const originalGrowSec = Math.max(1, def.growTime || 15);
+    const bonusMs = Math.floor(originalGrowSec * 1000 * discount);
+    tile.extra = { kind: "seed", plantedAtMs: now-bonusMs, fruitCount: rollFruitCount(), spliced: false };
+    scheduleMaturitySync(itemId, originalGrowSec*(1-discount));
   } else {
     if (tile.fg !== 0) return;
     if (def.collisionType === 1) {
@@ -546,6 +554,9 @@ function finalizeTileBreak(
   ctx.dirty = true;
 
   if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
+  if (!def.isSeed && activeMods(session.account).some(m=>m.extraBreakGemChance && Math.random()<m.extraBreakGemChance)) {
+    spawnOrMergeWorldDrop(world, GEM_ITEM_ID, 1, tx*32+12, ty*32+10, -1);
+  }
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
 
@@ -562,8 +573,18 @@ function finalizeTileBreak(
     } else if (roll < 0.48 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
       spawnOrMergeWorldDrop(world, targetId + 1, 1, tx * 32 + 10, ty * 32 + 8, -1);
     }
+    const mods = activeMods(session.account);
+    // The wiki documents a chance of a bonus block and up to 5x gems for
+    // Lucky and 2x gems for Gemmin' Juice. Exact combination rules and the
+    // distribution within "up to five" are not recovered: we cap at 5x.
+    if (mods.some(m=>m.luckyBreaks) && Math.random()<0.1) {
+      spawnOrMergeWorldDrop(world, targetId, 1, tx*32+6, ty*32+8, -1);
+    }
     if (Math.random() < 0.55) {
-      const gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
+      let gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
+      const lucky=mods.some(m=>m.luckyBreaks) && Math.random()<0.1;
+      const doubled=mods.some(m=>m.doubleGemsChance && Math.random()<m.doubleGemsChance);
+      gemAmt *= lucky ? 5 : doubled ? 2 : 1;
       spawnOrMergeWorldDrop(world, GEM_ITEM_ID, gemAmt, tx * 32 + 12, ty * 32 + 10, -1);
     }
   }

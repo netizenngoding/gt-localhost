@@ -1,5 +1,6 @@
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
+import { WEARABLE_MESSAGES } from "../playmods/wearable-messages";
 import { broadcastSetClothing, OnConsoleMessage, OnTalkBubble, OnPlayPositioned, OnSetClothing } from "../onVariant";
 
 /**
@@ -30,12 +31,18 @@ export function toggleWearableItem(
         const otherDef = ctx.itemsDb.get(other.itemId);
         if (otherDef && otherDef.isClothing && (otherDef.actionType === 107 ? 9 : otherDef.clothingType) === targetSlotIndex) {
           other.equipped = false;
+          const old = WEARABLE_MESSAGES[other.itemId];
+          if (old && old[2]) OnConsoleMessage(session, `${old[2]} (\`$${old[0]}\`\` mod removed)`);
         }
       }
     }
   }
 
   slot.equipped = equipping;
+  const msg = WEARABLE_MESSAGES[itemId];
+  if (msg && msg[equipping ? 1 : 2]) {
+    OnConsoleMessage(session, `${msg[equipping ? 1 : 2]} (\`$${msg[0]}\`\` mod ${equipping ? 'added' : 'removed'})`);
+  }
   ctx.savePlayersNow();
 
   if (session.world) {

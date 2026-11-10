@@ -164,8 +164,8 @@ export function normalizeGtSkinColor(raw: unknown): number {
   const num = Number(raw);
   if (!Number.isFinite(num)) return DEFAULT_SKIN_COLOR;
   const u = num >>> 0;
-  // Legacy broken default (0xFF8295C3 signed -8219197), zero, or pure white fallback (0xFFFFFFFF)
-  if (u === 0 || u === 0xffffffff || u === 0xff8295c3) {
+  // Legacy broken default (0xFF8295C3 signed -8219197), or zero
+  if (u === 0 || u === 0xff8295c3) {
     return DEFAULT_SKIN_COLOR;
   }
   if ((u & 0xff) === 0xff) {
@@ -303,7 +303,7 @@ export interface CharacterStateParams {
   netId: number;
   punchEffect?: number;    // avatar[352] (0=default, 1=flame, 2=horn, 4=rayman, 13=zeus, etc.)
   buildRangeTiles?: number; // 2 = normal (byte 128), 10 = far build (byte 136)
-  punchRangeTiles?: number; // 2 = normal (byte 128), 5 = pickaxe/sword (byte 131), 10 = far punch (byte 136)
+  punchRangeTiles?: number; // 2 = normal (byte 128), 10 = far punch (byte 136); encoding does not imply item effects
   pupilColor?: number;     // avatar[1692]
   waterSpeed?: number;     // avatar[312], default 125.0
   stateFlags?: number;     // avatar[156], CHAR_STATE_* bitmask

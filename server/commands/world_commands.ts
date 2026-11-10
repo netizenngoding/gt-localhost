@@ -1,3 +1,4 @@
+import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { displayName } from "../ranks";
 import { worldDestination } from "../database/world-policy";
 import { makeVariantPacket } from "../proton/packet";
@@ -62,7 +63,7 @@ export function handleWorldCommand(
     const action = `\`6<${displayName(session)} \`#${msg}\`\`\`6>\`\``;
     // C++ variants include player_chat=, but this client displays it literally.
     broadcastTalkBubble(world, session.netId, action, 0);
-    broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`);
+    broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`, chatPortrait(session, ctx.itemsDb));
     return true;
   }
 
@@ -76,7 +77,8 @@ export function handleWorldCommand(
     for (const p of ctx.sessions) {
       OnConsoleMessage(
         p,
-        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``
+        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``,
+        chatPortrait(session, ctx.itemsDb)
       );
       OnPlayPositioned(p, "audio/beep.wav");
     }

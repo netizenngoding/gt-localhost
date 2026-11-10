@@ -1,3 +1,5 @@
+import { setSkin, showSkinMenu } from "../progression/skin";
+import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -114,15 +116,11 @@ export function handlePlayerCommand(
   }
 
   if (cmd === "skin") {
-    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})$/);
-    if (!m) {
-      OnConsoleMessage(session, "`4Usage: /skin <RRGGBB>``");
-      return true;
-    }
-    session.account.skinColor = rgbHexToGtSkinColor(m[1]);
-    ctx.savePlayersNow();
-    applySkinColorUpdate(session, session.world, true);
-    OnConsoleMessage(session, "`2Skin color updated!``");
+    if (!argStr.trim()) { showSkinMenu(session); return true; }
+    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/);
+    if (!m) { OnConsoleMessage(session, "Usage: /skin RRGGBB[AA]"); return true; }
+    const color = ((rgbHexToGtSkinColor(m[1]) & 0xffffff00) | (m[2] ? parseInt(m[2],16) : 255)) >>> 0;
+    if (setSkin(ctx,session,color)) OnConsoleMessage(session,"Skin color updated!");
     return true;
   }
 
@@ -175,10 +173,11 @@ export function handlePlayerCommand(
     }
     OnConsoleMessage(
       target,
-      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``
+      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
+      chatPortrait(session, ctx.itemsDb)
     );
     OnPlayPositioned(target, "audio/beep.wav");
-    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``);
+    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
 

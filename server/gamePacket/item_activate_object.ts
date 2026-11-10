@@ -1,3 +1,4 @@
+import { recordProgress } from "../progression/service";
 import { makeItemCollectPacket, makeItemModifyObjectPacket } from "../proton/packet";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -31,6 +32,7 @@ export function handleItemActivateObject(
   if (obj.itemId === GEM_ITEM_ID) {
     world.objects.splice(idx, 1);
     session.account.gems += obj.count;
+    recordProgress(ctx, session, undefined, 0);
     ctx.dirty = true;
     ctx.savePlayersNow();
 

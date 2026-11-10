@@ -1,3 +1,5 @@
+import { setSkin, showSkinMenu } from "../../progression/skin";
+import { showAchievements } from "../../progression/commands";
 import { SERVER_NAME } from "../../config/branding";
 import { hasPermission, canModerate } from "../../ranks";
 import type { ServerContext } from "../../database/context";
@@ -77,20 +79,38 @@ export function handlePlayerDialogsReturn(
     return true;
   }
 
-  if (dlgName === "self_wrench") {
-    if (btn === "acct_growid") {
-      showGrowIdApplyModal(session);
-      return true;
+  if (dlgName === "skin_menu") {
+    if (/^skin_\d+$/.test(btn)) setSkin(ctx,session,Number(btn.slice(5)));
+    return true;
+  }
+  if(dlgName==='notebook_edit'){
+    if(btn==='save'||btn==='clear'){
+      session.account.personalNote=btn==='clear'?'':String(kv.personal_note||'').replace(/[|\r\n\0]/g,' ').slice(0,128);
+      ctx.dirty=true;ctx.savePlayersNow();
     }
-    if (btn === "acct_find") {
-      openItemFinderDialog(ctx, session, "");
-      return true;
+    return true;
+  }
+  if(dlgName==='my_worlds'){
+    if(btn.startsWith('visit_')){
+      const name=btn.slice(6),world=ctx.worlds.get(name);
+      if(world?.ownerUserId===session.account.userId)ctx.joinWorld(session,name);
     }
-    if (btn === "acct_cheats") {
-      openCheatsMenu(session);
-      return true;
+    return true;
+  }
+  if (dlgName === 'popup') {
+    if(btn==='alist'){showAchievements(session);return true;}
+    if(btn==='notebook_edit'){
+      OnDialogRequest(session,new DialogBuilder().addLabel('big','Notebook')
+        .addTextBoxInput('personal_note','',session.account.personalNote||'',128,5)
+        .addSpacer('small').addButton('save','Save').addButton('clear','Clear').addButton('cancel','Cancel')
+        .addQuickExit().endDialog('notebook_edit','',''));
     }
-
+    if(btn==='my_worlds'){
+      const dlg=new DialogBuilder().addLabelWithIcon('big','My Worlds',242);
+      for(const w of ctx.worlds.values())if(w.ownerUserId===session.account.userId)dlg.addButton(`visit_${w.name}`,w.name);
+      OnDialogRequest(session,dlg.addQuickExit().endDialog('my_worlds','Close',''));
+    }
+    if(btn==='acct_growid')showGrowIdApplyModal(session);
     return true;
   }
 

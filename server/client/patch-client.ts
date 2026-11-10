@@ -1,3 +1,5 @@
+import { patchItemAppearance } from "./item-appearance";
+import { extendChatPortraitExports } from "./portrait-exports";
 import crypto from "node:crypto";
 // Exact audited client. Never apply offsets to an unrecognized upstream revision.
 export const CLIENT_SHA256="9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
@@ -42,5 +44,5 @@ export function patchClient(input:Buffer,hideWarning:boolean, autofillLabel = "A
    if (!count) throw new Error(`Native branding signature not found: ${from}`);
  }
  if(!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
- return output;
+ return extendChatPortraitExports(patchItemAppearance(output));
 }

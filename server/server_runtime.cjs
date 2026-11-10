@@ -8951,8 +8951,8 @@ var require_read = __commonJS({
     var onFinished = require_on_finished();
     var unpipe = require_unpipe();
     var zlib3 = require("zlib");
-    module2.exports = read;
-    function read(req, res, next, parse, debug, options) {
+    module2.exports = read3;
+    function read3(req, res, next, parse, debug, options) {
       var length;
       var opts = options;
       var stream;
@@ -17937,7 +17937,7 @@ var require_json = __commonJS({
     var contentType = require_content_type();
     var createError = require_http_errors();
     var debug = require_src()("body-parser:json");
-    var read = require_read();
+    var read3 = require_read();
     var typeis = require_type_is();
     module2.exports = json;
     var FIRST_CHAR_REGEXP = /^[\x20\x09\x0a\x0d]*([^\x20\x09\x0a\x0d])/;
@@ -18006,7 +18006,7 @@ var require_json = __commonJS({
           }));
           return;
         }
-        read(req, res, next, parse, debug, {
+        read3(req, res, next, parse, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -18069,7 +18069,7 @@ var require_raw = __commonJS({
     "use strict";
     var bytes = require_bytes();
     var debug = require_src()("body-parser:raw");
-    var read = require_read();
+    var read3 = require_read();
     var typeis = require_type_is();
     module2.exports = raw;
     function raw(options) {
@@ -18106,7 +18106,7 @@ var require_raw = __commonJS({
           next();
           return;
         }
-        read(req, res, next, parse, debug, {
+        read3(req, res, next, parse, debug, {
           encoding: null,
           inflate,
           limit,
@@ -18129,7 +18129,7 @@ var require_text = __commonJS({
     var bytes = require_bytes();
     var contentType = require_content_type();
     var debug = require_src()("body-parser:text");
-    var read = require_read();
+    var read3 = require_read();
     var typeis = require_type_is();
     module2.exports = text;
     function text(options) {
@@ -18168,7 +18168,7 @@ var require_text = __commonJS({
           return;
         }
         var charset = getCharset(req) || defaultCharset;
-        read(req, res, next, parse, debug, {
+        read3(req, res, next, parse, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -20969,7 +20969,7 @@ var require_urlencoded = __commonJS({
     var createError = require_http_errors();
     var debug = require_src()("body-parser:urlencoded");
     var deprecate = require_depd()("body-parser");
-    var read = require_read();
+    var read3 = require_read();
     var typeis = require_type_is();
     module2.exports = urlencoded;
     var parsers = /* @__PURE__ */ Object.create(null);
@@ -21021,7 +21021,7 @@ var require_urlencoded = __commonJS({
           }));
           return;
         }
-        read(req, res, next, parse, debug, {
+        read3(req, res, next, parse, debug, {
           debug,
           encoding: charset,
           inflate,
@@ -22684,14 +22684,14 @@ var require_etag = __commonJS({
   "node_modules/etag/index.js"(exports2, module2) {
     "use strict";
     module2.exports = etag;
-    var crypto5 = require("crypto");
+    var crypto6 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto5.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto6.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -25600,11 +25600,11 @@ var require_request = __commonJS({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto5 = require("crypto");
+    var crypto6 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto5.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto6.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -25613,7 +25613,7 @@ var require_cookie_signature = __commonJS({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto5.createHash("sha1").update(str).digest("hex");
+      return crypto6.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -26581,147 +26581,531 @@ var require_express2 = __commonJS({
   }
 });
 
-// server/config/branding.ts
-var import_node_fs = __toESM(require("node:fs"));
-var import_node_url = require("node:url");
-var import_node_path = __toESM(require("node:path"));
-function validateBranding(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid server config");
-  const v = raw;
-  const input = v.menuButton;
-  if (input !== void 0 && (!input || typeof input !== "object" || Array.isArray(input))) throw new Error("menuButton must be an object");
-  const b = { text: "@salakpatty", url: "https://www.tiktok.com/@salakpatty", color: "#A5E3FB", textColor: "#FFFFFF", iconPath: "branding/tiktok.svg", iconEnabled: true, ...input || {} };
-  if (typeof b.text !== "string" || !b.text.trim() || b.text.length > 24 || /[`|<>\r\n\x00-\x1f]/.test(b.text)) throw new Error("menuButton.text: 1\u201324 plain characters");
-  if (typeof b.url !== "string" || !/^https:\/\//.test(b.url)) throw new Error("menuButton.url must use HTTPS");
-  try {
-    const u = new import_node_url.URL(b.url);
-    if (u.username || u.password) throw 0;
-  } catch {
-    throw new Error("Invalid menuButton.url");
+// server/playmods/model.ts
+var MODS = [
+  {
+    "id": "stinky",
+    "item": 388,
+    "title": "Stinky",
+    "seconds": 300,
+    "flags": 16384,
+    "onAdd": "You really really smell.",
+    "onRemove": "The air clears.",
+    "icon": 372,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-2",
+    "item": 1368,
+    "title": "Frozen",
+    "seconds": 2,
+    "flags": 2048,
+    "onAdd": "Your body has turned to ice. You can't move!",
+    "onRemove": "You've thawed out.",
+    "icon": 1368,
+    "sound": "freeze.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 4284769380
+  },
+  {
+    "id": "gtps3-4",
+    "item": 874,
+    "title": "Egged!",
+    "seconds": 180,
+    "flags": 0,
+    "onAdd": "You have egg on your face.",
+    "onRemove": "You washed your face!",
+    "icon": 874,
+    "sound": "",
+    "action": "throw",
+    "effect": 42,
+    "text": "",
+    "skin": 16777215
+  },
+  {
+    "id": "envious",
+    "item": 540,
+    "title": "Envious",
+    "seconds": 900,
+    "flags": 0,
+    "onAdd": "It ain't easy being you.",
+    "onRemove": "Healthy color restored.",
+    "icon": 540,
+    "sound": "eat.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 1627349247
+  },
+  {
+    "id": "blue",
+    "item": 196,
+    "title": "Feelin' Blue",
+    "seconds": 3600,
+    "flags": 0,
+    "onAdd": "A `!blueberry`` slides down your throat!",
+    "onRemove": "The effects of the `!blueberry`` have worn off.",
+    "icon": 196,
+    "sound": "spray.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": "",
+    "skin": 4278190335
+  },
+  {
+    "id": "floating",
+    "item": 338,
+    "title": "Floating!",
+    "seconds": 2,
+    "flags": 0,
+    "onAdd": "Whoooooooaaaaaaaa...",
+    "onRemove": "Gravity - it's the law.",
+    "icon": 338,
+    "sound": "balloon.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": "",
+    "gravity": -30
+  },
+  {
+    "id": "gtps3-19",
+    "item": 962,
+    "title": "Saucy!",
+    "seconds": 180,
+    "flags": 0,
+    "onAdd": "You are a saucy person.",
+    "onRemove": "You got cleaned up.",
+    "icon": 962,
+    "sound": "",
+    "action": "throw",
+    "effect": 45,
+    "text": "",
+    "skin": 2554747
+  },
+  {
+    "id": "halo",
+    "item": 128,
+    "title": "Golden Halo!",
+    "seconds": 1800,
+    "flags": 128,
+    "onAdd": "You have been good.",
+    "onRemove": "You're falling out of favor.",
+    "icon": 128,
+    "sound": "",
+    "action": "drop",
+    "effect": 25,
+    "text": "",
+    "skin": 2190853119
+  },
+  {
+    "id": "gtps3-38",
+    "item": 614,
+    "title": "Rotten Egg",
+    "seconds": 300,
+    "flags": 16384,
+    "onAdd": "You really really smell.",
+    "onRemove": "The air clears.",
+    "icon": 614,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-42",
+    "item": 4766,
+    "title": "Blushing Red",
+    "seconds": 1800,
+    "flags": 0,
+    "onAdd": "`4Cherry`` red lips!",
+    "onRemove": "The effects of the `!Cherry`` have worn off.",
+    "icon": 4766,
+    "sound": "spray.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": "",
+    "skin": 842203135
+  },
+  {
+    "id": "gtps3-47",
+    "item": 1634,
+    "title": "Caffeinated",
+    "seconds": 5,
+    "flags": 16384,
+    "onAdd": "You are full of caffeine!",
+    "onRemove": "Ugh. Caffeine crash.",
+    "icon": 1634,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "speed": 420
+  },
+  {
+    "id": "gtps3-48",
+    "item": 4672,
+    "title": "Envious",
+    "seconds": 900,
+    "flags": 0,
+    "onAdd": "It ain't easy being you.",
+    "onRemove": "Healthy color restored.",
+    "icon": 4672,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 1234743295
+  },
+  {
+    "id": "gtps3-49",
+    "item": 6314,
+    "title": "Frozen",
+    "seconds": 2,
+    "flags": 2048,
+    "onAdd": "Your body has turned to ice. You can't move!",
+    "onRemove": "You've thawed out.",
+    "icon": 6314,
+    "sound": "freeze.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 4284769380
+  },
+  {
+    "id": "gtps3-50",
+    "item": 3064,
+    "title": "",
+    "seconds": 0,
+    "flags": 0,
+    "onAdd": "",
+    "onRemove": "",
+    "icon": 3064,
+    "sound": "",
+    "action": "throw",
+    "effect": 34,
+    "text": ""
+  },
+  {
+    "id": "gtps3-67",
+    "item": 126,
+    "title": "Devil Horns",
+    "seconds": 1800,
+    "flags": 64,
+    "onAdd": "You little devil...",
+    "onRemove": "Off the naughty list!",
+    "icon": 126,
+    "sound": "spray.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-68",
+    "item": 1964,
+    "title": "Devil Horns",
+    "seconds": 1800,
+    "flags": 64,
+    "onAdd": "You little devil...",
+    "onRemove": "Off the naughty list!",
+    "icon": 1964,
+    "sound": "spray.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-69",
+    "item": 960,
+    "title": "ON FIRE!!!",
+    "seconds": 5,
+    "flags": 131072,
+    "onAdd": "You are burning up!",
+    "onRemove": "The fire's out.",
+    "icon": 960,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 842203135
+  },
+  {
+    "id": "gtps3-70",
+    "item": 712,
+    "title": "ON FIRE!!!",
+    "seconds": 5,
+    "flags": 131072,
+    "onAdd": "You are burning up!",
+    "onRemove": "The fire's out.",
+    "icon": 712,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 842203135
+  },
+  {
+    "id": "gtps3-71",
+    "item": 1988,
+    "title": "Haunted!",
+    "seconds": 1800,
+    "flags": 262144,
+    "onAdd": "You are haunted!",
+    "onRemove": "Not anymore.",
+    "icon": 372,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-72",
+    "item": 1772,
+    "title": "Floating!",
+    "seconds": 2,
+    "flags": 0,
+    "onAdd": "Whoooooooaaaaaaaa...",
+    "onRemove": "Gravity - it's the law.",
+    "icon": 1772,
+    "sound": "balloon.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": "",
+    "gravity": -30
+  },
+  {
+    "id": "gtps3-73",
+    "item": 5262,
+    "title": "Neon Gum!",
+    "seconds": 5,
+    "flags": 268435456,
+    "onAdd": "Dazzle your friends as super funky neon lines course across your skin.",
+    "onRemove": "Party's over.",
+    "icon": 5262,
+    "sound": "spray.wav",
+    "action": "drop",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-89",
+    "item": 4602,
+    "title": "Stinky",
+    "seconds": 300,
+    "flags": 16384,
+    "onAdd": "You really really smell.",
+    "onRemove": "The air clears.",
+    "icon": 4602,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-99",
+    "item": 8384,
+    "title": "Gross Bean",
+    "seconds": 10,
+    "flags": 16384,
+    "onAdd": "You really really smell.",
+    "onRemove": "The air clears.",
+    "icon": 8384,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": ""
+  },
+  {
+    "id": "gtps3-115",
+    "item": 1602,
+    "title": "Minty",
+    "seconds": 900,
+    "flags": 0,
+    "onAdd": "Ya'll are feelin' minty, sugah.",
+    "onRemove": "Healthy color restored.",
+    "icon": 1602,
+    "sound": "eat.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "skin": 1627349247
+  },
+  {
+    "id": "gtps3-116",
+    "item": 12152,
+    "title": "Janeway's Coffee: Speedy",
+    "seconds": 600,
+    "flags": 16384,
+    "onAdd": "On my mark... Go Fast!",
+    "onRemove": "Speed normalized!",
+    "icon": 12152,
+    "sound": "spray.wav",
+    "action": "",
+    "effect": 0,
+    "text": "",
+    "speed": 420
   }
-  for (const color of [b.color, b.textColor]) if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Menu colors must use #RRGGBB");
-  if (typeof b.iconPath !== "string" || !/^[A-Za-z0-9_/-]+\.(png|svg)$/.test(b.iconPath) || b.iconPath.startsWith("/") || b.iconPath.includes("..")) throw new Error("Invalid local menuButton.iconPath");
-  if (typeof b.iconEnabled !== "boolean") throw new Error("menuButton.iconEnabled must be boolean");
-  const menuButton = b;
-  const name = v.serverName;
-  const version = v.version ?? "V1.5";
-  if (typeof version !== "string" || !version.trim() || version.length > 32 || /[`|<>\r\n\x00-\x1f]/.test(version)) throw new Error("version: use 1\u201332 plain-text characters");
-  if (typeof name !== "string" || !name.trim() || name.length > 40 || !/^[\x20-\x7e]+$/.test(name) || /[`|<>]/.test(name)) throw new Error("serverName: use 1\u201340 ASCII characters, no packet/markup delimiters");
-  if (typeof v.logoPath !== "string" || !/^[A-Za-z0-9_/-]+\.png$/.test(v.logoPath) || v.logoPath.startsWith("/") || v.logoPath.includes("..")) throw new Error("logoPath must be a local PNG relative to public/");
-  if (typeof v.skipIntro !== "boolean" || typeof v.hideLegacyCustomItemWarning !== "boolean") throw new Error("Client options must be booleans");
-  if (!Array.isArray(v.splashes) || v.splashes.length > 30 || v.splashes.some((x) => typeof x !== "string" || x.length > 140 || /[\r\n|\x00-\x1f]/.test(x))) throw new Error("Invalid splashes");
-  const autofillLabel = v.autofillLabel ?? "Autofill";
-  if (typeof autofillLabel !== "string" || !/^[\x20-\x7e]{1,70}$/.test(autofillLabel) || /[`|<>]/.test(autofillLabel)) throw new Error("autofillLabel: 1\u201370 plain ASCII characters");
-  const autofillAccent = v.autofillAccent ?? "#E3B5FF";
-  if (typeof autofillAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(autofillAccent)) throw new Error("autofillAccent must use #RRGGBB");
-  return { menuButton, autofillLabel, autofillAccent, serverName: name.trim(), version: version.trim(), logoPath: v.logoPath, skipIntro: v.skipIntro, hideLegacyCustomItemWarning: v.hideLegacyCustomItemWarning, splashes: v.splashes };
-}
-function loadBranding(root = process.cwd()) {
-  const file = import_node_path.default.join(root, "config/server.json");
-  return validateBranding(import_node_fs.default.existsSync(file) ? JSON.parse(import_node_fs.default.readFileSync(file, "utf8")) : { serverName: "Game Server", logoPath: "branding/logo.png", skipIntro: true, hideLegacyCustomItemWarning: true, splashes: ["Welcome to {serverName}!"] });
-}
-var SERVER_CONFIG = loadBranding();
-var SERVER_NAME = SERVER_CONFIG.serverName;
-
-// server/index.ts
-var import_node_http = __toESM(require("node:http"));
-
-// node_modules/ws/wrapper.mjs
-var import_stream = __toESM(require_stream(), 1);
-var import_extension = __toESM(require_extension(), 1);
-var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
-var import_receiver = __toESM(require_receiver(), 1);
-var import_sender = __toESM(require_sender(), 1);
-var import_subprotocol = __toESM(require_subprotocol(), 1);
-var import_websocket = __toESM(require_websocket(), 1);
-var import_websocket_server = __toESM(require_websocket_server(), 1);
-
-// server/ranks/definitions.ts
-var RANKS = {
-  player: { label: "Player", prefix: "`w", level: 0 },
-  moderator: { label: "Moderator", prefix: "`#@", level: 1 },
-  developer: { label: "Developer", prefix: "`6@", level: 2 }
-};
-function isRank(value) {
-  return value === "player" || value === "moderator" || value === "developer";
-}
-
-// server/ranks/index.ts
-function rankOf(account) {
-  return isRank(account.rank) ? account.rank : "player";
-}
-function hasPermission(account, permission) {
-  return RANKS[rankOf(account)].level >= (permission === "moderate" ? 1 : 2);
-}
-function canModerate(actor, target) {
-  return hasPermission(actor, "moderate") && RANKS[rankOf(actor)].level > RANKS[rankOf(target)].level;
-}
-function displayName(session) {
-  const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
-  const rank = rankOf(session.account);
-  let prefix = RANKS[rank].prefix;
-  if (rank === "player" && session.world) {
-    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
-    else if (session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
+];
+var SIMPLE_FOODS = [
+  {
+    "item": 3404,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3406,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 4422,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 950,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 968,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1058,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1096,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 868,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 4668,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1094,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1098,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 4378,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1374,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 966,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 958,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1580,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 7052,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 8520,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 10628,
+    "text": "/dab"
+  },
+  {
+    "item": 3546,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3600,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3836,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 4410,
+    "text": ":P`#Bleh.``"
+  },
+  {
+    "item": 3622,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 10988,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 4764,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 964,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3428,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3816,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 1208,
+    "text": ":D`#YUM!``"
+  },
+  {
+    "item": 3536,
+    "text": "Mmm, sugar!"
+  },
+  {
+    "item": 4232,
+    "text": "`#:D YUM!``"
+  },
+  {
+    "item": 11068,
+    "text": "`#:D Ahhh! That is REFRESHING!``"
+  },
+  {
+    "item": 4984,
+    "text": "`#:D YUM!``"
   }
-  return `${prefix}${name}\`\``;
+];
+function normalizeMods(raw, now = Date.now()) {
+  if (!Array.isArray(raw)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  return raw.filter((m) => {
+    const def = MODS.find((d) => d.id === m?.id);
+    if (!def || seen.has(m.id) || !Number.isSafeInteger(m.expiresAt) || m.expiresAt <= now || m.expiresAt > now + def.seconds * 1e3) return false;
+    seen.add(m.id);
+    return true;
+  }).map((m) => ({ id: m.id, expiresAt: m.expiresAt }));
 }
-function protocolFlags(account) {
-  const level = RANKS[rankOf(account)].level;
-  return { mstate: level >= 1 ? 1 : 0, smstate: level >= 2 ? 1 : 0 };
+function activeMods(a, now = Date.now()) {
+  return (a.playmods || []).filter((m) => m.expiresAt > now).flatMap((m) => {
+    const d = MODS.find((d2) => d2.id === m.id);
+    return d ? [d] : [];
+  });
 }
-
-// server/ranks/service.ts
-var import_node_fs2 = __toESM(require("node:fs"));
-var import_node_path2 = __toESM(require("node:path"));
-var RankService = class {
-  assignments = /* @__PURE__ */ new Map();
-  constructor(root) {
-    const file = import_node_path2.default.join(root, "data_store", "ranks.json");
-    if (import_node_fs2.default.existsSync(file)) {
-      const config = JSON.parse(import_node_fs2.default.readFileSync(file, "utf8"));
-      if (config.schemaVersion !== 1 || !config.assignments || typeof config.assignments !== "object" || Array.isArray(config.assignments)) throw new Error("Invalid ranks.json");
-      for (const [key, rank] of Object.entries(config.assignments)) {
-        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)) || !isRank(rank)) throw new Error("Invalid rank assignment");
-        this.assignments.set(Number(key), rank);
-      }
-    }
-    for (const [variable, rank] of [["MODERATOR_USER_IDS", "moderator"], ["ADMIN_USER_IDS", "developer"], ["DEVELOPER_USER_IDS", "developer"]]) {
-      for (const key of (process.env[variable] || "").split(",").map((s) => s.trim()).filter(Boolean)) {
-        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key))) throw new Error(`Invalid ${variable}`);
-        this.assignments.set(Number(key), rank);
-      }
-    }
-  }
-  apply(account) {
-    account.rank = account.isGuest ? "player" : this.assignments.get(account.userId) || "player";
-    account.moderator = account.rank !== "player";
-  }
-};
-
-// server/database/world-policy.ts
-var RESERVED_WORLDS = /* @__PURE__ */ new Set([
-  "EXIT",
-  "ERROR",
-  "ADMIN",
-  "MODERATOR",
-  "SYSTEM",
-  "SETH",
-  "HAMUMU",
-  "RTSOFT",
-  "MIKEHOMMEL"
-]);
-var CLOSED_EVENT_WORLDS = /* @__PURE__ */ new Set(["GROWGANOTH", "LEGENDARYMOUNTAIN"]);
-function worldDestination(raw) {
-  const name = String(raw || "").trim().toUpperCase();
-  if (!name || name === "EXIT") return { kind: "exit" };
-  if (!/^[A-Z0-9]{1,24}$/.test(name)) return { kind: "invalid", reason: "Use 1\u201324 letters or numbers only for a world name." };
-  if (RESERVED_WORLDS.has(name)) return { kind: "invalid", reason: "That world name is reserved to prevent confusion." };
-  if (CLOSED_EVENT_WORLDS.has(name)) return { kind: "invalid", reason: "This special world is not open on this server." };
-  return { kind: "world", name };
-}
-function isPlayableWorldName(name) {
-  return worldDestination(name).kind === "world";
+function effectiveSkin(a) {
+  return activeMods(a).find((d) => d.skin !== void 0)?.skin ?? a.skinColor;
 }
 
 // server/proton/packet.ts
@@ -26743,6 +27127,7 @@ var PACKET_SEND_TILE_TREE_STATE = 12;
 var PACKET_MODIFY_ITEM_INVENTORY = 13;
 var PACKET_ITEM_CHANGE_OBJECT = 14;
 var PACKET_SEND_ITEM_DATABASE_DATA = 16;
+var PACKET_SEND_PARTICLE_EFFECT = 17;
 var PACKET_SET_CHARACTER_STATE = 20;
 var PACKET_PING_REPLY = 21;
 var PACKET_PING_REQUEST = 22;
@@ -26816,25 +27201,6 @@ var ALLOWLISTED_SKIN_COLORS = [
   1345523711 >>> 0,
   3317891071 >>> 0
 ];
-function normalizeGtSkinColor(raw) {
-  const num = Number(raw);
-  if (!Number.isFinite(num)) return DEFAULT_SKIN_COLOR;
-  const u = num >>> 0;
-  if (u === 0 || u === 4294967295 || u === 4286748099) {
-    return DEFAULT_SKIN_COLOR;
-  }
-  if ((u & 255) === 255) {
-    return u;
-  }
-  const hi = u >>> 24 & 255;
-  if (hi === 255 || hi === 0) {
-    const r = u >>> 16 & 255;
-    const g = u >>> 8 & 255;
-    const b = u & 255;
-    return (b << 24 | g << 16 | r << 8 | 255) >>> 0;
-  }
-  return (u | 255) >>> 0;
-}
 function buildTankPacket(f) {
   const ext = f.extendedData;
   const total = 4 + 56 + (ext ? ext.length : 0);
@@ -26963,6 +27329,18 @@ function makeSetCharacterStatePacket(p) {
     y: 200,
     speedX: p.moveSpeed ?? 250,
     speedY: p.gravity ?? 1e3
+  });
+}
+var NATIVE_EFFECT_ACHIEVEMENT = 48;
+function makeParticleEffectPacket(effectId, x, y, altVar = 0, delayMs = 0) {
+  return buildTankPacket({
+    type: PACKET_SEND_PARTICLE_EFFECT,
+    netId: -1,
+    x,
+    y,
+    speedY: effectId,
+    speedX: altVar,
+    value: delayMs
   });
 }
 function makeTileTreeStatePacket(x, y, harvestItemId = 0, targetNetId = -1, netId = -1) {
@@ -27149,77 +27527,345 @@ function makeInventoryPacket(backpackSize, slots) {
   });
 }
 
-// server/onVariant/RequestWorldSelectMenu.ts
-var GAZETTE_NEWS = [
-  {
-    title: `Welcome to ${SERVER_NAME}`,
-    body: "Original-reference items, secure GrowID registration, saved outfits and native Shop."
-  },
-  {
-    title: "Useful Commands",
-    body: "Use `5/find <name>`` to browse items, `5/rank`` to see your role, `5/mods`` for online staff, and `5/help`` for commands."
-  },
-  {
-    title: "PC Controls & Fullscreen",
-    body: "Open `wOptions`` anytime to toggle `wFullscreen`` or customize PC controls in `wEdit Hotkeys``!"
-  }
+// server/progression/catalog.ts
+var groups = [
+  ["blocks_placed", [100, 1e3, 1e5], ["Builder", "Pro Builder", "Expert Builder"]],
+  ["trees_harvested", [100, 1e3, 1e5], ["Farmer", "Farmer In The Dell", "Farmasaurus Rex"]],
+  ["blocks_broken", [100, 1e3, 1e5], ["Demolition", "Wrecking Crew", "Annihilator"]],
+  ["gems_held", [1e3, 25e3, 5e5], ["Packrat", "Hoarder", "Filthy Rich"]],
+  ["gems_spent", [1e4, 1e5, 1e6], ["Big Spender", "Ol' Moneybags", "One MEEELlion"]],
+  ["items_trashed", [5e3, 5e4, 5e5], ["Trashman", "Givin' A Hoot", "OCD"]],
+  ["consumables_used", [100, 1e3, 25e3], ["Paint The Town Blue", "Splat!", "Mad Vandal"]],
+  ["backpack", [26, 86, 196], ["Embiggened", "Space Commander", "Master Of Space And Time"]],
+  ["level", [10, 50, 99], ["Ding!", "Long Time Fan", "Obsessive Growtopian"]],
+  ["other_players", [20, 50, 70], ["Social Butterfly", "Social Monarch", "Kevin Bacon"]]
 ];
-function RequestWorldSelectMenu(session, worlds) {
-  const featured = ["START", "FARM", "PARKOUR", "TRADE"];
-  const lines = [
-    "default|START",
-    "add_filter|",
-    "add_heading|Top Worlds<ROW2>|"
-  ];
-  const colors = [3529161471, 2147418367, 3417414143, 2864971775];
-  featured.forEach((name, idx) => {
-    const w = worlds.get(name);
-    const cnt = w ? w.peers.size : 0;
-    lines.push(`add_floater|${name}|${cnt}|0.55|${colors[idx % colors.length]}`);
-  });
-  for (const [name, w] of worlds.entries()) {
-    if (isPlayableWorldName(name) && !featured.includes(name) && w.peers.size > 0) {
-      lines.push(`add_floater|${name}|${w.peers.size}|0.50|2147418367`);
+var ACHIEVEMENTS = groups.flatMap(([metric, targets, titles]) => targets.map((target, i) => ({ id: `${metric}_${i + 1}`, metric, target, title: titles[i], division: ["Bronze", "Silver", "Gold"][i] })));
+ACHIEVEMENTS.push(
+  { id: "lock_used", title: "Mine, All Mine", metric: "locks_used", target: 1, division: "Bronze" },
+  { id: "world_lock_used", title: "This Land Is My Land", metric: "world_locks_used", target: 1, division: "Gold" },
+  { id: "supporter", title: "Supporter", metric: "supporter", target: 1, division: "Gold" }
+);
+
+// server/progression/model.ts
+var MAX_LEVEL = 125;
+var SUPER_SUPPORTER_LEVEL = 50;
+var xpRequired = (level) => 50 * (level * level + 2);
+var integer = (n, min, max, fallback = min) => typeof n === "number" && Number.isSafeInteger(n) ? Math.max(min, Math.min(max, n)) : fallback;
+function normalizeProgression(raw) {
+  const level = integer(raw?.level, 1, MAX_LEVEL);
+  const record = (input) => {
+    const out = /* @__PURE__ */ Object.create(null);
+    if (input && typeof input === "object" && !Array.isArray(input)) {
+      for (const [key, value] of Object.entries(input).slice(0, 512)) {
+        if (/^[a-z][a-z0-9_]{0,63}$/.test(key) && key !== "constructor" && key !== "prototype") out[key] = integer(value, 0, Number.MAX_SAFE_INTEGER);
+      }
     }
+    return out;
+  };
+  return {
+    version: 1,
+    level,
+    xp: level === MAX_LEVEL ? 0 : integer(raw?.xp, 0, xpRequired(level) - 1),
+    superSupporter: raw?.superSupporter === true || level >= SUPER_SUPPORTER_LEVEL,
+    hideStatus: raw?.hideStatus === true,
+    counters: record(raw?.counters),
+    earned: record(raw?.earned)
+  };
+}
+function addXp(p, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1e7) return;
+  p.xp += amount;
+  while (p.level < MAX_LEVEL && p.xp >= xpRequired(p.level)) {
+    p.xp -= xpRequired(p.level);
+    p.level++;
   }
-  const myLockedWorlds = [];
-  for (const w of worlds.values()) {
-    if (isPlayableWorldName(w.name) && w.ownerUserId === session.account.userId) {
-      myLockedWorlds.push(w);
-    }
-  }
-  if (myLockedWorlds.length > 0) {
-    lines.push("add_heading|My Worlds<CR>|");
-    for (const mw of myLockedWorlds.slice(0, 8)) {
-      lines.push(`add_floater|${mw.name}|${mw.peers.size}|0.48|2147418367`);
-    }
-  }
-  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n) && !featured.includes(n));
-  if (recent.length > 0) {
-    lines.push("add_heading|Recently Visited Worlds<CR>|");
-    for (const rName of recent.slice(0, 6)) {
-      const rw = worlds.get(rName);
-      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.46|3417414143`);
-    }
-  }
-  lines.push("");
-  session.peer.sendPacket(
-    0,
-    makeVariantPacket(["OnRequestWorldSelectMenu", lines.join("\n") + "\n"]),
-    true
-  );
+  if (p.level === MAX_LEVEL) p.xp = 0;
+  if (p.level >= SUPER_SUPPORTER_LEVEL) p.superSupporter = true;
+}
+function farmingXp(rarity) {
+  return 1 + Math.floor(Math.max(0, Math.min(200, rarity === 999 ? 0 : rarity)) / 5);
 }
 
-// server/database/context.ts
-var import_node_fs3 = __toESM(require("node:fs"));
-var import_node_path3 = __toESM(require("node:path"));
+// server/progression/service.ts
+function progression(account) {
+  return account.progression ??= normalizeProgression();
+}
+function isSuperSupporter(account) {
+  return !!account.progression?.superSupporter || (account.progression?.level ?? 1) >= 50;
+}
+function evaluate(account, otherPlayers = 0) {
+  const p = progression(account), c = p.counters;
+  if (p.level >= 50) p.superSupporter = true;
+  c.level = Math.max(c.level || 0, p.level);
+  c.backpack = Math.max(c.backpack || 0, account.backpackSize);
+  c.gems_held = Math.max(c.gems_held || 0, account.gems);
+  c.other_players = Math.max(c.other_players || 0, otherPlayers);
+  c.supporter = p.superSupporter ? 1 : 0;
+  const unlocked = [];
+  for (const a of ACHIEVEMENTS) {
+    if (!p.earned[a.id] && (c[a.metric] || 0) >= a.target) {
+      p.earned[a.id] = Date.now();
+      unlocked.push(a.id);
+    }
+  }
+  return unlocked;
+}
+var notificationUntil = /* @__PURE__ */ new WeakMap();
+function recordProgress(ctx, s, metric, amount = 1, xp = 0) {
+  const p = progression(s.account), beforeLevel = p.level, beforeSupporter = p.superSupporter;
+  if (metric && Number.isSafeInteger(amount) && amount > 0 && amount <= 1e7) p.counters[metric] = Math.min(Number.MAX_SAFE_INTEGER, (p.counters[metric] || 0) + amount);
+  addXp(p, xp);
+  const unlocked = evaluate(s.account, Math.max(0, (s.world?.peers.size ?? 1) - 1));
+  ctx.dirty = true;
+  ctx.savePlayersNow();
+  for (const id of unlocked) {
+    const a = ACHIEVEMENTS.find((a2) => a2.id === id);
+    const text = `\`2Earned achievement: \`w${a.title}\`\``;
+    OnConsoleMessage(s, text);
+    const delay = Math.max(0, (notificationUntil.get(s) || 0) - Date.now());
+    notificationUntil.set(s, Date.now() + delay + 6e3);
+    const bubble2 = makeVariantPacket([
+      "OnTalkBubble",
+      { type: "i32", value: s.netId },
+      text,
+      { type: "i32", value: 0 },
+      { type: "i32", value: 0 }
+    ], -1, delay);
+    const effect = makeParticleEffectPacket(NATIVE_EFFECT_ACHIEVEMENT, s.x + 16, s.y + 16, 0, delay);
+    for (const viewer of s.world?.peers || [s]) {
+      viewer.peer.sendPacket(0, bubble2, true);
+      viewer.peer.sendPacket(0, effect, true);
+    }
+  }
+  if (p.level !== beforeLevel) OnConsoleMessage(s, `You are now level ${p.level}!`);
+  if (p.superSupporter !== beforeSupporter) {
+    ctx.sendCharacterState(s);
+    OnSetBux(s);
+    broadcastNameChanged(s);
+    OnConsoleMessage(s, "`5Super Supporter unlocked at level 50!`` Extra skin colors and recycling are now available.");
+  }
+}
+
+// server/ranks/definitions.ts
+var RANKS = {
+  player: { label: "Player", prefix: "`w", level: 0 },
+  moderator: { label: "Moderator", prefix: "`#@", level: 1 },
+  developer: { label: "Developer", prefix: "`6@", level: 2 }
+};
+function isRank(value) {
+  return value === "player" || value === "moderator" || value === "developer";
+}
+
+// server/ranks/index.ts
+function rankOf(account) {
+  return isRank(account.rank) ? account.rank : "player";
+}
+function hasPermission(account, permission) {
+  return RANKS[rankOf(account)].level >= (permission === "moderate" ? 1 : 2);
+}
+function canModerate(actor, target) {
+  return hasPermission(actor, "moderate") && RANKS[rankOf(actor)].level > RANKS[rankOf(target)].level;
+}
+function displayName(session) {
+  const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
+  const rank = rankOf(session.account);
+  let prefix = RANKS[rank].prefix;
+  if (rank === "player" && session.world) {
+    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
+    else if (session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
+  }
+  return `${prefix}${name}\`\``;
+}
+function protocolFlags(account) {
+  const level = RANKS[rankOf(account)].level;
+  return { mstate: level >= 1 ? 1 : 0, smstate: level >= 2 ? 1 : 0 };
+}
+
+// server/ranks/interaction.ts
+function staffInteractionReach(account) {
+  return hasPermission(account, "moderate") ? 124 : null;
+}
+
+// server/tools/string.ts
+var import_node_crypto = __toESM(require("node:crypto"));
+var DEFAULT_SKIN_COLOR2 = 2190853119;
+function rgbHexToGtSkinColor(hex6) {
+  const r = parseInt(hex6.slice(0, 2), 16) & 255;
+  const g = parseInt(hex6.slice(2, 4), 16) & 255;
+  const b = parseInt(hex6.slice(4, 6), 16) & 255;
+  return (b << 24 | g << 16 | r << 8 | 255) >>> 0;
+}
+function gtSkinColorToRgbHex(color) {
+  const u = color >>> 0;
+  const b = u >>> 24 & 255;
+  const g = u >>> 16 & 255;
+  const r = u >>> 8 & 255;
+  return [r, g, b].map((v) => v.toString(16).padStart(2, "0").toUpperCase()).join("");
+}
+function hashPassword(password) {
+  const salt = import_node_crypto.default.randomBytes(16).toString("hex");
+  return `scrypt$${salt}$${import_node_crypto.default.scryptSync(password, salt, 32).toString("hex")}`;
+}
+function verifyPassword(password, stored) {
+  if (!password || password.length > 128 || !stored) return false;
+  let candidate, expected;
+  if (/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(stored)) {
+    const [, salt, digest] = stored.split("$");
+    candidate = import_node_crypto.default.scryptSync(password, salt, 32);
+    expected = Buffer.from(digest, "hex");
+  } else if (/^[a-f0-9]{64}$/.test(stored)) {
+    candidate = import_node_crypto.default.createHash("sha256").update("gt_v150_salt:" + password).digest();
+    expected = Buffer.from(stored, "hex");
+  } else return false;
+  return candidate.length === expected.length && import_node_crypto.default.timingSafeEqual(candidate, expected);
+}
+function cleanName(raw) {
+  return String(raw || "").replace(/`.|``/g, "").replace(/\|/g, "");
+}
+var stripGtColors = cleanName;
+function sanitizeMsg(msg) {
+  return String(msg || "").replace(/\|/g, "").replace(/[\r\n]+/g, " ");
+}
+function sanitizeChatText(msg, maxLen = 120) {
+  return sanitizeMsg(msg).slice(0, maxLen);
+}
+function sanitizeAccountName(raw, maxLen = 18) {
+  return String(raw || "").replace(/[^A-Za-z0-9_]/g, "").slice(0, maxLen);
+}
+
+// server/database/peer.ts
+var KIT_COOLDOWN_MS = 30 * 60 * 1e3;
+function createStarterInventory() {
+  return [
+    { itemId: 18, count: 1, equipped: false },
+    { itemId: 32, count: 1, equipped: false }
+  ];
+}
+function normalizeAccount(raw) {
+  const inv = Array.isArray(raw.inventory) ? raw.inventory.filter((s) => s && typeof s.itemId === "number" && s.count > 0 && s.itemId !== 6).map((s) => ({
+    itemId: s.itemId,
+    count: Math.min(200, Math.max(1, Math.floor(s.count))),
+    equipped: !!s.equipped
+  })) : createStarterInventory();
+  for (const baseId of [18, 32]) {
+    if (!inv.some((s) => s.itemId === baseId)) {
+      inv.unshift({ itemId: baseId, count: 1, equipped: false });
+    }
+  }
+  const hasGrowId = typeof raw.growId === "string" && raw.growId.length > 0 ? true : raw.isGuest === false;
+  return {
+    progression: normalizeProgression(raw.progression),
+    playmods: normalizeMods(raw.playmods),
+    userId: raw.userId,
+    name: raw.name,
+    isGuest: !hasGrowId,
+    growId: hasGrowId ? raw.growId || raw.name : "",
+    passwordHash: typeof raw.passwordHash === "string" ? raw.passwordHash : "",
+    deviceKey: typeof raw.deviceKey === "string" ? raw.deviceKey : "",
+    gems: typeof raw.gems === "number" ? raw.gems : 0,
+    skinColor: typeof raw.skinColor === "number" ? raw.skinColor >>> 0 : DEFAULT_SKIN_COLOR2,
+    flag: typeof raw.flag === "string" && raw.flag.length >= 2 ? raw.flag : "id",
+    moderator: false,
+    rank: "player",
+    banned: !!raw.banned,
+    backpackSize: typeof raw.backpackSize === "number" && Number.isSafeInteger(raw.backpackSize) && raw.backpackSize >= 16 ? Math.min(396, raw.backpackSize) : 16,
+    inventory: inv,
+    // Retain disabled/unknown inventory separately so a save never destroys it.
+    unavailableInventory: Array.isArray(raw.unavailableInventory) ? raw.unavailableInventory.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0).map((s) => ({ itemId: s.itemId, count: Math.min(200, s.count), equipped: !!s.equipped })) : [],
+    recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
+    personalNote: typeof raw.personalNote === "string" ? raw.personalNote.replace(/[|\r\n\0]/g, " ").slice(0, 128) : "",
+    billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
+    lastKitClaim: raw.lastKitClaim,
+    spawnWorld: raw.spawnWorld,
+    spawnX: raw.spawnX,
+    spawnY: raw.spawnY
+  };
+}
+function getClothingVector(account, itemsDb) {
+  const slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const s of account.inventory) {
+    if (!s.equipped || s.count <= 0) continue;
+    const def = itemsDb.get(s.itemId);
+    if (!def || !def.isClothing) continue;
+    const cType = def.actionType === 107 ? 9 : def.clothingType;
+    if (cType >= 0 && cType <= 9) {
+      slots[cType] = s.itemId;
+    }
+  }
+  return slots;
+}
+function buildCharacterStateForSession(session, itemsDb) {
+  const c = session.cheats;
+  let stateFlags = isSuperSupporter(session.account) && !session.account.progression?.hideStatus ? 1 << 24 : 0;
+  let moveSpeed = 250;
+  let gravity = 1e3;
+  let buildRangeTiles = 2;
+  let punchRangeTiles = 2;
+  let punchEffect = 0;
+  for (const inv of session.account.inventory) {
+    if (!inv.equipped || inv.count <= 0) continue;
+    const def = itemsDb.get(inv.itemId);
+    if (!def || !def.isClothing) continue;
+    const nm = def.name.toLowerCase();
+    if (def.id === 5480) {
+      punchRangeTiles = 10;
+      punchEffect = 4;
+    }
+    if (def.id === 17552) {
+      punchRangeTiles = 5;
+    }
+    if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
+    if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325;
+    if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250;
+  }
+  for (const mod of activeMods(session.account)) {
+    stateFlags |= mod.flags;
+    if (mod.gravity !== void 0) gravity = mod.gravity;
+    if (mod.speed !== void 0) moveSpeed = mod.speed;
+  }
+  if (c.noclip) stateFlags |= 1 << 0;
+  if (c.speed) moveSpeed = 420;
+  if (c.fly) {
+    stateFlags |= 1 << 1;
+    moveSpeed = 350;
+    gravity = 600;
+  }
+  const staffReach = staffInteractionReach(session.account);
+  if (staffReach !== null) {
+    buildRangeTiles = staffReach;
+    punchRangeTiles = staffReach;
+  }
+  return {
+    netId: session.netId,
+    punchEffect,
+    buildRangeTiles,
+    punchRangeTiles,
+    stateFlags,
+    moveSpeed,
+    gravity
+  };
+}
 
 // server/onVariant/OnConsoleMessage.ts
-function OnConsoleMessage(session, message) {
-  session.peer.sendPacket(0, makeVariantPacket(["OnConsoleMessage", message]), true);
+var nextPortraitId = 0;
+function chatPortrait(subject, items) {
+  return { clothes: [...getClothingVector(subject.account, items)], skin: effectiveSkin(subject.account) >>> 0 };
 }
-function broadcastConsoleMessage(world, message) {
-  const pkt = makeVariantPacket(["OnConsoleMessage", message]);
+function makeConsoleMessagePacket(message, portrait) {
+  if (!portrait) return makeVariantPacket(["OnConsoleMessage", message]);
+  const id = String(++nextPortraitId % 1e10).padStart(10, "0");
+  const marker = "`o`o`o" + [...id].map((d) => "`" + d).join("") + "`o      ";
+  const header = /_CT:\[[^\]]+\]_ ?/.exec(message);
+  const at = header ? header.index + header[0].length : 0;
+  const tagged = message.slice(0, at) + marker + message.slice(at);
+  return makeVariantPacket(["OnConsoleMessage", tagged, JSON.stringify({ v: 1, id, clothes: portrait.clothes, skin: portrait.skin })]);
+}
+function OnConsoleMessage(session, message, portrait) {
+  session.peer.sendPacket(0, makeConsoleMessagePacket(message, portrait), true);
+}
+function broadcastConsoleMessage(world, message, portrait) {
+  const pkt = makeConsoleMessagePacket(message, portrait);
   for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
 }
 
@@ -27317,115 +27963,17 @@ function OnSetBux(session) {
       "OnSetBux",
       { type: "i32", value: session.account.gems },
       { type: "i32", value: 0 },
-      { type: "i32", value: 0 }
+      { type: "i32", value: isSuperSupporter(session.account) ? 1 : 0 },
+      { type: "vec3", x: isSuperSupporter(session.account) ? 33796 : 0, y: isSuperSupporter(session.account) ? 1 : 0, z: 0 }
     ]),
     true
   );
 }
 
-// server/tools/string.ts
-var import_node_crypto = __toESM(require("node:crypto"));
-var DEFAULT_SKIN_COLOR2 = 2190853119;
-function rgbHexToGtSkinColor(hex6) {
-  const r = parseInt(hex6.slice(0, 2), 16) & 255;
-  const g = parseInt(hex6.slice(2, 4), 16) & 255;
-  const b = parseInt(hex6.slice(4, 6), 16) & 255;
-  return (b << 24 | g << 16 | r << 8 | 255) >>> 0;
-}
-function hashPassword(password) {
-  const salt = import_node_crypto.default.randomBytes(16).toString("hex");
-  return `scrypt$${salt}$${import_node_crypto.default.scryptSync(password, salt, 32).toString("hex")}`;
-}
-function verifyPassword(password, stored) {
-  if (!password || password.length > 128 || !stored) return false;
-  let candidate, expected;
-  if (/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(stored)) {
-    const [, salt, digest] = stored.split("$");
-    candidate = import_node_crypto.default.scryptSync(password, salt, 32);
-    expected = Buffer.from(digest, "hex");
-  } else if (/^[a-f0-9]{64}$/.test(stored)) {
-    candidate = import_node_crypto.default.createHash("sha256").update("gt_v150_salt:" + password).digest();
-    expected = Buffer.from(stored, "hex");
-  } else return false;
-  return candidate.length === expected.length && import_node_crypto.default.timingSafeEqual(candidate, expected);
-}
-function cleanName(raw) {
-  return String(raw || "").replace(/`.|``/g, "").replace(/\|/g, "");
-}
-var stripGtColors = cleanName;
-function sanitizeMsg(msg) {
-  return String(msg || "").replace(/\|/g, "").replace(/[\r\n]+/g, " ");
-}
-function sanitizeChatText(msg, maxLen = 120) {
-  return sanitizeMsg(msg).slice(0, maxLen);
-}
-function sanitizeAccountName(raw, maxLen = 18) {
-  return String(raw || "").replace(/[^A-Za-z0-9_]/g, "").slice(0, maxLen);
-}
-
-// server/database/peer.ts
-var KIT_COOLDOWN_MS = 30 * 60 * 1e3;
-function createStarterInventory() {
-  return [
-    { itemId: 18, count: 1, equipped: false },
-    { itemId: 32, count: 1, equipped: false }
-  ];
-}
-function normalizeAccount(raw) {
-  const inv = Array.isArray(raw.inventory) ? raw.inventory.filter((s) => s && typeof s.itemId === "number" && s.count > 0 && s.itemId !== 6).map((s) => ({
-    itemId: s.itemId,
-    count: Math.min(200, Math.max(1, Math.floor(s.count))),
-    equipped: !!s.equipped
-  })) : createStarterInventory();
-  for (const baseId of [18, 32]) {
-    if (!inv.some((s) => s.itemId === baseId)) {
-      inv.unshift({ itemId: baseId, count: 1, equipped: false });
-    }
-  }
-  const hasGrowId = typeof raw.growId === "string" && raw.growId.length > 0 ? true : raw.isGuest === false;
-  return {
-    userId: raw.userId,
-    name: raw.name,
-    isGuest: !hasGrowId,
-    growId: hasGrowId ? raw.growId || raw.name : "",
-    passwordHash: typeof raw.passwordHash === "string" ? raw.passwordHash : "",
-    deviceKey: typeof raw.deviceKey === "string" ? raw.deviceKey : "",
-    gems: typeof raw.gems === "number" ? raw.gems : 0,
-    skinColor: typeof raw.skinColor === "number" ? raw.skinColor >>> 0 : DEFAULT_SKIN_COLOR2,
-    flag: typeof raw.flag === "string" && raw.flag.length >= 2 ? raw.flag : "id",
-    moderator: false,
-    rank: "player",
-    banned: !!raw.banned,
-    backpackSize: typeof raw.backpackSize === "number" && Number.isSafeInteger(raw.backpackSize) && raw.backpackSize >= 16 ? Math.min(396, raw.backpackSize) : 16,
-    inventory: inv,
-    // Retain disabled/unknown inventory separately so a save never destroys it.
-    unavailableInventory: Array.isArray(raw.unavailableInventory) ? raw.unavailableInventory.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0).map((s) => ({ itemId: s.itemId, count: Math.min(200, s.count), equipped: !!s.equipped })) : [],
-    recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
-    billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
-    lastKitClaim: raw.lastKitClaim,
-    spawnWorld: raw.spawnWorld,
-    spawnX: raw.spawnX,
-    spawnY: raw.spawnY
-  };
-}
-function getClothingVector(account, itemsDb) {
-  const slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  for (const s of account.inventory) {
-    if (!s.equipped || s.count <= 0) continue;
-    const def = itemsDb.get(s.itemId);
-    if (!def || !def.isClothing) continue;
-    const cType = def.actionType === 107 ? 9 : def.clothingType;
-    if (cType >= 0 && cType <= 9) {
-      slots[cType] = s.itemId;
-    }
-  }
-  return slots;
-}
-
 // server/onVariant/OnSetClothing.ts
 function buildSetClothingPacket(subject, itemsDb, playSfx = false) {
   const c = getClothingVector(subject.account, itemsDb);
-  const skinU32 = subject.account.skinColor >>> 0;
+  const skinU32 = effectiveSkin(subject.account) >>> 0;
   return makeVariantPacket(
     [
       "OnSetClothing",
@@ -27447,7 +27995,7 @@ function broadcastSetClothing(world, subject, itemsDb, playSfx = false) {
 }
 function applySkinColorUpdate(subject, worldOrPlaySfx, maybePlaySfx = false) {
   const playSfx = typeof worldOrPlaySfx === "boolean" ? worldOrPlaySfx : maybePlaySfx;
-  const skinU32 = subject.account.skinColor >>> 0;
+  const skinU32 = effectiveSkin(subject.account) >>> 0;
   const skinPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: skinU32 }], subject.netId);
   if (subject.world) {
     for (const p of subject.world.peers) p.peer.sendPacket(0, skinPkt, true);
@@ -27506,6 +28054,134 @@ function SetHasGrowID(session, hasGrowId, growIdName = "", plainPasswordToSave =
   );
 }
 
+// server/config/branding.ts
+var import_node_fs = __toESM(require("node:fs"));
+var import_node_url = require("node:url");
+var import_node_path = __toESM(require("node:path"));
+function validateBranding(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid server config");
+  const v = raw;
+  const input = v.menuButton;
+  if (input !== void 0 && (!input || typeof input !== "object" || Array.isArray(input))) throw new Error("menuButton must be an object");
+  const b = { text: "@salakpatty", url: "https://www.tiktok.com/@salakpatty", color: "#A5E3FB", textColor: "#FFFFFF", iconPath: "branding/tiktok.svg", iconEnabled: true, ...input || {} };
+  if (typeof b.text !== "string" || !b.text.trim() || b.text.length > 24 || /[`|<>\r\n\x00-\x1f]/.test(b.text)) throw new Error("menuButton.text: 1\u201324 plain characters");
+  if (typeof b.url !== "string" || !/^https:\/\//.test(b.url)) throw new Error("menuButton.url must use HTTPS");
+  try {
+    const u = new import_node_url.URL(b.url);
+    if (u.username || u.password) throw 0;
+  } catch {
+    throw new Error("Invalid menuButton.url");
+  }
+  for (const color of [b.color, b.textColor]) if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Menu colors must use #RRGGBB");
+  if (typeof b.iconPath !== "string" || !/^[A-Za-z0-9_/-]+\.(png|svg)$/.test(b.iconPath) || b.iconPath.startsWith("/") || b.iconPath.includes("..")) throw new Error("Invalid local menuButton.iconPath");
+  if (typeof b.iconEnabled !== "boolean") throw new Error("menuButton.iconEnabled must be boolean");
+  const menuButton = b;
+  const name = v.serverName;
+  const version = v.version ?? "V1.5";
+  if (typeof version !== "string" || !version.trim() || version.length > 32 || /[`|<>\r\n\x00-\x1f]/.test(version)) throw new Error("version: use 1\u201332 plain-text characters");
+  if (typeof name !== "string" || !name.trim() || name.length > 40 || !/^[\x20-\x7e]+$/.test(name) || /[`|<>]/.test(name)) throw new Error("serverName: use 1\u201340 ASCII characters, no packet/markup delimiters");
+  if (typeof v.logoPath !== "string" || !/^[A-Za-z0-9_/-]+\.png$/.test(v.logoPath) || v.logoPath.startsWith("/") || v.logoPath.includes("..")) throw new Error("logoPath must be a local PNG relative to public/");
+  if (typeof v.skipIntro !== "boolean" || typeof v.hideLegacyCustomItemWarning !== "boolean") throw new Error("Client options must be booleans");
+  if (!Array.isArray(v.splashes) || v.splashes.length > 30 || v.splashes.some((x) => typeof x !== "string" || x.length > 140 || /[\r\n|\x00-\x1f]/.test(x))) throw new Error("Invalid splashes");
+  const autofillLabel = v.autofillLabel ?? "Autofill";
+  if (typeof autofillLabel !== "string" || !/^[\x20-\x7e]{1,70}$/.test(autofillLabel) || /[`|<>]/.test(autofillLabel)) throw new Error("autofillLabel: 1\u201370 plain ASCII characters");
+  const autofillAccent = v.autofillAccent ?? "#E3B5FF";
+  if (typeof autofillAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(autofillAccent)) throw new Error("autofillAccent must use #RRGGBB");
+  return { menuButton, autofillLabel, autofillAccent, serverName: name.trim(), version: version.trim(), logoPath: v.logoPath, skipIntro: v.skipIntro, hideLegacyCustomItemWarning: v.hideLegacyCustomItemWarning, splashes: v.splashes };
+}
+function loadBranding(root = process.cwd()) {
+  const file = import_node_path.default.join(root, "config/server.json");
+  return validateBranding(import_node_fs.default.existsSync(file) ? JSON.parse(import_node_fs.default.readFileSync(file, "utf8")) : { serverName: "Game Server", logoPath: "branding/logo.png", skipIntro: true, hideLegacyCustomItemWarning: true, splashes: ["Welcome to {serverName}!"] });
+}
+var SERVER_CONFIG = loadBranding();
+var SERVER_NAME = SERVER_CONFIG.serverName;
+
+// server/database/world-policy.ts
+var RESERVED_WORLDS = /* @__PURE__ */ new Set([
+  "EXIT",
+  "ERROR",
+  "ADMIN",
+  "MODERATOR",
+  "SYSTEM",
+  "SETH",
+  "HAMUMU",
+  "RTSOFT",
+  "MIKEHOMMEL"
+]);
+var CLOSED_EVENT_WORLDS = /* @__PURE__ */ new Set(["GROWGANOTH", "LEGENDARYMOUNTAIN"]);
+function worldDestination(raw) {
+  const name = String(raw || "").trim().toUpperCase();
+  if (!name || name === "EXIT") return { kind: "exit" };
+  if (!/^[A-Z0-9]{1,24}$/.test(name)) return { kind: "invalid", reason: "Use 1\u201324 letters or numbers only for a world name." };
+  if (RESERVED_WORLDS.has(name)) return { kind: "invalid", reason: "That world name is reserved to prevent confusion." };
+  if (CLOSED_EVENT_WORLDS.has(name)) return { kind: "invalid", reason: "This special world is not open on this server." };
+  return { kind: "world", name };
+}
+function isPlayableWorldName(name) {
+  return worldDestination(name).kind === "world";
+}
+
+// server/onVariant/RequestWorldSelectMenu.ts
+var GAZETTE_NEWS = [
+  {
+    title: `Welcome to ${SERVER_NAME}`,
+    body: "Original-reference items, secure GrowID registration, saved outfits and native Shop."
+  },
+  {
+    title: "Useful Commands",
+    body: "Use `5/find <name>`` to browse items, `5/rank`` to see your role, `5/mods`` for online staff, and `5/help`` for commands."
+  },
+  {
+    title: "PC Controls & Fullscreen",
+    body: "Open `wOptions`` anytime to toggle `wFullscreen`` or customize PC controls in `wEdit Hotkeys``!"
+  }
+];
+function RequestWorldSelectMenu(session, worlds) {
+  const featured = ["START", "FARM", "PARKOUR", "TRADE"];
+  const lines = [
+    "default|START",
+    "add_filter|",
+    "add_heading|Top Worlds<ROW2>|"
+  ];
+  const colors = [3529161471, 2147418367, 3417414143, 2864971775];
+  featured.forEach((name, idx) => {
+    const w = worlds.get(name);
+    const cnt = w ? w.peers.size : 0;
+    lines.push(`add_floater|${name}|${cnt}|0.55|${colors[idx % colors.length]}`);
+  });
+  for (const [name, w] of worlds.entries()) {
+    if (isPlayableWorldName(name) && !featured.includes(name) && w.peers.size > 0) {
+      lines.push(`add_floater|${name}|${w.peers.size}|0.50|2147418367`);
+    }
+  }
+  const myLockedWorlds = [];
+  for (const w of worlds.values()) {
+    if (isPlayableWorldName(w.name) && w.ownerUserId === session.account.userId) {
+      myLockedWorlds.push(w);
+    }
+  }
+  if (myLockedWorlds.length > 0) {
+    lines.push("add_heading|My Worlds<CR>|");
+    for (const mw of myLockedWorlds.slice(0, 8)) {
+      lines.push(`add_floater|${mw.name}|${mw.peers.size}|0.48|2147418367`);
+    }
+  }
+  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n) && !featured.includes(n));
+  if (recent.length > 0) {
+    lines.push("add_heading|Recently Visited Worlds<CR>|");
+    for (const rName of recent.slice(0, 6)) {
+      const rw = worlds.get(rName);
+      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.46|3417414143`);
+    }
+  }
+  lines.push("");
+  session.peer.sendPacket(
+    0,
+    makeVariantPacket(["OnRequestWorldSelectMenu", lines.join("\n") + "\n"]),
+    true
+  );
+}
+
 // server/tools/create_dialog.ts
 var DialogBuilder = class {
   lines = ["set_default_color|`o"];
@@ -27542,6 +28218,18 @@ var DialogBuilder = class {
   }
   addTextBoxInput(name, label, defaultValue, maxLen, lines = 3) {
     this.lines.push(`add_text_box_input|${name}|${label}|${defaultValue}|${maxLen}|${lines}|`);
+    return this;
+  }
+  customSpacing(x, y) {
+    this.lines.push(`set_custom_spacing|x:${x};y:${y}|`);
+    return this;
+  }
+  customButton(name, image) {
+    this.lines.push(`add_custom_button|${name}|image:interface/large/${image}.rttex;image_size:400,260;width:0.19;|`);
+    return this;
+  }
+  customBreak() {
+    this.lines.push("add_custom_break|");
     return this;
   }
   addButton(name, label, flags = "noflags") {
@@ -27582,8 +28270,8 @@ var DialogBuilder = class {
     this.lines.push(`add_player_picker|${name}|${label}|`);
     return this;
   }
-  addPlayerInfo(playerName, level, xpCurrent, xpRequired) {
-    this.lines.push(`add_player_info|${playerName}|${level}|${xpCurrent}|${xpRequired}|`);
+  addPlayerInfo(playerName, level, xpCurrent, xpRequired2) {
+    this.lines.push(`add_player_info|${playerName}|${level}|${xpCurrent}|${xpRequired2}|`);
     return this;
   }
   addSpacer(size = "small") {
@@ -27626,6 +28314,125 @@ function RequestGazette(session) {
   dlg.addQuickExit();
   OnDialogRequest(session, dlg.endDialog("gazette", "Close", ""));
 }
+
+// server/index.ts
+var import_node_http = __toESM(require("node:http"));
+
+// node_modules/ws/wrapper.mjs
+var import_stream = __toESM(require_stream(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
+var import_receiver = __toESM(require_receiver(), 1);
+var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
+var import_websocket = __toESM(require_websocket(), 1);
+var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// server/playmods/service.ts
+function bubble(s, text, viewers = [s]) {
+  const packet = makeVariantPacket(["OnTalkBubble", { type: "i32", value: s.netId }, text, { type: "i32", value: 0 }, { type: "i32", value: 0 }]);
+  for (const viewer of viewers) viewer.peer.sendPacket(0, packet, true);
+}
+function consumableTarget(s, tx, ty) {
+  return [...s.world?.peers || []].filter(
+    (p) => tx * 32 < p.x + 20 && tx * 32 + 32 > p.x && ty * 32 < p.y + 30 && ty * 32 + 32 > p.y
+  ).sort((a, b) => Math.hypot(a.x + 10 - tx * 32 - 16, a.y + 15 - ty * 32 - 16) - Math.hypot(b.x + 10 - tx * 32 - 16, b.y + 15 - ty * 32 - 16) || a.netId - b.netId)[0];
+}
+function useConsumable(ctx, s, id, tx, ty) {
+  const def = ctx.itemsDb.get(id);
+  if (def?.actionType !== 8) return false;
+  const world = s.world;
+  if (!world || !Number.isInteger(tx) || !Number.isInteger(ty) || tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return true;
+  const mod = MODS.find((m) => m.item === id), food = SIMPLE_FOODS.find((m) => m.item === id);
+  if (!mod && !food) {
+    OnConsoleMessage(s, "This consumable is not implemented yet. Your item was not consumed.");
+    return true;
+  }
+  const target = consumableTarget(s, tx, ty), throwable = mod?.action === "throw";
+  if (!target && !throwable) {
+    bubble(s, "Must be used on a person.");
+    return true;
+  }
+  if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
+  const now = Date.now();
+  if (mod && target && mod.seconds > 0) {
+    target.account.playmods = (target.account.playmods || []).filter((m) => m.expiresAt > now);
+    if (!target.account.playmods.some((m) => m.id === mod.id)) {
+      target.account.playmods.push({ id: mod.id, expiresAt: now + mod.seconds * 1e3 });
+      OnConsoleMessage(target, `${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${mod.seconds}s\`\` left)`);
+      ctx.sendCharacterState(target);
+      applySkinColorUpdate(target, false);
+    }
+  }
+  const personAnimation = !!food || !!target && (mod?.action === "" || mod?.action === "drop");
+  const itemEffect = buildTankPacket({
+    type: 19,
+    netId: 0,
+    count2: personAnimation ? 5 : 4,
+    targetNetId: personAnimation ? target.netId : s.netId,
+    punchX: id,
+    punchY: s.netId,
+    x: personAnimation ? s.x + 10 : tx * 32 + 16,
+    y: personAnimation ? s.y + 16 : ty * 32 + 16
+  });
+  const sound = food ? "eat.wav" : mod?.sound;
+  const text = food?.text || mod?.text;
+  if (text && target) bubble(target, text, world.peers);
+  for (const viewer of world.peers) {
+    viewer.peer.sendPacket(0, itemEffect, true);
+    if (sound && target) viewer.peer.sendPacket(0, makeVariantPacket(["OnPlayPositioned", `audio/${sound}`], target.netId), true);
+    if (throwable && mod.effect) viewer.peer.sendPacket(0, makeParticleEffectPacket(mod.effect, tx * 32 + 16, ty * 32 + 16), true);
+  }
+  recordProgress(ctx, s, "consumables_used", 1, 1);
+  return true;
+}
+function expireMods(ctx) {
+  const now = Date.now();
+  for (const s of ctx.sessions) {
+    const expired = (s.account.playmods || []).filter((m) => m.expiresAt <= now);
+    if (!expired.length) continue;
+    s.account.playmods = s.account.playmods.filter((m) => m.expiresAt > now);
+    ctx.dirty = true;
+    for (const m of expired) {
+      const def = MODS.find((d) => d.id === m.id);
+      if (def?.onRemove) OnConsoleMessage(s, def.onRemove);
+    }
+    ctx.sendCharacterState(s);
+    applySkinColorUpdate(s, false);
+  }
+}
+
+// server/ranks/service.ts
+var import_node_fs2 = __toESM(require("node:fs"));
+var import_node_path2 = __toESM(require("node:path"));
+var RankService = class {
+  assignments = /* @__PURE__ */ new Map();
+  constructor(root) {
+    const file = import_node_path2.default.join(root, "data_store", "ranks.json");
+    if (import_node_fs2.default.existsSync(file)) {
+      const config = JSON.parse(import_node_fs2.default.readFileSync(file, "utf8"));
+      if (config.schemaVersion !== 1 || !config.assignments || typeof config.assignments !== "object" || Array.isArray(config.assignments)) throw new Error("Invalid ranks.json");
+      for (const [key, rank] of Object.entries(config.assignments)) {
+        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)) || !isRank(rank)) throw new Error("Invalid rank assignment");
+        this.assignments.set(Number(key), rank);
+      }
+    }
+    for (const [variable, rank] of [["MODERATOR_USER_IDS", "moderator"], ["ADMIN_USER_IDS", "developer"], ["DEVELOPER_USER_IDS", "developer"]]) {
+      for (const key of (process.env[variable] || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key))) throw new Error(`Invalid ${variable}`);
+        this.assignments.set(Number(key), rank);
+      }
+    }
+  }
+  apply(account) {
+    account.rank = account.isGuest ? "player" : this.assignments.get(account.userId) || "player";
+    account.moderator = account.rank !== "player";
+  }
+};
+
+// server/database/context.ts
+var import_node_fs3 = __toESM(require("node:fs"));
+var import_node_path3 = __toESM(require("node:path"));
 
 // server/database/world.ts
 function generateFreshWorld(name) {
@@ -27887,6 +28694,8 @@ var ServerContext = class {
         import_node_fs3.default.copyFileSync(file, file + ".pre-original-items.bak");
     }
     this.loadPersistentState();
+    const modTimer = setInterval(() => expireMods(this), 250);
+    modTimer.unref();
     this.saveTimer = setInterval(() => {
       if (this.dirty) {
         this.savePersistentState();
@@ -28072,7 +28881,7 @@ var ServerContext = class {
     }
     return added;
   }
-  consumeInventoryItem(session, itemId, qty, sendModifyPacket = true) {
+  consumeInventoryItem(session, itemId, qty, sendModifyPacket = true, persistNow = true) {
     const idx = session.account.inventory.findIndex((s) => s.itemId === itemId && s.count >= qty);
     if (idx === -1) return false;
     const slot = session.account.inventory[idx];
@@ -28084,7 +28893,7 @@ var ServerContext = class {
       slot.count = 1;
     }
     this.dirty = true;
-    this.savePlayersNow();
+    if (persistNow) this.savePlayersNow();
     if (sendModifyPacket) {
       if (session.world) {
         session.peer.sendPacket(0, makeModifyInventoryPacket(itemId, 0, qty), true);
@@ -28099,55 +28908,10 @@ var ServerContext = class {
     return true;
   }
   sendCharacterState(session) {
-    const c = session.cheats;
-    let stateFlags = 0;
-    let moveSpeed = 250;
-    let gravity = 1e3;
-    let buildRangeTiles = 2;
-    let punchRangeTiles = 2;
-    let punchEffect = 0;
-    let riftCape = false;
-    let riftWings = false;
-    let infinityAura = false;
-    for (const inv of session.account.inventory) {
-      if (!inv.equipped || inv.count <= 0) continue;
-      const def = this.itemsDb.get(inv.itemId);
-      if (!def || !def.isClothing) continue;
-      const nm = def.name.toLowerCase();
-      if (def.id === 10424) riftCape = true;
-      if (def.id === 11478) riftWings = true;
-      if (def.id === 14086) infinityAura = true;
-      if (def.id === 5480 || def.isRayman) {
-        punchRangeTiles = 10;
-        punchEffect = 4;
-      }
-      if (def.id === 98) {
-        punchRangeTiles = 5;
-        buildRangeTiles = 5;
-      }
-      if (def.id === 17552) {
-        punchRangeTiles = 5;
-      }
-      if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
-      if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325;
-      if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250;
-    }
-    if (c.noclip) stateFlags |= 1 << 0;
-    if (c.speed) moveSpeed = 420;
-    if (c.fly) {
-      stateFlags |= 1 << 1;
-      moveSpeed = 350;
-      gravity = 600;
-    }
-    const pkt = makeSetCharacterStatePacket({
-      netId: session.netId,
-      stateFlags,
-      moveSpeed,
-      gravity,
-      buildRangeTiles,
-      punchRangeTiles,
-      punchEffect
-    });
+    const state = buildCharacterStateForSession(session, this.itemsDb);
+    const equipped = new Set(session.account.inventory.filter((i) => i.equipped && i.count > 0).map((i) => i.itemId));
+    const riftCape = equipped.has(10424), riftWings = equipped.has(11478), infinityAura = equipped.has(14086);
+    const pkt = makeSetCharacterStatePacket(state);
     session.peer.sendPacket(0, pkt, true);
     if (session.world) {
       for (const other of session.world.peers) {
@@ -28170,10 +28934,11 @@ var ServerContext = class {
     for (const other of world.peers) {
       if (other === session) continue;
       OnSpawn(session, other, false);
+      session.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(other, this.itemsDb)), true);
       session.peer.sendPacket(0, buildSetClothingPacket(other, this.itemsDb, false), true);
       session.peer.sendPacket(
         0,
-        makeVariantPacket(["OnChangeSkin", { type: "u32", value: other.account.skinColor >>> 0 }], other.netId),
+        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
         true
       );
       OnSpawn(other, session, false);
@@ -28187,7 +28952,7 @@ var ServerContext = class {
     }
   }
   schedulePostSpawnSkinSync(session, expectedWorld, expectedNetId) {
-    const skinU32 = session.account.skinColor >>> 0;
+    const skinU32 = effectiveSkin(session.account) >>> 0;
     const skinPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: skinU32 }], expectedNetId);
     session.peer.sendPacket(0, skinPkt, true);
     const stillJoined = () => session.world === expectedWorld && session.netId === expectedNetId && this.sessions.has(session);
@@ -28197,14 +28962,14 @@ var ServerContext = class {
         if (p === session || p.world !== expectedWorld || !this.sessions.has(p)) continue;
         p.peer.sendPacket(0, buildSetClothingPacket(session, this.itemsDb, false), true);
         session.peer.sendPacket(0, buildSetClothingPacket(p, this.itemsDb, false), true);
-        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: p.account.skinColor >>> 0 }], p.netId), true);
+        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(p.account) >>> 0 }], p.netId), true);
       }
     };
     const first = setTimeout(() => {
       if (!stillJoined()) return;
       this.sendInventory(session, true);
       this.sendCharacterState(session);
-      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: session.account.skinColor >>> 0 }], expectedNetId);
+      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account) >>> 0 }], expectedNetId);
       for (const p of expectedWorld.peers) p.peer.sendPacket(0, refreshPkt, true);
       synchronizeRemoteOutfits();
     }, 180);
@@ -28273,6 +29038,7 @@ var ServerContext = class {
     OnSetBux(session);
     this.sendCharacterState(session);
     broadcastPositionedSfx(world, session.netId, entrySfx);
+    for (const peer of world.peers) recordProgress(this, peer, void 0, 0);
     if (announceEntry) {
       const owner = world.ownerUserId ? this.findAccountByUserId(world.ownerUserId) : void 0;
       const lockNote = owner ? ` \`o[\`wWorld Locked\`\` by \`2${owner.name}\`o]\`\`` : " `o(Unclaimed - place a World Lock!)``";
@@ -28813,6 +29579,35 @@ function onPeerConnect(peer) {
   peer.sendPacket(0, makeServerHello(), true);
 }
 
+// server/progression/skin.ts
+function canUseSkin(a, color) {
+  if (!Number.isInteger(color) || color < 0 || color > 4294967295) return false;
+  if ((color & 255) < 64) return false;
+  return ALLOWLISTED_SKIN_COLORS.slice(0, 8).includes(color) || isSuperSupporter(a) || hasPermission(a, "debug");
+}
+function setSkin(ctx, s, color) {
+  if (!canUseSkin(s.account, color)) {
+    OnConsoleMessage(s, "This skin color requires Super Supporter (level 50).");
+    return false;
+  }
+  const before = s.account.skinColor;
+  s.account.skinColor = color;
+  try {
+    ctx.savePlayersNow();
+  } catch (e) {
+    s.account.skinColor = before;
+    throw e;
+  }
+  applySkinColorUpdate(s, s.world, true);
+  return true;
+}
+function showSkinMenu(s) {
+  const d = new DialogBuilder().addLabelWithIcon("big", "Skin Color", 32);
+  ALLOWLISTED_SKIN_COLORS.forEach((c, i) => d.addButton(`skin_${c}`, `#${gtSkinColorToRgbHex(c)}${i >= 8 ? " (Super Supporter)" : ""}`));
+  if (isSuperSupporter(s.account) || hasPermission(s.account, "debug")) d.addSmalltext("More colors: /skin RRGGBB or /skin RRGGBBAA (alpha 40-FF). White: /skin FFFFFF.");
+  OnDialogRequest(s, d.addQuickExit().endDialog("skin_menu", "Close", ""));
+}
+
 // server/database/store-catalog.ts
 var STORE_CATALOG = [{ "key": "world_lock", "tab": "locks", "name": "World Lock", "texture": "interface/large/store_buttons/store_buttons.rttex", "x": 0, "y": 7, "price": 2e3, "items": [[242, 1]] }, { "key": "world_lock_10_pack", "tab": "locks", "name": "World Lock Pack", "texture": "interface/large/store_buttons/store_buttons18.rttex", "x": 0, "y": 3, "price": 2e4, "items": [[242, 10]] }, { "key": "small_lock", "tab": "locks", "name": "Small Lock", "texture": "interface/large/store_buttons/store_buttons.rttex", "x": 1, "y": 3, "price": 50, "items": [[202, 1]] }, { "key": "big_lock", "tab": "locks", "name": "Big Lock", "texture": "interface/large/store_buttons/store_buttons.rttex", "x": 1, "y": 1, "price": 200, "items": [[204, 1]] }, { "key": "huge_lock", "tab": "locks", "name": "Huge Lock", "texture": "interface/large/store_buttons/store_buttons.rttex", "x": 0, "y": 4, "price": 500, "items": [[206, 1]] }, { "key": "upgrade_backpack", "tab": "locks", "name": "`0Upgrade Backpack (`w10 Slots)", "texture": "interface/large/store_buttons/store_buttons.rttex", "x": 0, "y": 1, "price": 0, "items": [] }, { "key": "turtle_hat", "tab": "bigitems", "name": "Turtle Hat", "texture": "interface/large/store_buttons/store_buttons3.rttex", "x": 0, "y": 2, "price": 25e3, "items": [[574, 1]] }, { "key": "tiny_horsie", "tab": "bigitems", "name": "Tiny Horsie", "texture": "interface/large/store_buttons/store_buttons3.rttex", "x": 0, "y": 5, "price": 25e3, "items": [[592, 1]] }, { "key": "star_ship", "tab": "bigitems", "name": "Pleiadian Star Ship", "texture": "interface/large/store_buttons/store_buttons4.rttex", "x": 0, "y": 3, "price": 25e3, "items": [[760, 1]] }, { "key": "dragon_hand", "tab": "bigitems", "name": "Dragon Hand", "texture": "interface/large/store_buttons/store_buttons5.rttex", "x": 0, "y": 1, "price": 5e4, "items": [[900, 1]] }, { "key": "weather_sunny", "tab": "weather", "name": "Weather Machine - Sunny", "texture": "interface/large/store_buttons/store_buttons5.rttex", "x": 0, "y": 5, "price": 1e3, "items": [[932, 1]] }, { "key": "weather_night", "tab": "weather", "name": "Weather Machine - Night", "texture": "interface/large/store_buttons/store_buttons5.rttex", "x": 0, "y": 6, "price": 1e4, "items": [[934, 1]] }, { "key": "weather_arid", "tab": "weather", "name": "Weather Machine - Arid", "texture": "interface/large/store_buttons/store_buttons5.rttex", "x": 0, "y": 7, "price": 1e4, "items": [[946, 1]] }, { "key": "weather_rainy", "tab": "weather", "name": "Weather Machine - Rainy City", "texture": "interface/large/store_buttons/store_buttons6.rttex", "x": 0, "y": 5, "price": 1e4, "items": [[984, 1]] }];
 function backpackPrice(size) {
@@ -28887,6 +29682,7 @@ function handleBuy(ctx, session, itemIdOrKey) {
     result("Purchase was not completed: storage error.");
     return;
   }
+  recordProgress(ctx, session, "gems_spent", price);
   ctx.sendInventory(session, true);
   OnSetBux(session);
   result(`Purchased ${product.name} for ${price} Gems.`);
@@ -29107,6 +29903,62 @@ function handleGrowIdApplyReturn(ctx, session, kv) {
   applyGrowIdUpgrade(ctx, session, logon, pass, verify);
 }
 
+// server/progression/commands.ts
+function showAchievements(s) {
+  const p = progression(s.account);
+  const dlg = new DialogBuilder().addLabelWithIcon("big", "Achievements", 982).addSmalltext(`${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length} implemented goals earned`);
+  for (const a of ACHIEVEMENTS) dlg.addSmalltext(`${p.earned[a.id] ? "`2Earned" : "`o" + Math.min(a.target, p.counters[a.metric] || 0) + "/" + a.target} - ${a.title} (${a.division})\`\``);
+  OnDialogRequest(s, dlg.addQuickExit().endDialog("achievements", "Close", ""));
+}
+function handleProgressionCommand(ctx, s, cmd, parts) {
+  if (cmd === "hidestatus") {
+    const p = progression(s.account);
+    if (!p.superSupporter) {
+      OnConsoleMessage(s, "Super Supporter required.");
+      return true;
+    }
+    p.hideStatus = !p.hideStatus;
+    ctx.savePlayersNow();
+    ctx.sendCharacterState(s);
+    return true;
+  }
+  if (cmd === "achievements") {
+    showAchievements(s);
+    return true;
+  }
+  if (cmd === "level") {
+    const p = progression(s.account);
+    OnConsoleMessage(s, `Level ${p.level} | XP ${p.xp}/${xpRequired(p.level)}${p.superSupporter ? " | Super Supporter" : ""}`);
+    return true;
+  }
+  if (cmd !== "setlevel" && cmd !== "givexp") return false;
+  if (!hasPermission(s.account, "debug")) {
+    OnConsoleMessage(s, "Developer permission required.");
+    return true;
+  }
+  const amount = Number(parts[1]);
+  if (parts.length < 2 || parts.length > 3 || !/^\d+$/.test(parts[1]) || !Number.isSafeInteger(amount) || amount < 1 || amount > (cmd === "setlevel" ? MAX_LEVEL : 1e7)) {
+    OnConsoleMessage(s, `Usage: /${cmd} <${cmd === "setlevel" ? "1-125" : "1-10000000"}> [online player]`);
+    return true;
+  }
+  const target = parts[2] ? [...ctx.sessions].find((p) => p.account.name.toLowerCase() === parts[2].toLowerCase()) : s;
+  if (!target) {
+    OnConsoleMessage(s, "Player is not online.");
+    return true;
+  }
+  if (cmd === "setlevel") {
+    const p = progression(target.account);
+    p.level = amount;
+    p.xp = 0;
+  }
+  recordProgress(ctx, target, void 0, 0, cmd === "givexp" ? amount : 0);
+  ctx.sendCharacterState(target);
+  OnSetBux(target);
+  broadcastNameChanged(target);
+  OnConsoleMessage(s, `${cmd}: ${target.account.name}, level ${progression(target.account).level}.`);
+  return true;
+}
+
 // server/action/wrench.ts
 function handleWrenchPlayer(ctx, session, kv) {
   const world = session.world;
@@ -29119,15 +29971,17 @@ function handleWrenchPlayer(ctx, session, kv) {
     return;
   }
   if (target === session) {
-    const acct = session.account;
-    const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `${displayName(session)} (\`#${acct.isGuest ? "Guest Account" : "GrowID"}\`\`)`, 32).addSmalltext(`\`9User ID: \`w${acct.userId}\`9 | Gems: \`2${acct.gems}\`9 | Backpack: \`w${acct.inventory.length}/${acct.backpackSize}\`\``).addSpacer("small").addButtonWithIcon("acct_find", "`2Item Finder (/find)``", 6016);
-    dlg2.addSmalltext(`Rank: ${RANKS[rankOf(acct)].label}`);
-    if (hasPermission(acct, "debug")) dlg2.addButtonWithIcon("acct_cheats", "`5Developer Tools``", 5480);
-    if (acct.isGuest) {
-      dlg2.addButtonWithIcon("acct_growid", "`2Get Free GrowID!``", 206);
+    const acct = session.account, p = progression(acct);
+    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").customBreak().addSpacer("small").customSpacing(0, 0);
+    const mods = activeMods(acct);
+    if (mods.length) dlg2.addTextbox("`wActive effects:``");
+    for (const mod of mods) {
+      const remaining = Math.max(0, Math.ceil((acct.playmods.find((m) => m.id === mod.id).expiresAt - Date.now()) / 1e3));
+      dlg2.addLabelWithIcon("small", `${mod.title}\`\` (\`w${remaining}s\`\` left)`, mod.icon);
     }
-    dlg2.addQuickExit();
-    OnDialogRequest(session, dlg2.endDialog("self_wrench", "Close", ""));
+    dlg2.addSpacer("small").addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`).addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x / 32)}, ${Math.floor(session.y / 32)}) (${world.peers.size} person)`).addTextbox(p.superSupporter ? "You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``." : "You are not yet a `2Supporter`` or `5Super Supporter``.");
+    if (acct.isGuest) dlg2.addButtonWithIcon("acct_growid", "`2Get Free GrowID!``", 206);
+    OnDialogRequest(session, dlg2.addQuickExit().endDialog("popup", "", "Continue"));
     return;
   }
   const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", displayName(target), 32).addSmalltext(`\`9User ID: \`w${target.account.userId}\`9 | Gems: \`2${target.account.gems}\`\``).addSpacer("small").addButtonWithIcon(`trade_start_${target.netId}`, "`2Trade Item``", 1422);
@@ -29224,19 +30078,39 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     }
     return true;
   }
-  if (dlgName === "self_wrench") {
-    if (btn === "acct_growid") {
-      showGrowIdApplyModal(session);
+  if (dlgName === "skin_menu") {
+    if (/^skin_\d+$/.test(btn)) setSkin(ctx, session, Number(btn.slice(5)));
+    return true;
+  }
+  if (dlgName === "notebook_edit") {
+    if (btn === "save" || btn === "clear") {
+      session.account.personalNote = btn === "clear" ? "" : String(kv.personal_note || "").replace(/[|\r\n\0]/g, " ").slice(0, 128);
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+    }
+    return true;
+  }
+  if (dlgName === "my_worlds") {
+    if (btn.startsWith("visit_")) {
+      const name = btn.slice(6), world = ctx.worlds.get(name);
+      if (world?.ownerUserId === session.account.userId) ctx.joinWorld(session, name);
+    }
+    return true;
+  }
+  if (dlgName === "popup") {
+    if (btn === "alist") {
+      showAchievements(session);
       return true;
     }
-    if (btn === "acct_find") {
-      openItemFinderDialog(ctx, session, "");
-      return true;
+    if (btn === "notebook_edit") {
+      OnDialogRequest(session, new DialogBuilder().addLabel("big", "Notebook").addTextBoxInput("personal_note", "", session.account.personalNote || "", 128, 5).addSpacer("small").addButton("save", "Save").addButton("clear", "Clear").addButton("cancel", "Cancel").addQuickExit().endDialog("notebook_edit", "", ""));
     }
-    if (btn === "acct_cheats") {
-      openCheatsMenu(session);
-      return true;
+    if (btn === "my_worlds") {
+      const dlg = new DialogBuilder().addLabelWithIcon("big", "My Worlds", 242);
+      for (const w of ctx.worlds.values()) if (w.ownerUserId === session.account.userId) dlg.addButton(`visit_${w.name}`, w.name);
+      OnDialogRequest(session, dlg.addQuickExit().endDialog("my_worlds", "Close", ""));
     }
+    if (btn === "acct_growid") showGrowIdApplyModal(session);
     return true;
   }
   if (dlgName === "target_wrench") {
@@ -29500,9 +30374,16 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
   return false;
 }
 
+// server/progression/recycling.ts
+function recycleValue(itemId, amount) {
+  const prices = STORE_CATALOG.filter((p) => p.items.length === 1 && p.items[0][0] === itemId && p.items[0][1] > 0).map((p) => p.price / p.items[0][1]);
+  return prices.length ? Math.floor(Math.min(...prices) / 10) * amount : 0;
+}
+
 // server/action/dialog_return/trash_item.ts
 function handleTrashItemReturn(ctx, session, kv) {
   if (kv.buttonClicked === "Cancel") return;
+  if (!/^\d+$/.test(kv.itemID || "") || !/^\d+$/.test(kv.trash_count || "")) return;
   const itemId = parseInt((kv.itemID || "0").trim(), 10);
   const rawAmt = parseInt((kv.trash_count || "").trim(), 10);
   if (!itemId || itemId === 18 || itemId === 32 || !Number.isFinite(rawAmt) || rawAmt <= 0) {
@@ -29511,10 +30392,12 @@ function handleTrashItemReturn(ctx, session, kv) {
   const amt = Math.min(200, rawAmt);
   const slot = session.account.inventory.find((s) => s.itemId === itemId);
   if (!slot || slot.count < amt) return;
+  const definition = ctx.itemsDb.get(itemId);
+  if (!definition || (definition.flags & 128) !== 0) return;
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
-  const reward = amt * 2;
+  const reward = isSuperSupporter(session.account) ? recycleValue(itemId, amt) : 0;
   session.account.gems += reward;
-  ctx.savePlayersNow();
+  recordProgress(ctx, session, "items_trashed", amt);
   OnSetBux(session);
   const def = ctx.itemsDb.get(itemId);
   const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
@@ -29799,15 +30682,17 @@ function handlePlayerCommand(ctx, session, cmd, parts, argStr) {
     return true;
   }
   if (cmd === "skin") {
-    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})$/);
-    if (!m) {
-      OnConsoleMessage(session, "`4Usage: /skin <RRGGBB>``");
+    if (!argStr.trim()) {
+      showSkinMenu(session);
       return true;
     }
-    session.account.skinColor = rgbHexToGtSkinColor(m[1]);
-    ctx.savePlayersNow();
-    applySkinColorUpdate(session, session.world, true);
-    OnConsoleMessage(session, "`2Skin color updated!``");
+    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/);
+    if (!m) {
+      OnConsoleMessage(session, "Usage: /skin RRGGBB[AA]");
+      return true;
+    }
+    const color = (rgbHexToGtSkinColor(m[1]) & 4294967040 | (m[2] ? parseInt(m[2], 16) : 255)) >>> 0;
+    if (setSkin(ctx, session, color)) OnConsoleMessage(session, "Skin color updated!");
     return true;
   }
   if (cmd === "flag") {
@@ -29856,10 +30741,11 @@ netID|${session.netId}`
     }
     OnConsoleMessage(
       target,
-      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``
+      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
+      chatPortrait(session, ctx.itemsDb)
     );
     OnPlayPositioned(target, "audio/beep.wav");
-    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``);
+    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
   if (cmd === "youtube" || cmd === "yt") {
@@ -29920,7 +30806,7 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
     const msg = sanitizeChatText(argStr, 100);
     const action = `\`6<${displayName(session)} \`#${msg}\`\`\`6>\`\``;
     broadcastTalkBubble(world, session.netId, action, 0);
-    broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`);
+    broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`, chatPortrait(session, ctx.itemsDb));
     return true;
   }
   if (cmd === "sb" || cmd === "bc") {
@@ -29933,7 +30819,8 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
     for (const p of ctx.sessions) {
       OnConsoleMessage(
         p,
-        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``
+        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``,
+        chatPortrait(session, ctx.itemsDb)
       );
       OnPlayPositioned(p, "audio/beep.wav");
     }
@@ -30028,6 +30915,7 @@ function dispatchCommand(ctx, session, rawWithoutSlash) {
   const cmd = (parts[0] || "").toLowerCase();
   const argStr = parts.slice(1).join(" ");
   if (!cmd) return;
+  if (handleProgressionCommand(ctx, session, cmd, parts)) return;
   if (cmd === "rank") {
     OnConsoleMessage(session, `Your rank: ${RANKS[rankOf(session.account)].label}.`);
     return;
@@ -30038,9 +30926,9 @@ function dispatchCommand(ctx, session, rawWithoutSlash) {
     return;
   }
   if (cmd === "help" || cmd === "?") {
-    const publicCommands = "/help /? /msg /tell /w /sb /bc /time /who /me /find /item /search /warp /world /news /gazette /middle /wave /dance /love /sleep /facepalm /fp /smh /yes /no /omg /idk /shrug /furious /rolleyes /foldarms /fa /stubborn /fold /dab /sassy /dance2 /march /grumpy /shy /growid /register /skin /flag /worlds /rank /mods /door /weather /convert /youtube /yt";
+    const publicCommands = "/help /? /level /achievements /hidestatus /msg /tell /w /sb /bc /time /who /me /find /item /search /warp /world /news /gazette /middle /wave /dance /love /sleep /facepalm /fp /smh /yes /no /omg /idk /shrug /furious /rolleyes /foldarms /fa /stubborn /fold /dab /sassy /dance2 /march /grumpy /shy /growid /register /skin /flag /worlds /rank /mods /door /weather /convert /youtube /yt";
     const staff = hasPermission(session.account, "moderate") ? " /kick /pull /ban /unban" : "";
-    const developer = hasPermission(session.account, "debug") ? " /kits /gitem /clearinv /ghost /cheats /give" : "";
+    const developer = hasPermission(session.account, "debug") ? " /setlevel /givexp /kits /gitem /clearinv /ghost /cheats /give" : "";
     OnConsoleMessage(session, `\`o>> Commands: ${publicCommands}${staff}${developer}\`\``);
     return;
   }
@@ -30077,7 +30965,8 @@ msg|\`6${echo}\`\`
   broadcastTalkBubble(world, session.netId, msg, 0, false);
   broadcastConsoleMessage(
     world,
-    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}\`6>\`\` \`$${msg}\`\``
+    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}\`6>\`\` \`$${msg}\`\``,
+    chatPortrait(session, ctx.itemsDb)
   );
 }
 
@@ -30335,7 +31224,8 @@ function handleTrash(ctx, session, kv) {
   if (!slot) return;
   const def = ctx.itemsDb.get(itemId);
   const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
-  const dialog = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`4Trash\`\` \`w${name}\`\``, itemId).addTextbox(`How many to \`4destroy\`\`? (no undo, \`2+2 Gems\`\` per item)`).addTextInput("trash_count", "", String(slot.count), 5).embedData("itemID", itemId).endDialog("trash_item", "Cancel", "OK");
+  const supporter = isSuperSupporter(session.account);
+  const dialog = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`4${supporter ? "Recycle" : "Trash"}\`\` \`w${name}\`\``, itemId).addTextbox(`How many to destroy? (no undo${supporter ? ", " + recycleValue(itemId, 1) + " Gems per item" : ""})`).addTextInput("trash_count", "", String(slot.count), 5).embedData("itemID", itemId).endDialog("trash_item", "Cancel", "OK");
   OnDialogRequest(session, dialog);
 }
 
@@ -30401,12 +31291,9 @@ function handleActionText(ctx, peer, rawText) {
       handleFriends(ctx, session);
       return;
     case "setSkin": {
-      const parsed = parseInt((kv.color || "").trim(), 10);
-      if (Number.isFinite(parsed)) {
-        session.account.skinColor = normalizeGtSkinColor(parsed >>> 0);
-        ctx.savePlayersNow();
-        applySkinColorUpdate(session, session.world, true);
-      }
+      const raw = (kv.color || "").trim();
+      const parsed = Number(raw);
+      if (/^-?\d+$/.test(raw) && Number.isSafeInteger(parsed) && parsed >= -2147483648 && parsed <= 4294967295) setSkin(ctx, session, parsed >>> 0);
       return;
     }
     case "MagnoliaAppIWantANewFlag": {
@@ -30531,6 +31418,7 @@ function handleItemActivateObject(ctx, session, uid) {
   if (obj.itemId === GEM_ITEM_ID) {
     world.objects.splice(idx, 1);
     session.account.gems += obj.count;
+    recordProgress(ctx, session, void 0, 0);
     ctx.dirty = true;
     ctx.savePlayersNow();
     const collectPkt2 = makeItemCollectPacket(session.netId, obj.uid);
@@ -30594,6 +31482,10 @@ function handlePlayerMoving(session, rawData, tank) {
     OnSetPos(session, session.x, session.y);
     return;
   }
+  if (activeMods(session.account).some((m) => m.flags & 1 << 11)) {
+    if (nx !== session.x || ny !== session.y) OnSetPos(session, session.x, session.y);
+    return;
+  }
   session.x = nx;
   session.y = ny;
   session.facingLeft = ((tank.flags ?? 0) & TANK_FLAG_FACING_LEFT) !== 0;
@@ -30607,6 +31499,10 @@ function handlePlayerMoving(session, rawData, tank) {
     }
   }
 }
+
+// server/playmods/equipment.ts
+var hasRaymanFist = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && s.itemId === 5480);
+var hasEnhancedDigging = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && [98, 1438].includes(s.itemId));
 
 // server/gamePacket/tile_change_req.ts
 var GEM_ITEM_ID2 = 112;
@@ -30668,14 +31564,11 @@ function handleTileChangeRequest(ctx, session, tank) {
   const def = ctx.itemsDb.get(itemId);
   let reach = 6.5;
   let punchLine = 0;
-  if (session.account.inventory.some(
-    (s) => s.equipped && (s.itemId === 5480 || ctx.itemsDb.get(s.itemId)?.isRayman)
-  )) {
+  if (hasRaymanFist(session.account)) {
     reach = 12;
     punchLine = 3;
-  } else if (session.account.inventory.some((s) => s.equipped && s.itemId === 98)) {
-    reach = 10;
   }
+  reach = staffInteractionReach(session.account) ?? reach;
   if (Math.abs(tx - playerTileX) > reach || Math.abs(ty - playerTileY) > reach) return;
   const tile = world.tiles[ty * world.width + tx];
   const now = Date.now();
@@ -30783,7 +31676,7 @@ function handleTileChangeRequest(ctx, session, tank) {
         punchY: by
       });
       for (const p of world.peers) p.peer.sendPacket(0, dmgPkt, true);
-      if ((bt.damage ?? 0) >= bDef.breakHits) {
+      if ((bt.damage ?? 0) >= Math.max(1, bDef.breakHits - (hasEnhancedDigging(session.account) ? 1 : 0))) {
         finalizeTileBreak(ctx, session, world, bx, by, bt, bDef, bId);
       }
       return true;
@@ -30799,6 +31692,7 @@ function handleTileChangeRequest(ctx, session, tank) {
   }
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
+  if (useConsumable(ctx, session, itemId, tx, ty)) return;
   if (def.isClothing) {
     toggleWearableItem(ctx, session, itemId);
     return;
@@ -30944,6 +31838,9 @@ function handleTileChangeRequest(ctx, session, tank) {
   }
   ctx.dirty = true;
   ctx.consumeInventoryItem(session, itemId, 1, false);
+  if (!def.isSeed) recordProgress(ctx, session, "blocks_placed");
+  if (def.isLock) recordProgress(ctx, session, "locks_used");
+  if ([226, 242, 1796, 7188, 11550].includes(itemId)) recordProgress(ctx, session, "world_locks_used");
   const placePkt = makeTileChangePacket(
     session.netId,
     tx,
@@ -30969,6 +31866,7 @@ function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
   tile.flags = 0;
   tile.damage = 0;
   ctx.dirty = true;
+  recordProgress(ctx, session, "trees_harvested", 1, farmingXp(rarity));
   const harvestPkt = makeTileTreeStatePacket(tx, ty, blockId, -1, session.netId);
   for (const p of world.peers) p.peer.sendPacket(0, harvestPkt, true);
   const clearedTile = makeTileUpdatePacket(tx, ty, tile, Date.now());
@@ -31012,6 +31910,7 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId) {
     broadcastSetCurrentWeather(world, nextWeather);
   }
   ctx.dirty = true;
+  if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
   if (def.isLock || targetId === 12 || targetId === 20) {
@@ -31113,6 +32012,7 @@ function onPeerReceive(ctx, peer, _channelId, rawPayload) {
     const nulIdx = data.indexOf(0, 4);
     const end = nulIdx !== -1 ? nulIdx : data.length;
     const text = data.toString("utf8", 4, end);
+    if (peer.activity && !peer.activity.text(text, !!peer.userData)) return;
     handleActionText(ctx, peer, text);
     return;
   }
@@ -31121,6 +32021,7 @@ function onPeerReceive(ctx, peer, _channelId, rawPayload) {
     if (!session) return;
     const tank = parseTankPacket(data);
     if (!tank) return;
+    if (peer.activity && !peer.activity.game(tank.type)) return;
     handleGamePacket(ctx, session, data, tank);
   }
 }
@@ -31241,11 +32142,110 @@ function createDataPackage(rootDir) {
   return { prepare, install };
 }
 
-// server/client/patch-client.ts
+// server/client/item-appearance.ts
 var import_node_crypto3 = __toESM(require("node:crypto"));
+function read(b, p) {
+  let n = 0, s = 0;
+  while (p < b.length && s < 35) {
+    const v = b[p++];
+    n |= (v & 127) << s;
+    if (v < 128) return [n >>> 0, p];
+    s += 7;
+  }
+  throw Error("Invalid WASM length");
+}
+function leb(n) {
+  const a = [];
+  do {
+    const v = n & 127;
+    n >>>= 7;
+    a.push(v | (n ? 128 : 0));
+  } while (n);
+  return Buffer.from(a);
+}
+function patchItemAppearance(input) {
+  const parts = [input.subarray(0, 8)];
+  let p = 8, patched = false;
+  while (p < input.length) {
+    const id = input[p++], [len, start] = read(input, p);
+    p = start + len;
+    let section = input.subarray(start, p);
+    if (id === 10) {
+      const [count, header] = read(section, 0), bodies = [section.subarray(0, header)];
+      let q = header;
+      for (let i = 0; i < count; i++) {
+        const [size, a] = read(section, q);
+        q = a + size;
+        let body = section.subarray(a, q);
+        if (i + 308 === 781) {
+          if (import_node_crypto3.default.createHash("sha256").update(body).digest("hex") !== "1375c6252da382d3b485c4f47c7e1a6aadadb9a6f936fb932c85993b0f1b03c1") throw Error("Face renderer signature changed");
+          const anchor = Buffer.from("200b2d0024220641176b", "hex");
+          const op = body.indexOf(anchor);
+          if (op < 0 || body.indexOf(anchor, op + 1) >= 0) throw Error("Item kind lookup signature changed");
+          const tint = Buffer.from("200b2d0024410e460440200028022021040b", "hex");
+          body = Buffer.concat([body.subarray(0, op), tint, body.subarray(op)]);
+          patched = true;
+        }
+        bodies.push(leb(body.length), body);
+      }
+      section = Buffer.concat(bodies);
+    }
+    parts.push(Buffer.from([id]), leb(section.length), section);
+  }
+  if (!patched) throw Error("Face renderer not found");
+  const result = Buffer.concat(parts);
+  if (!WebAssembly.validate(result)) throw Error("Invalid appearance patch");
+  return result;
+}
+
+// server/client/portrait-exports.ts
+var PORTRAIT_EXPORTS = { portraitDraw: 588, portraitResources: 835, portraitApply: 1514, portraitDestroy: 549 };
+function leb2(n) {
+  const out = [];
+  do {
+    const b = n & 127;
+    n >>>= 7;
+    out.push(b | (n ? 128 : 0));
+  } while (n);
+  return Buffer.from(out);
+}
+function read2(b, p) {
+  let n = 0, s = 0;
+  while (p < b.length && s < 35) {
+    const x = b[p++];
+    n |= (x & 127) << s;
+    if (!(x & 128)) return [n >>> 0, p];
+    s += 7;
+  }
+  throw new Error("Invalid WASM section");
+}
+function extendChatPortraitExports(input) {
+  const parts = [input.subarray(0, 8)];
+  let p = 8, found = false;
+  while (p < input.length) {
+    const id = input[p++], [size, start] = read2(input, p);
+    p = start + size;
+    if (p > input.length) throw new Error("Truncated WASM section");
+    let body = input.subarray(start, p);
+    if (id === 7) {
+      found = true;
+      const [count, end] = read2(body, 0);
+      const extra = Object.entries(PORTRAIT_EXPORTS).map(([name, index]) => Buffer.concat([leb2(Buffer.byteLength(name)), Buffer.from(name), Buffer.from([0]), leb2(index)]));
+      body = Buffer.concat([leb2(count + extra.length), body.subarray(end), ...extra]);
+    }
+    parts.push(Buffer.from([id]), leb2(body.length), body);
+  }
+  if (!found) throw new Error("Missing WASM exports");
+  const result = Buffer.concat(parts);
+  if (!WebAssembly.validate(result)) throw new Error("Invalid portrait bridge");
+  return result;
+}
+
+// server/client/patch-client.ts
+var import_node_crypto4 = __toESM(require("node:crypto"));
 var CLIENT_SHA256 = "9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
 function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName = "MagnoliaPS") {
-  if (import_node_crypto3.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
+  if (import_node_crypto4.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
   const output = Buffer.from(input);
   if (hideWarning) {
     const signature = Buffer.from("418e9202410010950e", "hex"), at2 = output.indexOf(signature);
@@ -31283,12 +32283,12 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     if (!count) throw new Error(`Native branding signature not found: ${from}`);
   }
   if (!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
-  return output;
+  return extendChatPortraitExports(patchItemAppearance(output));
 }
 
 // server/https/routes.ts
 var import_node_fs6 = __toESM(require("node:fs"));
-var import_node_crypto4 = __toESM(require("node:crypto"));
+var import_node_crypto5 = __toESM(require("node:crypto"));
 var import_node_path6 = __toESM(require("node:path"));
 var import_express = __toESM(require_express2());
 function resolveSafeSubpath(baseDir, relPosixPath) {
@@ -31334,7 +32334,7 @@ function createHttpApp(ctx, rootDir, port) {
     const loader = import_node_path6.default.join(publicDir, "MagnoliaClient-1.50.js");
     if (!import_node_fs6.default.existsSync(loader)) issues.push("File public/MagnoliaClient-1.50.js tidak ada. Ekstrak seluruh patch ke root repository.");
     if (!import_node_fs6.default.existsSync(wasm)) issues.push("File data/client/upstream.wasm tidak ada.");
-    else if (import_node_crypto4.default.createHash("sha256").update(import_node_fs6.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
+    else if (import_node_crypto5.default.createHash("sha256").update(import_node_fs6.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
     try {
       await dataPackage.prepare();
     } catch (error) {
@@ -31461,6 +32461,52 @@ function createHttpApp(ctx, rootDir, port) {
   return app;
 }
 
+// server/security/session-guard.ts
+var SessionGuard = class {
+  background = false;
+  denied = 0;
+  buckets = /* @__PURE__ */ new Map();
+  allow(kind, rate, burst, now = Date.now()) {
+    const b = this.buckets.get(kind) || { tokens: burst, at: now };
+    b.tokens = Math.min(burst, b.tokens + Math.max(0, now - b.at) * rate / 1e3);
+    b.at = now;
+    this.buckets.set(kind, b);
+    if (b.tokens < 1) {
+      this.denied++;
+      return false;
+    }
+    b.tokens--;
+    return true;
+  }
+  presence(raw) {
+    if (raw.length > 128 || !this.allow("presence", 4, 8)) return false;
+    let p;
+    try {
+      p = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return false;
+    }
+    if (p?.type !== "client-presence" || p.v !== 1 || typeof p.background !== "boolean") return false;
+    this.background = p.background;
+    return true;
+  }
+  game(type) {
+    if (type === 21 || type === 22) return this.allow("ping", 10, 20);
+    if (this.background) {
+      this.denied++;
+      return false;
+    }
+    if (type === 0) return this.allow("movement", 60, 120);
+    if ([3, 7, 10, 11].includes(type)) return this.allow("interaction", 10, 16);
+    return true;
+  }
+  text(text, loggedIn) {
+    if (!this.allow("text", 8, 24)) return false;
+    if (!loggedIn || !this.background) return true;
+    return /^action\|(enter_game|quit|quit_to_exit)(\n|$)/.test(text);
+  }
+};
+
 // server/network/enet.ts
 var import_node_fs7 = __toESM(require("node:fs"));
 var import_node_path7 = __toESM(require("node:path"));
@@ -31528,6 +32574,7 @@ function enetRangeCompress(inBuf) {
   return Buffer.from(mem.subarray(CODEC_OUT_PTR, CODEC_OUT_PTR + outLen));
 }
 var ENetServerPeer = class {
+  activity = new SessionGuard();
   ws;
   localPeerId;
   remotePeerId = 0;
@@ -31909,6 +32956,7 @@ async function main() {
   const wss = new import_websocket_server.default({
     server: httpServer,
     path: "/enet",
+    maxPayload: 262144,
     handleProtocols: (protocols) => {
       if (protocols.has("binary")) return "binary";
       const first = protocols.values().next();
@@ -31937,8 +32985,19 @@ async function main() {
       clientDeviceId
     );
     ws.on("message", (data, isBinary) => {
-      if (!isBinary && typeof data === "string") return;
       const buf = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
+      if (!isBinary) {
+        const wasBackground = peer.activity.background;
+        if (peer.activity.presence(buf) && wasBackground && !peer.activity.background) {
+          const session = peer.userData;
+          if (session?.world) OnSetPos(session, session.x, session.y);
+        }
+        return;
+      }
+      if (ws.bufferedAmount > 4 * 1024 * 1024) {
+        ws.close(1013, "Slow connection");
+        return;
+      }
       peer.handleRawFrame(buf);
     });
     ws.on("close", () => peer.destroy());

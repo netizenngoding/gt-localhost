@@ -1,3 +1,5 @@
+import { OnSetPos } from "./onVariant";
+import type { PlayerSession } from "./database/peer";
 import { SERVER_NAME } from "./config/branding";
 import http from "node:http";
 import { WebSocketServer } from "ws";
@@ -26,6 +28,7 @@ async function main(): Promise<void> {
   const wss = new WebSocketServer({
     server: httpServer,
     path: "/enet",
+    maxPayload: 262144,
     handleProtocols: (protocols) => {
       if (protocols.has("binary")) return "binary";
       const first = protocols.values().next();
@@ -58,12 +61,20 @@ async function main(): Promise<void> {
     );
 
     ws.on("message", (data, isBinary) => {
-      if (!isBinary && typeof data === "string") return;
       const buf = Buffer.isBuffer(data)
         ? data
         : Array.isArray(data)
         ? Buffer.concat(data)
         : Buffer.from(data as ArrayBuffer);
+      if (!isBinary) {
+        const wasBackground=peer.activity.background;
+        if(peer.activity.presence(buf)&&wasBackground&&!peer.activity.background){
+          const session=peer.userData as PlayerSession|null;
+          if(session?.world)OnSetPos(session,session.x,session.y);
+        }
+        return;
+      }
+      if(ws.bufferedAmount>4*1024*1024){ws.close(1013,"Slow connection");return;}
       peer.handleRawFrame(buf);
     });
 

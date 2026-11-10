@@ -1,3 +1,8 @@
+import { hasRaymanFist, hasEnhancedDigging } from "../playmods/equipment";
+import { useConsumable } from "../playmods/service";
+import { recordProgress } from "../progression/service";
+import { farmingXp } from "../progression/model";
+import { staffInteractionReach } from "../ranks/interaction";
 import {
   buildTankPacket,
   makeTileChangePacket,
@@ -120,17 +125,15 @@ export function handleTileChangeRequest(
   let reach = 6.5;
   let punchLine = 0;
 
-  if (
-    session.account.inventory.some(
-      (s) => s.equipped && (s.itemId === 5480 || ctx.itemsDb.get(s.itemId)?.isRayman)
-    )
-  ) {
+  if (hasRaymanFist(session.account)) {
     reach = 12;
     punchLine = 3;
-  } else if (session.account.inventory.some((s) => s.equipped && s.itemId === 98)) {
-    reach = 10;
   }
 
+  // Keep authorized staff requests consistent with the advertised native range.
+  // Silently rejecting a native far request reproduced a reconnect ~9s later.
+  // Account rank is authoritative; never trust client mstate/smstate here.
+  reach = staffInteractionReach(session.account) ?? reach;
   if (Math.abs(tx - playerTileX) > reach || Math.abs(ty - playerTileY) > reach) return;
 
   const tile = world.tiles[ty * world.width + tx];
@@ -260,7 +263,7 @@ export function handleTileChangeRequest(
       });
       for (const p of world.peers) p.peer.sendPacket(0, dmgPkt, true);
 
-      if ((bt.damage ?? 0) >= bDef.breakHits) {
+      if ((bt.damage ?? 0) >= Math.max(1, bDef.breakHits - (hasEnhancedDigging(session.account) ? 1 : 0))) {
         finalizeTileBreak(ctx, session, world, bx, by, bt, bDef, bId);
       }
       return true;
@@ -279,6 +282,8 @@ export function handleTileChangeRequest(
   // 3. Placing an item / seed / background / wearable
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
+
+  if (useConsumable(ctx, session, itemId, tx, ty)) return;
 
   if (def.isClothing) {
     toggleWearableItem(ctx, session, itemId);
@@ -441,6 +446,9 @@ export function handleTileChangeRequest(
   // Let the client handle placement audio/animation and its own inventory decrement.
   // Extra-data tiles need the placement event too, followed by their authoritative state.
   ctx.consumeInventoryItem(session, itemId, 1, false);
+  if (!def.isSeed) recordProgress(ctx, session, "blocks_placed");
+  if (def.isLock) recordProgress(ctx, session, "locks_used");
+  if ([226,242,1796,7188,11550].includes(itemId)) recordProgress(ctx, session, "world_locks_used");
   const placePkt = makeTileChangePacket(
     session.netId, tx, ty, itemId,
     session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
@@ -474,6 +482,7 @@ function harvestWorldTree(
   tile.damage = 0;
   ctx.dirty = true;
 
+  recordProgress(ctx, session, "trees_harvested", 1, farmingXp(rarity));
   const harvestPkt = makeTileTreeStatePacket(tx, ty, blockId, -1, session.netId);
   for (const p of world.peers) p.peer.sendPacket(0, harvestPkt, true);
   // Tree-state invokes avatar SFX/effects; it does not serialize the cleared tile.
@@ -536,6 +545,7 @@ function finalizeTileBreak(
   }
   ctx.dirty = true;
 
+  if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
 

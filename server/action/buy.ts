@@ -1,3 +1,4 @@
+import { recordProgress } from "../progression/service";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { OnSetBux } from "../onVariant";
@@ -26,6 +27,7 @@ export function handleBuy(ctx: ServerContext, session: PlayerSession, itemIdOrKe
   a.inventory = inventory; a.gems -= price;
   if (upgrade) a.backpackSize = Math.min(396,a.backpackSize+10);
   try { ctx.savePlayersNow(); } catch { Object.assign(a,before); result("Purchase was not completed: storage error."); return; }
+  recordProgress(ctx, session, "gems_spent", price);
   ctx.sendInventory(session,true); OnSetBux(session);
   result(`Purchased ${product.name} for ${price} Gems.`);
 }

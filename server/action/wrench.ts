@@ -1,3 +1,6 @@
+import { activeMods } from '../playmods/model';
+import { progression } from "../progression/service";
+import { xpRequired } from "../progression/model";
 import { hasPermission, canModerate, displayName, rankOf, RANKS } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -20,23 +23,30 @@ export function handleWrenchPlayer(
     return;
   }
 
-  // Self-wrench profile dialog (modeled on Gurotopia `action/wrench.cpp`)
+  // Native GTPS3 command structure. Only functioning destinations are exposed;
+  // missing quests/title/profile systems must not become fake buttons.
   if (target === session) {
-    const acct = session.account;
-    const dlg = new DialogBuilder()
-      .setDefaultColor("`o")
-      .addLabelWithIcon("big", `${displayName(session)} (\`#${acct.isGuest ? "Guest Account" : "GrowID"}\`\`)`, 32)
-      .addSmalltext(`\`9User ID: \`w${acct.userId}\`9 | Gems: \`2${acct.gems}\`9 | Backpack: \`w${acct.inventory.length}/${acct.backpackSize}\`\``)
-      .addSpacer("small")
-      .addButtonWithIcon("acct_find", "`2Item Finder (/find)``", 6016);
-    dlg.addSmalltext(`Rank: ${RANKS[rankOf(acct)].label}`);
-    if (hasPermission(acct, "debug")) dlg.addButtonWithIcon("acct_cheats", "`5Developer Tools``", 5480);
-
-    if (acct.isGuest) {
-      dlg.addButtonWithIcon("acct_growid", "`2Get Free GrowID!``", 206);
+    const acct=session.account,p=progression(acct);
+    const dlg=new DialogBuilder().setDefaultColor("`o")
+      .addPlayerInfo(displayName(session),p.level,p.xp,xpRequired(p.level))
+      .addSpacer('small').addSpacer('small')
+      .customSpacing(5,10)
+      .customButton('notebook_edit','gui_wrench_notebook')
+      .customButton('my_worlds','gui_wrench_my_worlds')
+      .customButton('alist','gui_wrench_achievements')
+      .customBreak().addSpacer('small').customSpacing(0,0);
+    const mods=activeMods(acct);
+    if(mods.length)dlg.addTextbox('`wActive effects:``');
+    for(const mod of mods){
+      const remaining=Math.max(0,Math.ceil((acct.playmods!.find(m=>m.id===mod.id)!.expiresAt-Date.now())/1000));
+      dlg.addLabelWithIcon('small',`${mod.title}\`\` (\`w${remaining}s\`\` left)`,mod.icon);
     }
-    dlg.addQuickExit();
-    OnDialogRequest(session, dlg.endDialog("self_wrench", "Close", ""));
+    dlg.addSpacer('small')
+      .addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`)
+      .addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x/32)}, ${Math.floor(session.y/32)}) (${world.peers.size} person)`)
+      .addTextbox(p.superSupporter?'You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``.':'You are not yet a `2Supporter`` or `5Super Supporter``.');
+    if(acct.isGuest)dlg.addButtonWithIcon('acct_growid','`2Get Free GrowID!``',206);
+    OnDialogRequest(session,dlg.addQuickExit().endDialog('popup','','Continue'));
     return;
   }
 

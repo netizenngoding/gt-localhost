@@ -1,3 +1,7 @@
+import { normalizeMods, activeMods, type TimedMod } from "../playmods/model";
+import { isSuperSupporter } from "../progression/service";
+import { normalizeProgression, type Progression } from "../progression/model";
+import { staffInteractionReach } from "../ranks/interaction";
 import { hasPermission } from "../ranks";
 import type { RankId } from "../ranks/definitions";
 import type { ENetServerPeer } from "../network/enet";
@@ -43,6 +47,8 @@ export interface BillboardState {
 }
 
 export interface PlayerAccount {
+  progression?: Progression;
+  playmods?: TimedMod[];
   userId: number;
   name: string;
   isGuest: boolean;
@@ -60,6 +66,7 @@ export interface PlayerAccount {
   unavailableInventory?: InventorySlot[];
   recentWorlds: string[];
   billboard: BillboardState;
+  personalNote?: string;
   lastKitClaim?: number;
   spawnWorld?: string;
   spawnX?: number;
@@ -131,6 +138,8 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     : raw.isGuest === false;
 
   return {
+    progression: normalizeProgression(raw.progression),
+    playmods: normalizeMods(raw.playmods),
     userId: raw.userId,
     name: raw.name,
     isGuest: !hasGrowId,
@@ -151,6 +160,7 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
           .map(s => ({ itemId: s.itemId, count: Math.min(200, s.count), equipped: !!s.equipped }))
       : [],
     recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
+    personalNote: typeof raw.personalNote==='string' ? raw.personalNote.replace(/[|\r\n\0]/g,' ').slice(0,128) : '',
     billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
     lastKitClaim: raw.lastKitClaim,
     spawnWorld: raw.spawnWorld,
@@ -181,63 +191,52 @@ export function buildCharacterStateForSession(
   session: PlayerSession,
   itemsDb: ItemDatabase
 ): CharacterStateParams {
-  const clothes = getClothingVector(session.account, itemsDb);
-  let stateFlags = 0;
-  let punchEffect = 0;
-  let punchRangeTiles = 2;
-  let buildRangeTiles = 2;
-  let moveSpeed = 250.0;
-  let gravity = 1000.0;
+    const c = session.cheats;
+    let stateFlags = isSuperSupporter(session.account) && !session.account.progression?.hideStatus ? 1 << 24 : 0;
+    let moveSpeed = 250.0;
+    let gravity = 1000.0;
+    let buildRangeTiles = 2;
+    let punchRangeTiles = 2;
+    let punchEffect = 0;
 
-  // Back slot (6): wings / jetpack / cape grant double jump; parasol slows fall
-  const backId = clothes[6];
-  if (backId > 0) {
-    const backDef = itemsDb.get(backId);
-    const nm = (backDef?.name || "").toLowerCase();
-    if (nm.includes("parasol") || nm.includes("umbrella")) {
-      gravity = 320.0;
-    } else {
-      stateFlags |= CHAR_STATE_DOUBLE_JUMP;
+    for (const inv of session.account.inventory) {
+      if (!inv.equipped || inv.count <= 0) continue;
+      const def = itemsDb.get(inv.itemId);
+      if (!def || !def.isClothing) continue;
+      const nm = def.name.toLowerCase();
+      if (def.id === 5480) {
+        punchRangeTiles = 10;
+        punchEffect = 4;
+      }
+      // Pickaxe (98) is Enhanced Digging, not a range modifier.
+      // GTOSLatest player.h::isPickaxe / tile.h reduce required break hits.
+      if (def.id === 17552) {
+        punchRangeTiles = 5;
+      }
+      if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
+      if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325.0;
+      if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250.0;
     }
-  }
 
-  // Feet slot (3): speedy / air robins / skates boost speed
-  const feetId = clothes[3];
-  if (feetId > 0) {
-    const feetDef = itemsDb.get(feetId);
-    const nm = (feetDef?.name || "").toLowerCase();
-    if (nm.includes("air") || nm.includes("skate") || nm.includes("speed") || nm.includes("sneaker")) {
-      moveSpeed = 310.0;
+    for (const mod of activeMods(session.account)) {
+      stateFlags |= mod.flags;
+      if (mod.gravity!==undefined) gravity = mod.gravity;
+      if (mod.speed!==undefined) moveSpeed = mod.speed;
     }
-  }
+    if (c.noclip) stateFlags |= 1 << 0;
+    if (c.speed) moveSpeed = 420.0;
+    if (c.fly) {
+      stateFlags |= 1 << 1;
+      moveSpeed = 350.0;
+      gravity = 600.0;
+    }
 
-  // Hand slot (5): Rayman's Fist (#5480), Pickaxe (#98), Swords, Flame items
-  const handId = clothes[5];
-  if (handId === 5480) {
-    punchEffect = 4; // Rayman beam punch
-  } else if (handId === 98) {
-    punchRangeTiles = 3;
-  } else if (handId > 0) {
-    const handDef = itemsDb.get(handId);
-    const nm = (handDef?.name || "").toLowerCase();
-    if (nm.includes("flame") || nm.includes("fire")) punchEffect = 1;
-    else if (nm.includes("zeus") || nm.includes("lightning")) punchEffect = 13;
-  }
+    const staffReach = staffInteractionReach(session.account);
+    if (staffReach !== null) {
+      buildRangeTiles = staffReach;
+      punchRangeTiles = staffReach;
+    }
 
-  if (session.cheats.noclip) {
-    stateFlags |= CHAR_STATE_NOCLIP;
-  }
-  if (session.cheats.speed) {
-    moveSpeed = 400.0;
-  }
-  if (session.cheats.fly) {
-    stateFlags |= CHAR_STATE_DOUBLE_JUMP;
-    gravity = 300.0;
-  }
-
-  if (hasPermission(session.account, "moderate")) {
-    buildRangeTiles = Math.max(buildRangeTiles, 4);
-  }
 
   return {
     netId: session.netId,

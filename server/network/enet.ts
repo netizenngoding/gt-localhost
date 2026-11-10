@@ -1,3 +1,4 @@
+import { SessionGuard } from "../security/session-guard";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -103,6 +104,7 @@ export interface ENetPeerCallbacks {
 }
 
 export class ENetServerPeer {
+  public readonly activity = new SessionGuard();
   public readonly ws: WebSocket;
   public readonly localPeerId: number;
   public remotePeerId = 0;

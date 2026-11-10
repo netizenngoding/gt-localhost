@@ -1,3 +1,8 @@
+import { effectiveSkin } from "../playmods/model";
+import { expireMods } from "../playmods/service";
+import { recordProgress } from "../progression/service";
+import { buildCharacterStateForSession } from "./peer";
+import { staffInteractionReach } from "../ranks/interaction";
 import { displayName } from "../ranks";
 import { RankService } from "../ranks/service";
 import { worldDestination, isPlayableWorldName } from "./world-policy";
@@ -73,6 +78,8 @@ export class ServerContext {
     }
     this.loadPersistentState();
 
+    const modTimer = setInterval(() => expireMods(this), 250);
+    modTimer.unref();
     this.saveTimer = setInterval(() => {
       if (this.dirty) {
         this.savePersistentState();
@@ -273,7 +280,8 @@ export class ServerContext {
     session: PlayerSession,
     itemId: number,
     qty: number,
-    sendModifyPacket = true
+    sendModifyPacket = true,
+    persistNow = true
   ): boolean {
     const idx = session.account.inventory.findIndex((s) => s.itemId === itemId && s.count >= qty);
     if (idx === -1) return false;
@@ -286,7 +294,7 @@ export class ServerContext {
       slot.count = 1;
     }
     this.dirty = true;
-    this.savePlayersNow();
+    if(persistNow)this.savePlayersNow();
     if (sendModifyPacket) {
       if (session.world) {
         session.peer.sendPacket(0, makeModifyInventoryPacket(itemId, 0, qty), true);
@@ -302,58 +310,10 @@ export class ServerContext {
   }
 
   public sendCharacterState(session: PlayerSession): void {
-    const c = session.cheats;
-    let stateFlags = 0;
-    let moveSpeed = 250.0;
-    let gravity = 1000.0;
-    let buildRangeTiles = 2;
-    let punchRangeTiles = 2;
-    let punchEffect = 0;
-    let riftCape = false;
-    let riftWings = false;
-    let infinityAura = false;
-
-    for (const inv of session.account.inventory) {
-      if (!inv.equipped || inv.count <= 0) continue;
-      const def = this.itemsDb.get(inv.itemId);
-      if (!def || !def.isClothing) continue;
-      const nm = def.name.toLowerCase();
-      if (def.id === 10424) riftCape = true;
-      if (def.id === 11478) riftWings = true;
-      if (def.id === 14086) infinityAura = true;
-      if (def.id === 5480 || def.isRayman) {
-        punchRangeTiles = 10;
-        punchEffect = 4;
-      }
-      if (def.id === 98) {
-        punchRangeTiles = 5;
-        buildRangeTiles = 5;
-      }
-      if (def.id === 17552) {
-        punchRangeTiles = 5;
-      }
-      if (/wing|jetpack|cape/.test(nm) && def.clothingType === 6) stateFlags |= 1 << 1;
-      if (/speedy|skate|air/.test(nm) && def.clothingType === 3) moveSpeed = 325.0;
-      if (/parasol|umbrella/.test(nm) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250.0;
-    }
-
-    if (c.noclip) stateFlags |= 1 << 0;
-    if (c.speed) moveSpeed = 420.0;
-    if (c.fly) {
-      stateFlags |= 1 << 1;
-      moveSpeed = 350.0;
-      gravity = 600.0;
-    }
-
-    const pkt = makeSetCharacterStatePacket({
-      netId: session.netId,
-      stateFlags,
-      moveSpeed,
-      gravity,
-      buildRangeTiles,
-      punchRangeTiles,
-      punchEffect,
-    });
+    const state = buildCharacterStateForSession(session, this.itemsDb);
+    const equipped = new Set(session.account.inventory.filter(i=>i.equipped && i.count>0).map(i=>i.itemId));
+    const riftCape = equipped.has(10424), riftWings = equipped.has(11478), infinityAura = equipped.has(14086);
+    const pkt = makeSetCharacterStatePacket(state);
     session.peer.sendPacket(0, pkt, true);
     if (session.world) {
       for (const other of session.world.peers) {
@@ -377,10 +337,11 @@ export class ServerContext {
     for (const other of world.peers) {
       if (other === session) continue;
       OnSpawn(session, other, false);
+      session.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(other, this.itemsDb)), true);
       session.peer.sendPacket(0, buildSetClothingPacket(other, this.itemsDb, false), true);
       session.peer.sendPacket(
         0,
-        makeVariantPacket(["OnChangeSkin", { type: "u32", value: other.account.skinColor >>> 0 }], other.netId),
+        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
         true
       );
       OnSpawn(other, session, false);
@@ -396,7 +357,7 @@ export class ServerContext {
   }
 
   private schedulePostSpawnSkinSync(session: PlayerSession, expectedWorld: WorldInstance, expectedNetId: number): void {
-    const skinU32 = session.account.skinColor >>> 0;
+    const skinU32 = effectiveSkin(session.account) >>> 0;
     const skinPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: skinU32 }], expectedNetId);
     session.peer.sendPacket(0, skinPkt, true);
     const stillJoined = () => session.world === expectedWorld && session.netId === expectedNetId && this.sessions.has(session);
@@ -407,7 +368,7 @@ export class ServerContext {
         // Each send uses current equipment. Never reset anyone else's inventory.
         p.peer.sendPacket(0, buildSetClothingPacket(session, this.itemsDb, false), true);
         session.peer.sendPacket(0, buildSetClothingPacket(p, this.itemsDb, false), true);
-        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: p.account.skinColor >>> 0 }], p.netId), true);
+        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(p.account) >>> 0 }], p.netId), true);
       }
     };
     const first = setTimeout(() => {
@@ -415,7 +376,7 @@ export class ServerContext {
       // The local inventory packet clears equipped bits; immediately restore.
       this.sendInventory(session, true);
       this.sendCharacterState(session);
-      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: session.account.skinColor >>> 0 }], expectedNetId);
+      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account) >>> 0 }], expectedNetId);
       for (const p of expectedWorld.peers) p.peer.sendPacket(0, refreshPkt, true);
       synchronizeRemoteOutfits();
     }, 180);
@@ -497,6 +458,7 @@ export class ServerContext {
     OnSetBux(session);
     this.sendCharacterState(session);
     broadcastPositionedSfx(world, session.netId, entrySfx);
+    for (const peer of world.peers) recordProgress(this, peer, undefined, 0);
 
     if (announceEntry) {
       const owner = world.ownerUserId ? this.findAccountByUserId(world.ownerUserId) : undefined;

@@ -10,7 +10,7 @@ try {
   const {patchClient} = require(out);
   const source = fs.readFileSync('data/client/upstream.wasm');
   const patched = patchClient(source, true, 'Autofill');
-  assert.equal(source.length, patched.length);
+  assert.ok(patched.length > source.length, "portrait bridge adds export entries");
   assert.ok(WebAssembly.validate(patched));
   assert.ok(patched.includes(Buffer.from('Autofill')));
   for (const text of ['Creative Growtopia', 'CreativePS', 'creativeps.eu', 'ReGrowtopia', 'regrowtopia'])

@@ -2,7 +2,7 @@ import { makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
 import { displayName } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { broadcastConsoleMessage, broadcastTalkBubble } from "../onVariant";
+import { broadcastConsoleMessage, broadcastTalkBubble, chatPortrait } from "../onVariant";
 import { sanitizeChatText } from "../tools/string";
 import { dispatchCommand } from "../commands";
 
@@ -44,6 +44,7 @@ export function handleInput(
   broadcastTalkBubble(world, session.netId, msg, 0, false);
   broadcastConsoleMessage(
     world,
-    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}\`6>\`\` \`$${msg}\`\``
+    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}\`6>\`\` \`$${msg}\`\``,
+    chatPortrait(session, ctx.itemsDb)
   );
 }

@@ -1,3 +1,5 @@
+import { isSuperSupporter } from "../progression/service";
+import { recycleValue } from "../progression/recycling";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { OnDialogRequest, OnPlayPositioned, OnTextOverlay } from "../onVariant";
@@ -21,10 +23,11 @@ export function handleTrash(
   const def = ctx.itemsDb.get(itemId);
   const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
 
+  const supporter = isSuperSupporter(session.account);
   const dialog = new DialogBuilder()
     .setDefaultColor("`o")
-    .addLabelWithIcon("big", `\`4Trash\`\` \`w${name}\`\``, itemId)
-    .addTextbox(`How many to \`4destroy\`\`? (no undo, \`2+2 Gems\`\` per item)`)
+    .addLabelWithIcon("big", `\`4${supporter ? "Recycle" : "Trash"}\`\` \`w${name}\`\``, itemId)
+    .addTextbox(`How many to destroy? (no undo${supporter ? ", " + recycleValue(itemId, 1) + " Gems per item" : ""})`)
     .addTextInput("trash_count", "", String(slot.count), 5)
     .embedData("itemID", itemId)
     .endDialog("trash_item", "Cancel", "OK");

@@ -54,6 +54,13 @@ export class DialogBuilder {
     return this;
   }
 
+  public customSpacing(x:number,y:number):this {
+    this.lines.push(`set_custom_spacing|x:${x};y:${y}|`); return this;
+  }
+  public customButton(name:string,image:string):this {
+    this.lines.push(`add_custom_button|${name}|image:interface/large/${image}.rttex;image_size:400,260;width:0.19;|`); return this;
+  }
+  public customBreak():this { this.lines.push('add_custom_break|'); return this; }
   public addButton(name: string, label: string, flags = "noflags"): this {
     this.lines.push(`add_button|${name}|${label}|${flags}|0|0|`);
     return this;

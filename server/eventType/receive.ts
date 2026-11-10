@@ -79,6 +79,7 @@ export function onPeerReceive(
     const nulIdx = data.indexOf(0, 4);
     const end = nulIdx !== -1 ? nulIdx : data.length;
     const text = data.toString("utf8", 4, end);
+    if(peer.activity&&!peer.activity.text(text,!!peer.userData))return;
     handleActionText(ctx, peer, text);
     return;
   }
@@ -88,6 +89,7 @@ export function onPeerReceive(
     if (!session) return;
     const tank = parseTankPacket(data);
     if (!tank) return;
+    if(peer.activity&&!peer.activity.game(tank.type))return;
     handleGamePacket(ctx, session, data, tank);
   }
 }

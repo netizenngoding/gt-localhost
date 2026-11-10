@@ -795,6 +795,7 @@ function isNativeGameplayInputActive() {
   if (!root.find("WorldSpecificGUI").exists) return false;
   // Never remap while chat bar, any popup dialog, PauseMenu, OptionsMenu, StoreMenu, or HotkeySettingsMenu is open!
   var blockingEntities = [
+    "MainMenu",
     "ConsoleInputBox",
     // InputMenu is a persistent root input router, not an open text field.
     "FilterInput",
@@ -814,6 +815,19 @@ function isNativeGameplayInputActive() {
       return false;
     }
   }
+  return true;
+}
+
+// Pinned client Lua SetItemSelected -> func731/table1724. Select by item ID,
+// never Digit1/Digit2: those choose visible inventory slots, which can be reordered.
+var consumedToolToggleKeys = Object.create(null);
+function toggleNativeFistWrench() {
+  if (!Module || !Module.wasmTable || !Module.HEAPU32) return false;
+  var app = Module.HEAPU32[393364 >> 2];
+  var logic = app && Module.HEAPU32[(app + 1800) >> 2];
+  if (!logic || !Module.HEAPU32[(logic + 108) >> 2] || !Module.HEAPU32[(logic + 140) >> 2]) return false;
+  var current = Module.HEAPU32[(logic + 288) >> 2];
+  Module.wasmTable.get(1724)(logic, current === 32 ? 18 : 32);
   return true;
 }
 
@@ -868,6 +882,11 @@ function handlePcKeyboardIntercept(e) {
 
   var code = e.code;
   if (!code) return;
+  if (e.type === "keyup" && consumedToolToggleKeys[code]) {
+    delete consumedToolToggleKeys[code];
+    e.preventDefault(); e.stopImmediatePropagation(); return;
+  }
+
 
   // F11 convenience fullscreen shortcut on PC (works anywhere!)
   if (code === "F11" && !isMobileClient()) {
@@ -902,17 +921,10 @@ function handlePcKeyboardIntercept(e) {
       e.preventDefault();
     }
     if (matched.id === "toggle_wrench") {
-      if (e.repeat) {
-        e.stopImmediatePropagation();
-        return;
-      }
+      e.preventDefault(); e.stopImmediatePropagation();
       if (e.type === "keydown") {
-        wrenchToggleIsWrench = !wrenchToggleIsWrench;
-        var toolVirtual = wrenchToggleIsWrench
-          ? { keyCode: 50, key: "2", code: "Digit2" } // Tool1 = Wrench
-          : { keyCode: 49, key: "1", code: "Digit1" }; // Tool0 = Fist
-        activePhysicalToVirtual[code] = toolVirtual;
-        applyVirtualKeyOverride(e, toolVirtual.keyCode, toolVirtual.key, toolVirtual.code);
+        consumedToolToggleKeys[code] = true;
+        if (!e.repeat) toggleNativeFistWrench();
       }
       return;
     }
@@ -1521,6 +1533,7 @@ var loaderEl = document.getElementById("loader");
 var wsProto = window.location.protocol === "https:" ? "wss://" : "ws://";
 
 var Module = {
+  instantiateWasm: function(imports, done) { return NativeChatHeads.instantiate(imports, done); },
   spoofHostname: "play.creativeps.eu",
   // Force SDL_mixer onto true WebAudio API (32-channel overlapping SFX + 3D spatial panner)
   // instead of preloading 570 broken HTMLAudioElement objects!
@@ -1623,6 +1636,8 @@ var Module = {
 
     // 3. Install native WASM OptionsMenu Fullscreen & PC Edit Hotkeys hooks
     try {
+      NativeChatHeads.install(Module);
+          if (window.NativeSession) NativeSession.install(Module);
       installNativeOptionsMenuHooks();
       globalThis.ServerBranding.installNativeHooks(Module);
     } catch (errHooks) {

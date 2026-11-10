@@ -1,3 +1,4 @@
+import { setSkin } from "../progression/skin";
 import type { ENetServerPeer } from "../network/enet";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -107,12 +108,9 @@ export function handleActionText(
 
     case "setSkin": {
       // OptionsMenu sends signed 32-bit integer `color|<i32>`
-      const parsed = parseInt((kv.color || "").trim(), 10);
-      if (Number.isFinite(parsed)) {
-        session.account.skinColor = normalizeGtSkinColor(parsed >>> 0);
-        ctx.savePlayersNow();
-        applySkinColorUpdate(session, session.world, true);
-      }
+      const raw = (kv.color || "").trim();
+      const parsed = Number(raw);
+      if (/^-?\d+$/.test(raw) && Number.isSafeInteger(parsed) && parsed >= -2147483648 && parsed <= 4294967295) setSkin(ctx,session,parsed >>> 0);
       return;
     }
 

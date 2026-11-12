@@ -2,11 +2,16 @@
   "serverName": "MagnoliaPS",
   "logoPath": "branding/logo.png",
   "skipIntro": true,
+  "enableDeveloperMenu": false,
+  "minecraftHealthBar": true,
+  "growtopiaLoadingScreen": true,
   "hideLegacyCustomItemWarning": true,
   "splashes": [
-    "Developer build {serverName} bjir"
+    "Welcome to {serverName}!",
+    "Watch out for Lava, Cactus, and Acid hazards!"
   ],
   "version": "V1.1",
+  "discordUrl": "https://discord.com/",
   "menuButton": {
     "text": "@salakpatty",
     "url": "https://www.tiktok.com/@salakpatty",

@@ -1179,7 +1179,6 @@ var require_receiver = __commonJS({
             unmask(data, this._mask);
           }
         }
-        this._mask = void 0;
         if (this._opcode > 7) {
           this.controlMessage(data, cb);
           return;
@@ -2277,9 +2276,8 @@ var require_websocket = __commonJS({
     var https = require("https");
     var http2 = require("http");
     var net = require("net");
-    var querystring = require("querystring");
     var tls = require("tls");
-    var { randomBytes, createHash } = require("crypto");
+    var { randomBytes: randomBytes2, createHash } = require("crypto");
     var { Duplex, Readable: Readable2 } = require("stream");
     var { URL: URL3 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2804,9 +2802,10 @@ var require_websocket = __commonJS({
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
-      if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
-        parsedUrl = new URL3(parsedUrl);
-        parsedUrl.protocol = parsedUrl.protocol === "http:" ? "ws:" : "wss:";
+      if (parsedUrl.protocol === "http:") {
+        parsedUrl.protocol = "ws:";
+      } else if (parsedUrl.protocol === "https:") {
+        parsedUrl.protocol = "wss:";
       }
       websocket._url = parsedUrl.href;
       const isSecure = parsedUrl.protocol === "wss:";
@@ -2829,7 +2828,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes(16).toString("base64");
+      const key = randomBytes2(16).toString("base64");
       const request = isSecure ? https.request : http2.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -2875,9 +2874,7 @@ var require_websocket = __commonJS({
         }
       }
       if (parsedUrl.username || parsedUrl.password) {
-        const username = querystring.unescape(parsedUrl.username);
-        const password = querystring.unescape(parsedUrl.password);
-        opts.auth = `${username}:${password}`;
+        opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
       }
       if (isIpcUrl) {
         const i = opts.path.indexOf(":");
@@ -3082,13 +3079,8 @@ var require_websocket = __commonJS({
     function receiverOnConclude(code, reason) {
       const websocket = this[kWebSocket];
       websocket._closeFrameReceived = true;
+      websocket._closeMessage = reason;
       websocket._closeCode = code;
-      if (reason.length === 0) {
-        websocket._closeMessage = EMPTY_BUFFER;
-      } else {
-        websocket._closeMessage = Buffer.allocUnsafeSlow(reason.length);
-        websocket._closeMessage.set(reason);
-      }
       if (websocket._socket[kWebSocket] === void 0) return;
       websocket._socket.removeListener("data", socketOnData);
       process.nextTick(resume, websocket._socket);
@@ -8661,7 +8653,7 @@ var require_raw_body = __commonJS({
       }
     }
     function readStream(stream, encoding, length, limit, callback) {
-      var complete = false;
+      var complete2 = false;
       var sync = true;
       if (limit !== null && length !== null && length > limit) {
         return done(createError(413, "request entity too large", {
@@ -8701,7 +8693,7 @@ var require_raw_body = __commonJS({
         for (var i = 0; i < args.length; i++) {
           args[i] = arguments[i];
         }
-        complete = true;
+        complete2 = true;
         if (sync) {
           process.nextTick(invokeCallback);
         } else {
@@ -8716,7 +8708,7 @@ var require_raw_body = __commonJS({
         }
       }
       function onAborted() {
-        if (complete) return;
+        if (complete2) return;
         done(createError(400, "request aborted", {
           code: "ECONNABORTED",
           expected: length,
@@ -8726,7 +8718,7 @@ var require_raw_body = __commonJS({
         }));
       }
       function onData(chunk) {
-        if (complete) return;
+        if (complete2) return;
         received += chunk.length;
         if (limit !== null && received > limit) {
           done(createError(413, "request entity too large", {
@@ -8741,7 +8733,7 @@ var require_raw_body = __commonJS({
         }
       }
       function onEnd(err) {
-        if (complete) return;
+        if (complete2) return;
         if (err) return done(err);
         if (length !== null && received !== length) {
           done(createError(400, "request size did not match content length", {
@@ -8959,8 +8951,8 @@ var require_read = __commonJS({
     var onFinished = require_on_finished();
     var unpipe = require_unpipe();
     var zlib3 = require("zlib");
-    module2.exports = read3;
-    function read3(req, res, next, parse, debug, options) {
+    module2.exports = read4;
+    function read4(req, res, next, parse, debug, options) {
       var length;
       var opts = options;
       var stream;
@@ -17945,7 +17937,7 @@ var require_json = __commonJS({
     var contentType = require_content_type();
     var createError = require_http_errors();
     var debug = require_src()("body-parser:json");
-    var read3 = require_read();
+    var read4 = require_read();
     var typeis = require_type_is();
     module2.exports = json;
     var FIRST_CHAR_REGEXP = /^[\x20\x09\x0a\x0d]*([^\x20\x09\x0a\x0d])/;
@@ -18014,7 +18006,7 @@ var require_json = __commonJS({
           }));
           return;
         }
-        read3(req, res, next, parse, debug, {
+        read4(req, res, next, parse, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -18077,7 +18069,7 @@ var require_raw = __commonJS({
     "use strict";
     var bytes = require_bytes();
     var debug = require_src()("body-parser:raw");
-    var read3 = require_read();
+    var read4 = require_read();
     var typeis = require_type_is();
     module2.exports = raw;
     function raw(options) {
@@ -18114,7 +18106,7 @@ var require_raw = __commonJS({
           next();
           return;
         }
-        read3(req, res, next, parse, debug, {
+        read4(req, res, next, parse, debug, {
           encoding: null,
           inflate,
           limit,
@@ -18137,7 +18129,7 @@ var require_text = __commonJS({
     var bytes = require_bytes();
     var contentType = require_content_type();
     var debug = require_src()("body-parser:text");
-    var read3 = require_read();
+    var read4 = require_read();
     var typeis = require_type_is();
     module2.exports = text;
     function text(options) {
@@ -18176,7 +18168,7 @@ var require_text = __commonJS({
           return;
         }
         var charset = getCharset(req) || defaultCharset;
-        read3(req, res, next, parse, debug, {
+        read4(req, res, next, parse, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -20977,7 +20969,7 @@ var require_urlencoded = __commonJS({
     var createError = require_http_errors();
     var debug = require_src()("body-parser:urlencoded");
     var deprecate = require_depd()("body-parser");
-    var read3 = require_read();
+    var read4 = require_read();
     var typeis = require_type_is();
     module2.exports = urlencoded;
     var parsers = /* @__PURE__ */ Object.create(null);
@@ -21029,7 +21021,7 @@ var require_urlencoded = __commonJS({
           }));
           return;
         }
-        read3(req, res, next, parse, debug, {
+        read4(req, res, next, parse, debug, {
           debug,
           encoding: charset,
           inflate,
@@ -23730,15 +23722,15 @@ var require_ipaddr = __commonJS({
         IPv4.prototype.toByteArray = function() {
           return this.octets.slice(0);
         };
-        IPv4.prototype.match = function(other, cidrRange) {
+        IPv4.prototype.match = function(other2, cidrRange) {
           var ref;
           if (cidrRange === void 0) {
-            ref = other, other = ref[0], cidrRange = ref[1];
+            ref = other2, other2 = ref[0], cidrRange = ref[1];
           }
-          if (other.kind() !== "ipv4") {
+          if (other2.kind() !== "ipv4") {
             throw new Error("ipaddr: cannot match ipv4 address with non-ipv4 one");
           }
-          return matchCIDR(this.octets, other.octets, 8, cidrRange);
+          return matchCIDR(this.octets, other2.octets, 8, cidrRange);
         };
         IPv4.prototype.SpecialRanges = {
           unspecified: [[new IPv4([0, 0, 0, 0]), 8]],
@@ -23926,15 +23918,15 @@ var require_ipaddr = __commonJS({
           }
           return addr + suffix;
         };
-        IPv6.prototype.match = function(other, cidrRange) {
+        IPv6.prototype.match = function(other2, cidrRange) {
           var ref;
           if (cidrRange === void 0) {
-            ref = other, other = ref[0], cidrRange = ref[1];
+            ref = other2, other2 = ref[0], cidrRange = ref[1];
           }
-          if (other.kind() !== "ipv6") {
+          if (other2.kind() !== "ipv6") {
             throw new Error("ipaddr: cannot match ipv6 address with non-ipv6 one");
           }
-          return matchCIDR(this.parts, other.parts, 16, cidrRange);
+          return matchCIDR(this.parts, other2.parts, 16, cidrRange);
         };
         IPv6.prototype.SpecialRanges = {
           unspecified: [new IPv6([0, 0, 0, 0, 0, 0, 0, 0]), 128],
@@ -24870,8 +24862,8 @@ var require_charset = __commonJS({
     module2.exports = preferredCharsets;
     module2.exports.preferredCharsets = preferredCharsets;
     var simpleCharsetRegExp = /^\s*([^\s;]+)\s*(?:;(.*))?$/;
-    function parseAcceptCharset(accept) {
-      var accepts = accept.split(",");
+    function parseAcceptCharset(accept2) {
+      var accepts = accept2.split(",");
       for (var i = 0, j = 0; i < accepts.length; i++) {
         var charset = parseCharset(accepts[i].trim(), i);
         if (charset) {
@@ -24926,8 +24918,8 @@ var require_charset = __commonJS({
         s
       };
     }
-    function preferredCharsets(accept, provided) {
-      var accepts = parseAcceptCharset(accept === void 0 ? "*" : accept || "");
+    function preferredCharsets(accept2, provided) {
+      var accepts = parseAcceptCharset(accept2 === void 0 ? "*" : accept2 || "");
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullCharset);
       }
@@ -24957,8 +24949,8 @@ var require_encoding = __commonJS({
     module2.exports = preferredEncodings;
     module2.exports.preferredEncodings = preferredEncodings;
     var simpleEncodingRegExp = /^\s*([^\s;]+)\s*(?:;(.*))?$/;
-    function parseAcceptEncoding(accept) {
-      var accepts = accept.split(",");
+    function parseAcceptEncoding(accept2) {
+      var accepts = accept2.split(",");
       var hasIdentity = false;
       var minQuality = 1;
       for (var i = 0, j = 0; i < accepts.length; i++) {
@@ -25024,8 +25016,8 @@ var require_encoding = __commonJS({
         s
       };
     }
-    function preferredEncodings(accept, provided) {
-      var accepts = parseAcceptEncoding(accept || "");
+    function preferredEncodings(accept2, provided) {
+      var accepts = parseAcceptEncoding(accept2 || "");
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullEncoding);
       }
@@ -25055,8 +25047,8 @@ var require_language = __commonJS({
     module2.exports = preferredLanguages;
     module2.exports.preferredLanguages = preferredLanguages;
     var simpleLanguageRegExp = /^\s*([^\s\-;]+)(?:-([^\s;]+))?\s*(?:;(.*))?$/;
-    function parseAcceptLanguage(accept) {
-      var accepts = accept.split(",");
+    function parseAcceptLanguage(accept2) {
+      var accepts = accept2.split(",");
       for (var i = 0, j = 0; i < accepts.length; i++) {
         var language = parseLanguage(accepts[i].trim(), i);
         if (language) {
@@ -25119,8 +25111,8 @@ var require_language = __commonJS({
         s
       };
     }
-    function preferredLanguages(accept, provided) {
-      var accepts = parseAcceptLanguage(accept === void 0 ? "*" : accept || "");
+    function preferredLanguages(accept2, provided) {
+      var accepts = parseAcceptLanguage(accept2 === void 0 ? "*" : accept2 || "");
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullLanguage);
       }
@@ -25150,8 +25142,8 @@ var require_mediaType = __commonJS({
     module2.exports = preferredMediaTypes;
     module2.exports.preferredMediaTypes = preferredMediaTypes;
     var simpleMediaTypeRegExp = /^\s*([^\s\/;]+)\/([^;\s]+)\s*(?:;(.*))?$/;
-    function parseAccept(accept) {
-      var accepts = splitMediaTypes(accept);
+    function parseAccept(accept2) {
+      var accepts = splitMediaTypes(accept2);
       for (var i = 0, j = 0; i < accepts.length; i++) {
         var mediaType = parseMediaType(accepts[i].trim(), i);
         if (mediaType) {
@@ -25233,8 +25225,8 @@ var require_mediaType = __commonJS({
         s
       };
     }
-    function preferredMediaTypes(accept, provided) {
-      var accepts = parseAccept(accept === void 0 ? "*/*" : accept || "");
+    function preferredMediaTypes(accept2, provided) {
+      var accepts = parseAccept(accept2 === void 0 ? "*/*" : accept2 || "");
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullType);
       }
@@ -25275,8 +25267,8 @@ var require_mediaType = __commonJS({
       }
       return [key, val];
     }
-    function splitMediaTypes(accept) {
-      var accepts = accept.split(",");
+    function splitMediaTypes(accept2) {
+      var accepts = accept2.split(",");
       for (var i = 1, j = 0; i < accepts.length; i++) {
         if (quoteCount(accepts[j]) % 2 == 0) {
           accepts[++j] = accepts[i];
@@ -25473,28 +25465,28 @@ var require_request = __commonJS({
       }
     };
     req.accepts = function() {
-      var accept = accepts(this);
-      return accept.types.apply(accept, arguments);
+      var accept2 = accepts(this);
+      return accept2.types.apply(accept2, arguments);
     };
     req.acceptsEncodings = function() {
-      var accept = accepts(this);
-      return accept.encodings.apply(accept, arguments);
+      var accept2 = accepts(this);
+      return accept2.encodings.apply(accept2, arguments);
     };
     req.acceptsEncoding = deprecate.function(
       req.acceptsEncodings,
       "req.acceptsEncoding: Use acceptsEncodings instead"
     );
     req.acceptsCharsets = function() {
-      var accept = accepts(this);
-      return accept.charsets.apply(accept, arguments);
+      var accept2 = accepts(this);
+      return accept2.charsets.apply(accept2, arguments);
     };
     req.acceptsCharset = deprecate.function(
       req.acceptsCharsets,
       "req.acceptsCharset: Use acceptsCharsets instead"
     );
     req.acceptsLanguages = function() {
-      var accept = accepts(this);
-      return accept.languages.apply(accept, arguments);
+      var accept2 = accepts(this);
+      return accept2.languages.apply(accept2, arguments);
     };
     req.acceptsLanguage = deprecate.function(
       req.acceptsLanguages,
@@ -26870,7 +26862,8 @@ var MODS = [
     "item": 338,
     "title": "Floating!",
     "seconds": 2,
-    "flags": 0,
+    "flags": 1024,
+    "group": "floating",
     "onAdd": "Whoooooooaaaaaaaa...",
     "onRemove": "Gravity - it's the law.",
     "icon": 338,
@@ -26878,7 +26871,7 @@ var MODS = [
     "action": "drop",
     "effect": 0,
     "text": "",
-    "gravity": -30
+    "gravity": 250
   },
   {
     "id": "gtps3-19",
@@ -27075,7 +27068,8 @@ var MODS = [
     "item": 1772,
     "title": "Floating!",
     "seconds": 2,
-    "flags": 0,
+    "flags": 1024,
+    "group": "floating",
     "onAdd": "Whoooooooaaaaaaaa...",
     "onRemove": "Gravity - it's the law.",
     "icon": 1772,
@@ -27083,7 +27077,7 @@ var MODS = [
     "action": "drop",
     "effect": 0,
     "text": "",
-    "gravity": -30
+    "gravity": 250
   },
   {
     "id": "gtps3-73",
@@ -27302,6 +27296,7 @@ function normalizeMods(raw, now = Date.now()) {
   if (!Array.isArray(raw)) return [];
   const seen = /* @__PURE__ */ new Set(), seenGroups = /* @__PURE__ */ new Set();
   return raw.filter((m) => {
+    if (m?.id === "irradiated") return Number.isSafeInteger(m.expiresAt) && m.expiresAt > now;
     const def = MODS.find((d) => d.id === m?.id);
     if (!def || seen.has(m.id) || !Number.isSafeInteger(m.expiresAt) || m.expiresAt <= now || m.expiresAt > now + def.seconds * 1e3) return false;
     if (def.group && seenGroups.has(def.group)) return false;
@@ -27312,6 +27307,7 @@ function normalizeMods(raw, now = Date.now()) {
 }
 function activeMods(a, now = Date.now()) {
   return (a.playmods || []).filter((m) => m.expiresAt > now).flatMap((m) => {
+    if (m.id === "irradiated") return [{ id: "irradiated", item: 2204, title: "Irradiated", seconds: 1800, flags: 0, onAdd: "You are aglow with radiation!", onRemove: "The radiation has faded.", icon: 2204, sound: "", action: "", effect: 0, text: "" }];
     const d = MODS.find((d2) => d2.id === m.id);
     return d ? [d] : [];
   });
@@ -27338,8 +27334,11 @@ var PACKET_ITEM_ACTIVATE_OBJECT_REQUEST = 11;
 var PACKET_SEND_TILE_TREE_STATE = 12;
 var PACKET_MODIFY_ITEM_INVENTORY = 13;
 var PACKET_ITEM_CHANGE_OBJECT = 14;
+var PACKET_SEND_LOCK = 15;
 var PACKET_SEND_ITEM_DATABASE_DATA = 16;
 var PACKET_SEND_PARTICLE_EFFECT = 17;
+var PACKET_SET_ICON_STATE = 18;
+var PACKET_ITEM_EFFECT = 19;
 var PACKET_SET_CHARACTER_STATE = 20;
 var PACKET_PING_REPLY = 21;
 var PACKET_PING_REQUEST = 22;
@@ -27350,6 +27349,9 @@ var TILE_FLAG_LOCKED = 2;
 var TILE_FLAG_SPLICED = 4;
 var TILE_FLAG_SEED = 16;
 var TILE_FLAG_FLIPPED = 32;
+var TILE_FLAG_OPEN = 64;
+var TILE_FLAG_EXTRA_VISUAL = 64;
+var TILE_FLAG_HAS_WLS = 512;
 var CHAR_STATE_NOCLIP = 1 << 0;
 var CHAR_STATE_DOUBLE_JUMP = 1 << 1;
 var CHAR_STATE_INVISIBLE = 1 << 2;
@@ -27423,8 +27425,8 @@ function buildTankPacket(f) {
   b[t + 1] = (f.objType ?? 0) & 255;
   b[t + 2] = (f.count1 ?? 0) & 255;
   b[t + 3] = (f.count2 ?? 0) & 255;
-  b.writeInt32LE(f.netId ?? -1, t + 4);
-  b.writeInt32LE(f.targetNetId ?? 0, t + 8);
+  b.writeInt32LE((f.netId ?? -1) | 0, t + 4);
+  b.writeInt32LE((f.targetNetId ?? 0) | 0, t + 8);
   let flags = f.flags ?? 0;
   if (ext) flags |= TANK_FLAG_EXTENDED;
   b.writeUInt32LE(flags >>> 0, t + 12);
@@ -27435,8 +27437,8 @@ function buildTankPacket(f) {
   b.writeFloatLE(f.speedX ?? 0, t + 32);
   b.writeFloatLE(f.speedY ?? 0, t + 36);
   b.writeInt32LE(0, t + 40);
-  b.writeInt32LE(f.punchX ?? 0, t + 44);
-  b.writeInt32LE(f.punchY ?? 0, t + 48);
+  b.writeInt32LE((f.punchX ?? 0) | 0, t + 44);
+  b.writeInt32LE((f.punchY ?? 0) | 0, t + 48);
   b.writeUInt32LE(ext ? ext.length : 0, t + 52);
   if (ext) {
     ext.copy(b, 60);
@@ -27534,13 +27536,16 @@ function makeSetCharacterStatePacket(p) {
     count1: buildByte,
     count2: punchByte,
     netId: p.netId,
+    targetNetId: p.eyeLenses ?? 0,
     flags: (p.pupilColor ?? 0) >>> 0,
     floatVar: p.waterSpeed ?? 125,
     value: (p.stateFlags ?? 0) >>> 0,
     x: 1200,
     y: 200,
     speedX: p.moveSpeed ?? 250,
-    speedY: p.gravity ?? 1e3
+    speedY: p.gravity ?? 1e3,
+    punchX: p.hairColor ?? 4294967295,
+    punchY: p.eyeDrop ?? 4294967295
   });
 }
 var NATIVE_EFFECT_ACHIEVEMENT = 48;
@@ -27619,11 +27624,28 @@ function makeModifyInventoryPacket(itemId, addedCount = 0, removedCount = 0) {
     value: itemId
   });
 }
+var PROVIDER_FALLBACK_IDS = /* @__PURE__ */ new Set([
+  866,
+  872,
+  928,
+  1008,
+  1044,
+  1632,
+  2798,
+  3044,
+  3888,
+  4584,
+  5116,
+  5196,
+  6212
+]);
+var WEATHER_BG_FALLBACK_IDS = /* @__PURE__ */ new Set([3694, 4892, 5e3, 5654, 5716, 6854]);
+var WEATHER_STUFF_FALLBACK_IDS = /* @__PURE__ */ new Set([3832, 5958, 6280]);
+var LOCK_FALLBACK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 11550, 12654]);
 function serializeSingleTile(tile, nowMs) {
-  let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED);
+  let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED | TILE_FLAG_HAS_WLS);
   let extraBuf = null;
   if (tile.extra) {
-    flags |= TILE_FLAG_HAS_EXTRA;
     if (tile.extra.kind === "door") {
       const lb = Buffer.from(tile.extra.label, "utf8");
       extraBuf = Buffer.allocUnsafe(1 + 2 + lb.length + 1);
@@ -27639,6 +27661,7 @@ function serializeSingleTile(tile, nowMs) {
       lb.copy(extraBuf, 3);
       extraBuf.writeInt32LE(-1, 3 + lb.length);
     } else if (tile.extra.kind === "lock") {
+      flags &= ~TILE_FLAG_LOCKED;
       const admins = tile.extra.adminIds;
       extraBuf = Buffer.allocUnsafe(1 + 1 + 4 + 4 + admins.length * 4);
       extraBuf[0] = 3;
@@ -27656,7 +27679,114 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf[0] = 4;
       extraBuf.writeUInt32LE(ageSec >>> 0, 1);
       extraBuf[5] = tile.extra.fruitCount & 255;
+    } else if (tile.extra.kind === "vending") {
+      flags &= ~(TILE_FLAG_EXTRA_VISUAL | TILE_FLAG_HAS_WLS);
+      extraBuf = Buffer.allocUnsafe(9);
+      extraBuf[0] = 24;
+      const isNeg = tile.extra.price < 0;
+      const vendItem = isNeg && tile.extra.itemId !== 0 && tile.extra.count < Math.abs(tile.extra.price) ? 0 : tile.extra.itemId;
+      const vendPrice = isNeg && tile.extra.itemId !== 0 && tile.extra.count < Math.abs(tile.extra.price) ? 0 : tile.extra.price;
+      extraBuf.writeUInt32LE(vendItem >>> 0, 1);
+      extraBuf.writeInt32LE(vendPrice, 5);
+      if (vendItem !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+      if (tile.extra.wl > 0) flags |= TILE_FLAG_HAS_WLS;
+    } else if (tile.extra.kind === "sucker") {
+      flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      extraBuf = Buffer.allocUnsafe(15);
+      extraBuf[0] = 62;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.count >>> 0, 5);
+      extraBuf[9] = tile.extra.enabled ? 1 : 0;
+      extraBuf[10] = tile.extra.magnetron ? 1 : 0;
+      const cap = tile.fg === 5638 ? 5e3 : 1500;
+      extraBuf.writeUInt32LE(cap >>> 0, 11);
+      if (tile.extra.itemId !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+    } else if (tile.extra.kind === "provider") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 9;
+      const ageSec = Math.max(0, Math.floor((nowMs - tile.extra.plantedAtMs) / 1e3));
+      extraBuf.writeUInt32LE(ageSec >>> 0, 1);
+    } else if (tile.extra.kind === "weatherBg") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 40;
+      if (tile.fg === 3694 && tile.extra.r !== void 0) {
+        const packed = ((tile.extra.b ?? 0) & 255) << 16 | ((tile.extra.g ?? 0) & 255) << 8 | (tile.extra.r ?? 0) & 255;
+        extraBuf.writeInt32LE(packed, 1);
+      } else {
+        extraBuf.writeInt32LE((tile.extra.itemId || 14) | 0, 1);
+      }
+    } else if (tile.extra.kind === "weatherStuff") {
+      extraBuf = Buffer.allocUnsafe(10);
+      extraBuf[0] = 49;
+      extraBuf.writeUInt32LE((tile.extra.itemId || 2) >>> 0, 1);
+      extraBuf.writeInt32LE((tile.extra.gravity ?? 50) | 0, 5);
+      extraBuf[9] = (tile.extra.spin ? 1 : 0) | (tile.extra.invert ? 2 : 0);
+    } else if (tile.extra.kind === "growscan") {
+      extraBuf = Buffer.allocUnsafe(2);
+      extraBuf[0] = 66;
+      extraBuf[1] = (tile.extra.mode ?? 0) & 255;
+    } else if (tile.extra.kind === "weatherInf") {
+      const ids = tile.extra.weatherIds || [];
+      extraBuf = Buffer.allocUnsafe(9 + ids.length * 4);
+      extraBuf[0] = 77;
+      extraBuf.writeInt32LE((tile.extra.cycleSec ?? 0) | 0, 1);
+      extraBuf.writeUInt32LE(ids.length >>> 0, 5);
+      for (let i = 0; i < ids.length; i++) extraBuf.writeUInt32LE(ids[i] >>> 0, 9 + i * 4);
+    } else if (tile.extra.kind === "xenonite") {
+      const p = tile.extra.powers || [0, 0, 0, 0];
+      extraBuf = Buffer.allocUnsafe(9);
+      extraBuf[0] = 18;
+      extraBuf.writeUInt16LE(p[0] & 65535, 1);
+      extraBuf.writeUInt16LE(p[1] & 65535, 3);
+      extraBuf.writeUInt16LE(p[2] & 65535, 5);
+      extraBuf.writeUInt16LE(p[3] & 65535, 7);
     }
+  }
+  if (!extraBuf && tile.fg !== 0) {
+    if (tile.fg === 2978 || tile.fg === 9268) {
+      flags &= ~(TILE_FLAG_EXTRA_VISUAL | TILE_FLAG_HAS_WLS);
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 24;
+    } else if (tile.fg === 5638 || tile.fg === 6948 || tile.fg === 6946) {
+      flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      extraBuf = Buffer.alloc(15);
+      extraBuf[0] = 62;
+      const cap = tile.fg === 5638 ? 5e3 : 1500;
+      extraBuf.writeUInt32LE(cap, 11);
+    } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 40;
+      extraBuf.writeInt32LE(14, 1);
+    } else if (WEATHER_STUFF_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(10);
+      extraBuf[0] = 49;
+      extraBuf.writeUInt32LE(2, 1);
+      extraBuf.writeInt32LE(50, 5);
+    } else if (tile.fg === 6016) {
+      extraBuf = Buffer.from([66, 0]);
+    } else if (tile.fg === 10058) {
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 77;
+    } else if (tile.fg === 2072) {
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 18;
+    } else if (PROVIDER_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 9;
+    } else if (LOCK_FALLBACK_IDS.has(tile.fg)) {
+      flags &= ~TILE_FLAG_LOCKED;
+      extraBuf = Buffer.alloc(10);
+      extraBuf[0] = 3;
+    } else if (tile.fg === 6 || tile.fg === 12) {
+      extraBuf = Buffer.from([1, 0, 0, 0]);
+    } else if (tile.fg === 20) {
+      extraBuf = Buffer.alloc(7);
+      extraBuf[0] = 2;
+      extraBuf.writeInt32LE(-1, 3);
+    }
+  }
+  if (extraBuf) {
+    flags |= TILE_FLAG_HAS_EXTRA;
   }
   const isChildLocked = (flags & TILE_FLAG_LOCKED) !== 0;
   const hdrLen = isChildLocked ? 10 : 8;
@@ -27680,6 +27810,33 @@ function makeTileUpdatePacket(x, y, tile, nowMs) {
     punchY: y,
     flags: TANK_FLAG_EXTENDED,
     extendedData: serializeSingleTile(tile, nowMs)
+  });
+}
+function makeSendLockPacket(ownerUserId, lockItemId, lx, ly, lockedIndices) {
+  if (lockedIndices.length === 0) {
+    return buildTankPacket({
+      type: PACKET_SEND_LOCK,
+      netId: ownerUserId,
+      targetNetId: 0,
+      value: lockItemId,
+      punchX: lx,
+      punchY: ly,
+      flags: 0
+    });
+  }
+  const ext = Buffer.allocUnsafe(lockedIndices.length * 2);
+  for (let i = 0; i < lockedIndices.length; i++) {
+    ext.writeUInt16LE(lockedIndices[i] & 65535, i * 2);
+  }
+  return buildTankPacket({
+    type: PACKET_SEND_LOCK,
+    netId: ownerUserId,
+    targetNetId: lockedIndices.length,
+    value: lockItemId,
+    punchX: lx,
+    punchY: ly,
+    flags: TANK_FLAG_EXTENDED,
+    extendedData: ext
   });
 }
 function makeWorldMapPacket(name, width, height, tiles, objects, lastObjectUid, weatherId, nowMs) {
@@ -27721,15 +27878,15 @@ function makeWorldMapPacket(name, width, height, tiles, objects, lastObjectUid, 
   });
 }
 function makeInventoryPacket(backpackSize, slots) {
-  const valid = slots.filter((s) => s.count > 0);
-  const ext = Buffer.allocUnsafe(7 + valid.length * 4);
+  const valid2 = slots.filter((s) => s.count > 0);
+  const ext = Buffer.allocUnsafe(7 + valid2.length * 4);
   ext[0] = 1;
   ext.writeUInt32LE(backpackSize, 1);
-  ext.writeUInt16LE(valid.length, 5);
-  for (let i = 0; i < valid.length; i++) {
+  ext.writeUInt16LE(valid2.length, 5);
+  for (let i = 0; i < valid2.length; i++) {
     const off = 7 + i * 4;
-    ext.writeUInt16LE(valid[i].itemId & 65535, off);
-    ext[off + 2] = Math.min(200, valid[i].count) & 255;
+    ext.writeUInt16LE(valid2[i].itemId & 65535, off);
+    ext[off + 2] = Math.min(200, valid2[i].count) & 255;
     ext[off + 3] = 0;
   }
   return buildTankPacket({
@@ -28606,8 +28763,6 @@ var PUNCH_RANGE_IDS = /* @__PURE__ */ new Set([
   // Squirrel King
   7088,
   // Ezio's Armguards
-  7106,
-  // Cat Eyes
   7142,
   // Tamed Looming Triffid
   7392,
@@ -28896,6 +29051,10 @@ var PUNCH_RANGE_IDS = /* @__PURE__ */ new Set([
 var BUILD_RANGE_IDS = /* @__PURE__ */ new Set([
   4746,
   // Diamond Horn
+  4748,
+  // Diamond Horns
+  4750,
+  // Diamond Devil Horns
   6830,
   // Exquisite Trowel
   7192,
@@ -30065,9 +30224,9 @@ function displayName(session) {
   const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
   const rank = rankOf(session.account);
   let prefix = RANKS[rank].prefix;
-  if (rank === "player" && session.world) {
-    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
-    else if (session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
+  if (session.world) {
+    if (session.world.ownerUserId === session.account.userId) prefix = rank === "player" ? "`2" : "`2@";
+    else if (rank === "player" && session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188, 11550].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
   }
   return `${prefix}${name}\`\``;
 }
@@ -30156,7 +30315,7 @@ function recordProgress(ctx, s, metric, amount = 1, xp = 0) {
   ctx.savePlayersNow();
   for (const id of unlocked) {
     const a = ACHIEVEMENTS.find((a2) => a2.id === id);
-    const text = `${displayName(s)} earned the achievement \`w"${achievementTitle(a)}"\`\`!`;
+    const text = `${displayName(s)} \`#earned the achievement "${achievementTitle(a)}"!\`\``;
     OnConsoleMessage(s, text);
     const delay = Math.max(0, (notificationUntil.get(s) || 0) - Date.now());
     notificationUntil.set(s, Date.now() + delay + 6e3);
@@ -30274,9 +30433,15 @@ function normalizeAccount(raw) {
     // Retain disabled/unknown inventory separately so a save never destroys it.
     unavailableInventory: Array.isArray(raw.unavailableInventory) ? raw.unavailableInventory.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0).map((s) => ({ itemId: s.itemId, count: Math.min(200, s.count), equipped: !!s.equipped })) : [],
     recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
+    friendIds: Array.isArray(raw.friendIds) ? [...new Set(raw.friendIds.filter((id) => Number.isSafeInteger(id) && id > 0 && id !== raw.userId))].slice(0, 200) : [],
     personalNote: typeof raw.personalNote === "string" ? raw.personalNote.replace(/[|\r\n\0]/g, " ").slice(0, 128) : "",
     billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
     lastKitClaim: raw.lastKitClaim,
+    lastDailyReward: typeof raw.lastDailyReward === "number" ? raw.lastDailyReward : void 0,
+    lastDailyQuestDay: typeof raw.lastDailyQuestDay === "number" ? raw.lastDailyQuestDay : void 0,
+    hairColor: typeof raw.hairColor === "number" ? raw.hairColor >>> 0 : void 0,
+    eyeColor: typeof raw.eyeColor === "number" ? raw.eyeColor >>> 0 : void 0,
+    pupilColor: typeof raw.pupilColor === "number" ? raw.pupilColor >>> 0 : void 0,
     spawnWorld: raw.spawnWorld,
     spawnX: raw.spawnX,
     spawnY: raw.spawnY
@@ -30326,17 +30491,50 @@ function buildCharacterStateForSession(session, itemsDb) {
       break;
     }
   }
-  for (const inv of session.account.inventory) {
-    if (!inv.equipped || inv.count <= 0) continue;
-    const def = itemsDb.get(inv.itemId);
-    if (def?.isClothing && /parasol|umbrella/i.test(def.name) && (def.clothingType === 5 || def.clothingType === 6)) gravity = 250;
-  }
   for (const mod of activeMods(session.account)) {
     stateFlags |= mod.flags;
     if (mod.gravity !== void 0) gravity = mod.gravity;
     if (mod.speed !== void 0) moveSpeed = mod.speed;
   }
   if (activeMods(session.account).some((m) => m.id === "gtps3-infected")) moveSpeed = moveSpeed === 420 || moveSpeed === 310 || moveSpeed === 325 ? 190 : 150;
+  const balloonIds = /* @__PURE__ */ new Set([
+    338,
+    1112,
+    1114,
+    1116,
+    1118,
+    1120,
+    1122,
+    1124,
+    1126,
+    1128,
+    1130,
+    1772,
+    2816,
+    3216,
+    3218,
+    3840
+  ]);
+  const hasBalloon = session.account.inventory.some(
+    (v) => v.equipped && v.count > 0 && (balloonIds.has(v.itemId) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("balloon") ?? false) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("parasol") ?? false) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("umbrella") ?? false))
+  );
+  if (hasBalloon) {
+    gravity = 250;
+    stateFlags |= 1 << 10;
+  }
+  const xeno = session.world?.xenonite?.enabled ? session.world.xenonite : void 0;
+  if (xeno) {
+    if (xeno.doubleJump === 1) stateFlags |= CHAR_STATE_DOUBLE_JUMP;
+    else if (xeno.doubleJump === 2) stateFlags &= ~CHAR_STATE_DOUBLE_JUMP;
+    if (xeno.highJump === 1) gravity = Math.min(gravity, 700);
+    else if (xeno.highJump === 2) gravity = Math.max(gravity, 1e3);
+    if (xeno.speedy === 1) moveSpeed = Math.max(moveSpeed, 310);
+    else if (xeno.speedy === 2) moveSpeed = 250;
+    if (xeno.longBuild === 1) buildRangeTiles = Math.max(buildRangeTiles, 4);
+    else if (xeno.longBuild === 2) buildRangeTiles = 2;
+    if (xeno.longPunch === 1) punchRangeTiles = Math.max(punchRangeTiles, 4);
+    else if (xeno.longPunch === 2) punchRangeTiles = 2;
+  }
   if (c.noclip) stateFlags |= 1 << 0;
   if (c.speed) moveSpeed = 420;
   if (c.fly) {
@@ -30356,7 +30554,10 @@ function buildCharacterStateForSession(session, itemsDb) {
     punchRangeTiles,
     stateFlags,
     moveSpeed,
-    gravity
+    gravity,
+    hairColor: session.account.hairColor ?? 4294967295,
+    eyeDrop: session.account.eyeColor ?? 4294967295,
+    eyeLenses: session.account.pupilColor ?? 0
   };
 }
 
@@ -30466,6 +30667,10 @@ function OnSetPos(target, netIdOrX, xOrY, maybeY) {
     makeVariantPacket(["OnSetPos", { type: "vec2", x, y }], netId),
     true
   );
+}
+function broadcastSetPos(world, netId, x, y) {
+  const pkt = makeVariantPacket(["OnSetPos", { type: "vec2", x, y }], netId);
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
 }
 
 // server/onVariant/OnSetBux.ts
@@ -30595,12 +30800,24 @@ function validateBranding(raw) {
   if (typeof name !== "string" || !name.trim() || name.length > 40 || !/^[\x20-\x7e]+$/.test(name) || /[`|<>]/.test(name)) throw new Error("serverName: use 1\u201340 ASCII characters, no packet/markup delimiters");
   if (typeof v.logoPath !== "string" || !/^[A-Za-z0-9_/-]+\.png$/.test(v.logoPath) || v.logoPath.startsWith("/") || v.logoPath.includes("..")) throw new Error("logoPath must be a local PNG relative to public/");
   if (typeof v.skipIntro !== "boolean" || typeof v.hideLegacyCustomItemWarning !== "boolean") throw new Error("Client options must be booleans");
+  const enableDeveloperMenu = v.enableDeveloperMenu ?? false;
+  const minecraftHealthBar = v.minecraftHealthBar ?? true;
+  const growtopiaLoadingScreen = v.growtopiaLoadingScreen ?? true;
+  if (typeof enableDeveloperMenu !== "boolean" || typeof minecraftHealthBar !== "boolean" || typeof growtopiaLoadingScreen !== "boolean") throw new Error("Feature toggle options must be booleans");
   if (!Array.isArray(v.splashes) || v.splashes.length > 30 || v.splashes.some((x) => typeof x !== "string" || x.length > 140 || /[\r\n|\x00-\x1f]/.test(x))) throw new Error("Invalid splashes");
   const autofillLabel = v.autofillLabel ?? "Autofill";
   if (typeof autofillLabel !== "string" || !/^[\x20-\x7e]{1,70}$/.test(autofillLabel) || /[`|<>]/.test(autofillLabel)) throw new Error("autofillLabel: 1\u201370 plain ASCII characters");
   const autofillAccent = v.autofillAccent ?? "#E3B5FF";
   if (typeof autofillAccent !== "string" || !/^#[0-9a-f]{6}$/i.test(autofillAccent)) throw new Error("autofillAccent must use #RRGGBB");
-  return { menuButton, autofillLabel, autofillAccent, serverName: name.trim(), version: version.trim(), logoPath: v.logoPath, skipIntro: v.skipIntro, hideLegacyCustomItemWarning: v.hideLegacyCustomItemWarning, splashes: v.splashes };
+  const discordUrl = v.discordUrl ?? "https://discord.com/";
+  if (typeof discordUrl !== "string" || !/^https:\/\//.test(discordUrl) || /[|\r\n]/.test(discordUrl)) throw new Error("discordUrl must use HTTPS");
+  try {
+    const u = new import_node_url.URL(discordUrl);
+    if (u.username || u.password) throw 0;
+  } catch {
+    throw new Error("Invalid discordUrl");
+  }
+  return { discordUrl, menuButton, autofillLabel, autofillAccent, serverName: name.trim(), version: version.trim(), logoPath: v.logoPath, skipIntro: v.skipIntro, enableDeveloperMenu, minecraftHealthBar, growtopiaLoadingScreen, hideLegacyCustomItemWarning: v.hideLegacyCustomItemWarning, splashes: v.splashes };
 }
 function loadBranding(root = process.cwd()) {
   const file = import_node_path.default.join(root, "config/server.json");
@@ -30650,41 +30867,19 @@ var GAZETTE_NEWS = [
   }
 ];
 function RequestWorldSelectMenu(session, worlds) {
-  const featured = ["START", "FARM", "PARKOUR", "TRADE"];
   const lines = [
     "default|START",
     "add_filter|",
-    "add_heading|Top Worlds<ROW2>|"
+    "add_heading|Recently Visited Worlds<CR>|"
   ];
-  const colors = [3529161471, 2147418367, 3417414143, 2864971775];
-  featured.forEach((name, idx) => {
-    const w = worlds.get(name);
-    const cnt = w ? w.peers.size : 0;
-    lines.push(`add_floater|${name}|${cnt}|0.55|${colors[idx % colors.length]}`);
-  });
-  for (const [name, w] of worlds.entries()) {
-    if (isPlayableWorldName(name) && !featured.includes(name) && w.peers.size > 0) {
-      lines.push(`add_floater|${name}|${w.peers.size}|0.50|2147418367`);
-    }
-  }
-  const myLockedWorlds = [];
-  for (const w of worlds.values()) {
-    if (isPlayableWorldName(w.name) && w.ownerUserId === session.account.userId) {
-      myLockedWorlds.push(w);
-    }
-  }
-  if (myLockedWorlds.length > 0) {
-    lines.push("add_heading|My Worlds<CR>|");
-    for (const mw of myLockedWorlds.slice(0, 8)) {
-      lines.push(`add_floater|${mw.name}|${mw.peers.size}|0.48|2147418367`);
-    }
-  }
-  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n) && !featured.includes(n));
-  if (recent.length > 0) {
-    lines.push("add_heading|Recently Visited Worlds<CR>|");
-    for (const rName of recent.slice(0, 6)) {
+  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n));
+  if (recent.length === 0) {
+    const startWorld = worlds.get("START");
+    lines.push(`add_floater|START|${startWorld ? startWorld.peers.size : 0}|0.55|2147418367`);
+  } else {
+    for (const rName of recent.slice(0, 10)) {
       const rw = worlds.get(rName);
-      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.46|3417414143`);
+      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.50|2147418367`);
     }
   }
   lines.push("");
@@ -30835,6 +31030,46 @@ function RequestGazette(session) {
   OnDialogRequest(session, dlg.endDialog("gazette", "Close", ""));
 }
 
+// server/onVariant/OnSetIconState.ts
+function broadcastIconState(world, session, state, includeSelf = false) {
+  const pkt = buildTankPacket({
+    type: PACKET_SET_ICON_STATE,
+    netId: session.netId,
+    flags: state,
+    value: state
+  });
+  session.iconState = state;
+  session.lastIconStatePacket = state === 0 ? void 0 : pkt;
+  for (const other2 of world.peers) {
+    if (includeSelf || other2 !== session) {
+      other2.peer.sendPacket(0, pkt, true);
+    }
+  }
+}
+
+// server/onVariant/OnEmoticonDataChanged.ts
+var BASE_GROWMOJI_STRING = "(wl)|\u0101|1&(oops)|\u0105|1&(sleep)|\u010A|1&(punch)|\u010B|1&(bheart)|\u0114|1&(grow)|\u0116|1&(gems)|\u0117|1&(gtoken)|\u0119|1&(cry)|\u011D|1&(vend)|\u011E|1&(bunny)|\u011B|1&(cactus)|\u011F|1&(pine)|\u0124|1&(peace)|\u0123|1&(terror)|\u0121|1&(troll)|\u0120|1&(evil)|\u0122|1&(fireworks)|\u0126|1&(football)|\u0125|1&(alien)|\u0127|1&(party)|\u0128|1&(pizza)|\u0129|1&(clap)|\u012A|1&(song)|\u012B|1&(ghost)|\u012C|1&(nuke)|\u012D|1&(halo)|\u012E|1&(turkey)|\u012F|1&(gift)|\u0130|1&(cake)|\u0131|1&(heartarrow)|\u0132|1&(lucky)|\u0133|1&(shamrock)|\u0134|1&(grin)|\u0135|1&(ill)|\u0136|1&(eyes)|\u0137|1&(weary)|\u0138|1&(moyai)|\u013C|1&(plead)|\u013D|1&";
+var SPECIAL_GROWMOJI_STRING = "(yes)|\u0102|1&(no)|\u0103|1&(love)|\u0104|1&(shy)|\u0106|1&(wink)|\u0107|1&(tongue)|\u0108|1&(agree)|\u0109|1&(music)|\u010C|1&(build)|\u010D|1&(megaphone)|\u010E|1&(sigh)|\u010F|1&(mad)|\u0110|1&(wow)|\u0111|1&(dance)|\u0112|1&(see-no-evil)|\u0113|1&(heart)|\u0115|1&(kiss)|\u0118|1&(lol)|\u011A|1&(smile)|\u0100|1&(cool)|\u011C|1";
+var FULL_GROWMOJI_STRING = BASE_GROWMOJI_STRING + SPECIAL_GROWMOJI_STRING;
+function OnEmoticonDataChanged(session, notification = false, timeout = 0) {
+  if (notification) {
+    const notifPkt = makeVariantPacket([
+      "OnAddNotification",
+      "interface/large/friend_button.rttex",
+      "You've unlocked some new `$Growmojis``!",
+      "audio/hub_open.wav",
+      { type: "i32", value: timeout }
+    ]);
+    session.peer.sendPacket(0, notifPkt, true);
+  }
+  const pkt = makeVariantPacket([
+    "OnEmoticonDataChanged",
+    { type: "i32", value: 0 },
+    FULL_GROWMOJI_STRING
+  ]);
+  session.peer.sendPacket(0, pkt, true);
+}
+
 // server/index.ts
 var import_node_http = __toESM(require("node:http"));
 
@@ -30847,6 +31082,365 @@ var import_sender = __toESM(require_sender(), 1);
 var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// server/action/trade.ts
+var import_node_crypto2 = require("node:crypto");
+var trades = /* @__PURE__ */ new WeakMap();
+var variant = (s, v) => s.peer.sendPacket(0, makeVariantPacket(v), true);
+function side(t, s) {
+  return t.a.session === s ? t.a : t.b;
+}
+function other(t, s) {
+  return t.a.session === s ? t.b : t.a;
+}
+function valid(ctx, t) {
+  return ctx.sessions.has(t.a.session) && ctx.sessions.has(t.b.session) && !!t.a.session.world && t.a.session.world === t.b.session.world && trades.get(t.a.session) === t && trades.get(t.b.session) === t;
+}
+function refresh(t, reset = false) {
+  for (const to of [t.a, t.b]) if (to.open) for (const from of [t.a, t.b]) {
+    const list = [...from.offer].map(([id, n]) => `add_slot|${id}|${n}
+`).join("") + `locked|0
+${reset ? "reset_locks|1\n" : ""}accepted|${from.accepted ? 1 : 0}
+`;
+    const label = from === to ? "`oYour offer.``" : `\`o${from.session.account.name}'s offer.\`\``;
+    variant(to.session, ["OnTradeStatus", { type: "i32", value: from.session.netId }, "", label, list]);
+  }
+}
+function cancelTrade(s, reason = "Trade cancelled.") {
+  const t = trades.get(s);
+  if (!t) return;
+  for (const x of [t.a, t.b]) {
+    trades.delete(x.session);
+    if (x.open) variant(x.session, ["OnForceTradeEnd"]);
+    if (reason) OnConsoleMessage(x.session, reason);
+  }
+}
+function requestTrade(ctx, s, id) {
+  const p = [...s.world?.peers || []].find((x) => x.netId === id);
+  if (!p || p === s || p.account === s.account || !ctx.sessions.has(p)) {
+    OnConsoleMessage(s, "Player not found.");
+    return;
+  }
+  const current = trades.get(s);
+  if (current && valid(ctx, current) && other(current, s).session === p) {
+    const own = side(current, s);
+    if (!own.open) {
+      own.open = true;
+      variant(s, ["OnStartTrade", p.account.name, { type: "i32", value: p.netId }]);
+    }
+    refresh(current);
+    return;
+  }
+  if (current || trades.get(p)) {
+    OnConsoleMessage(s, "One player is already trading.");
+    return;
+  }
+  const t = { a: { session: s, open: true, accepted: false, offer: /* @__PURE__ */ new Map() }, b: { session: p, open: false, accepted: false, offer: /* @__PURE__ */ new Map() } };
+  trades.set(s, t);
+  trades.set(p, t);
+  variant(s, ["OnStartTrade", p.account.name, { type: "i32", value: p.netId }]);
+  OnConsoleMessage(p, "`#TRADE ALERT:`` " + s.account.name + " wants to trade! Wrench them and choose Trade to accept.");
+  OnPlayPositioned(p, "audio/cash_register.wav");
+}
+function allowed(ctx, s, id) {
+  const def = ctx.itemsDb.get(id), slot = s.account.inventory.find((i) => i.itemId === id);
+  return !!def && !def.name.startsWith("null_") && !(def.flags & 32768) && ![6, 18, 32, 112, 1424].includes(id) && !!slot && !slot.equipped && slot.count > 0;
+}
+function addTradeItem(ctx, s, id, n) {
+  const t = trades.get(s);
+  if (!t || !valid(ctx, t) || t.confirmToken || !side(t, s).open) return;
+  if (!Number.isSafeInteger(n) || n < 1 || n > 200 || !allowed(ctx, s, id)) {
+    OnConsoleMessage(s, "Cannot trade that item or amount.");
+    return;
+  }
+  const own = side(t, s), slot = s.account.inventory.find((i) => i.itemId === id);
+  if (!own.offer.has(id) && own.offer.size >= 4) {
+    OnConsoleMessage(s, "Only four different items fit.");
+    return;
+  }
+  if ((own.offer.get(id) || 0) + n > slot.count) {
+    OnConsoleMessage(s, "Not enough items.");
+    return;
+  }
+  own.offer.set(id, (own.offer.get(id) || 0) + n);
+  t.a.accepted = t.b.accepted = false;
+  refresh(t, true);
+}
+function exchanged(ctx, inv, give, receive, capacity) {
+  const next = inv.map((x) => ({ ...x }));
+  for (const [id, n] of give) {
+    const i = next.findIndex((x) => x.itemId === id);
+    if (i < 0 || next[i].count < n || next[i].equipped) return null;
+    next[i].count -= n;
+    if (!next[i].count) next.splice(i, 1);
+  }
+  for (const [id, n] of receive) {
+    const max = Math.min(200, Math.max(1, ctx.itemsDb.get(id)?.maxAmount || 200));
+    const slot = next.find((x) => x.itemId === id);
+    if (slot) {
+      if (slot.count + n > max) return null;
+      slot.count += n;
+    } else {
+      if (next.length >= capacity || n > max) return null;
+      next.push({ itemId: id, count: n, equipped: false });
+    }
+  }
+  return next;
+}
+function accept(ctx, s, raw, status) {
+  const t = trades.get(s);
+  if (!t || !valid(ctx, t) || !side(t, s).open || !other(t, s).open) return;
+  const seen = /* @__PURE__ */ new Map();
+  let malformed = false;
+  for (const line of raw.replace(/\0+$/g, "").split(/\r?\n/)) {
+    if (!line.startsWith("item|")) continue;
+    const m = /^item\|(\d+)\|(\d+)\s*$/.exec(line);
+    if (!m) {
+      malformed = true;
+      break;
+    }
+    const id = Number(m[1]), n = Number(m[2]);
+    if (seen.has(id) || !Number.isSafeInteger(id) || !Number.isSafeInteger(n)) malformed = true;
+    seen.set(id, n);
+  }
+  const offered = other(t, s).offer;
+  if (status === "1" && (malformed || seen.size > 0 && (seen.size !== offered.size || [...offered].some(([id, n]) => seen.get(id) !== n)))) {
+    OnConsoleMessage(s, "Offer changed. Please check it again.");
+    refresh(t);
+    return;
+  }
+  side(t, s).accepted = status === "1";
+  refresh(t);
+  if (!t.a.accepted || !t.b.accepted) return;
+  beginConfirmation(ctx, t);
+}
+function beginConfirmation(ctx, t) {
+  t.confirmToken = (0, import_node_crypto2.randomBytes)(12).toString("hex");
+  t.confirmed = /* @__PURE__ */ new Set();
+  for (const x of [t.a, t.b]) {
+    variant(x.session, ["OnForceTradeEnd"]);
+    x.open = false;
+    const d = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wTrade Confirmation``", 1366).addTextbox("`4You'll give:``");
+    if (!x.offer.size) d.addTextbox("Nothing");
+    for (const [id, n] of x.offer) d.addLabelWithIcon("small", `${n} x ${ctx.itemsDb.get(id)?.name.replace(/[`|\r\n]/g, "") || id}`, id);
+    const incoming = other(t, x.session).offer;
+    d.addTextbox("`2You'll get:``");
+    if (!incoming.size) d.addTextbox("`4Nothing! Double-check this trade.``");
+    for (const [id, n] of incoming) d.addLabelWithIcon("small", `${n} x ${ctx.itemsDb.get(id)?.name.replace(/[`|\r\n]/g, "") || id}`, id);
+    d.addButton(`confirm_${t.confirmToken}`, "`2Do The Trade!``").addButton("cancel", "`4Cancel``").addQuickExit();
+    OnDialogRequest(x.session, d.endDialog("trade_confirm", "", ""));
+  }
+}
+function confirmTrade(ctx, s, btn) {
+  const t = trades.get(s);
+  if (!t || !valid(ctx, t) || !t.confirmToken) return;
+  if (btn === "cancel" || !btn) {
+    cancelTrade(s);
+    return;
+  }
+  if (btn !== `confirm_${t.confirmToken}`) return;
+  t.confirmed.add(s);
+  if (t.confirmed.size < 2) {
+    OnConsoleMessage(s, "Trade confirmed; waiting for the other player.");
+    return;
+  }
+  complete(ctx, t, s);
+}
+function complete(ctx, t, s) {
+  const a = t.a.session, b = t.b.session;
+  for (const x of [t.a, t.b]) for (const [id] of x.offer) if (!allowed(ctx, x.session, id)) {
+    cancelTrade(s, "Trade cancelled: an item is unavailable.");
+    return;
+  }
+  const nextA = exchanged(ctx, a.account.inventory, t.a.offer, t.b.offer, a.account.backpackSize), nextB = exchanged(ctx, b.account.inventory, t.b.offer, t.a.offer, b.account.backpackSize);
+  if (!nextA || !nextB) {
+    t.a.accepted = t.b.accepted = false;
+    OnConsoleMessage(a, "Trade failed: items missing or inventory full.");
+    OnConsoleMessage(b, "Trade failed: items missing or inventory full.");
+    refresh(t);
+    return;
+  }
+  const oldA = a.account.inventory, oldB = b.account.inventory;
+  a.account.inventory = nextA;
+  b.account.inventory = nextB;
+  try {
+    ctx.savePlayersNow();
+  } catch (e) {
+    a.account.inventory = oldA;
+    b.account.inventory = oldB;
+    t.a.accepted = t.b.accepted = false;
+    cancelTrade(s, "Trade failed to save; nothing exchanged.");
+    return;
+  }
+  for (const giver of [t.a, t.b]) for (const [id, n] of giver.offer) giver.session.peer.sendPacket(0, makeModifyInventoryPacket(id, 0, n), true);
+  for (const [giver, receiver] of [[t.a, t.b], [t.b, t.a]]) for (const [id, n] of giver.offer) receiver.session.peer.sendPacket(0, makeModifyInventoryPacket(id, n, 0), true);
+  let delay = 0;
+  for (const [giver, receiver] of [[t.a, t.b], [t.b, t.a]]) for (const [id] of giver.offer) {
+    delay += 450;
+    const effect = buildTankPacket({ type: PACKET_ITEM_EFFECT, count2: 3, netId: receiver.session.netId, targetNetId: giver.session.netId, value: delay, punchX: id, punchY: id });
+    for (const viewer of a.world?.peers || []) viewer.peer.sendPacket(0, effect, true);
+    for (const player of [a, b]) OnPlayPositioned(player, "audio/change_clothes.wav", delay);
+  }
+  cancelTrade(s, "Trade complete.");
+}
+function tradeAction(ctx, s, action, kv, raw) {
+  if (!["trade_started", "mod_trade", "rem_trade", "trade_accept", "trade_cancel", "trade_lock", "trade_check_price"].includes(action)) return false;
+  const t = trades.get(s);
+  if (!t || !valid(ctx, t)) {
+    if (t) cancelTrade(s);
+    return true;
+  }
+  if (action === "trade_started") {
+    refresh(t);
+    return true;
+  }
+  if (action === "trade_cancel") {
+    if (!t.confirmToken) cancelTrade(s);
+    return true;
+  }
+  if (t.confirmToken) return true;
+  if (action === "mod_trade") {
+    const id = Number((kv.itemID || "").replace(/\|$/, "")), slot = s.account.inventory.find((x) => x.itemId === id);
+    if (!allowed(ctx, s, id) || !slot) {
+      OnConsoleMessage(s, "Cannot trade that item.");
+      return true;
+    }
+    if (slot.count === 1) addTradeItem(ctx, s, id, 1);
+    else {
+      const def = ctx.itemsDb.get(id);
+      const d = new DialogBuilder().addLabelWithIcon("big", def.name.replace(/[`|\r\n]/g, ""), id).addTextbox(`How many to offer? You have ${slot.count}.`).addTextInput("count", "", "1", 3).embedData("itemID", id).addQuickExit();
+      OnDialogRequest(s, d.endDialog("trade_add", "Cancel", "OK"));
+    }
+    return true;
+  }
+  if (action === "rem_trade") {
+    const own = side(t, s);
+    own.offer.delete(Number((kv.itemID || "").replace(/\|$/, "")));
+    t.a.accepted = t.b.accepted = false;
+    refresh(t, true);
+    return true;
+  }
+  if (action === "trade_accept") {
+    accept(ctx, s, raw, kv.status);
+    return true;
+  }
+  return true;
+}
+
+// server/action/hazards.ts
+var TANK_FLAG_LAVA_HIT = 64;
+var TANK_FLAG_SPIKE_HIT = 256;
+var TANK_FLAG_PAIN_HIT = 65536;
+var TANK_FLAG_ACID_HIT = 1342177280;
+var MAX_HAZARD_HP = 100;
+var HAZARD_HIT_COOLDOWN_MS = 350;
+var HAZARD_REGEN_DELAY_MS = 3e3;
+var HAZARD_REGEN_INTERVAL_MS = 800;
+var HAZARD_REGEN_STEP = 20;
+function isFrozen(s) {
+  return activeMods(s.account).some((m) => (m.flags & 1 << 11) !== 0);
+}
+function overlapsHazard(ctx, s) {
+  const w = s.world;
+  if (!w) return false;
+  const x0 = Math.max(0, Math.floor((s.x + 2) / 32)), x1 = Math.min(w.width - 1, Math.floor((s.x + 18) / 32));
+  const y0 = Math.max(0, Math.floor((s.y + 2) / 32)), y1 = Math.min(w.height - 1, Math.floor((s.y + 28) / 32));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (ctx.itemsDb.get(w.tiles[y * w.width + x].fg)?.isHazard) return true;
+  return false;
+}
+function classifyHazardItem(actionType) {
+  if (actionType === 6) return "spike";
+  if (actionType === 25) return "pain";
+  if (actionType === 136) return "acid";
+  return "lava";
+}
+function hazardKindAt(ctx, s, oldX, oldY) {
+  const w = s.world;
+  if (!w) return null;
+  const cx = Math.floor((s.x + 10) / 32);
+  for (const y of [Math.floor((s.y + 15) / 32), Math.floor((s.y + 33) / 32)]) {
+    if (cx >= 0 && y >= 0 && cx < w.width && y < w.height) {
+      const item = ctx.itemsDb.get(w.tiles[y * w.width + cx]?.fg);
+      if (item?.isHazard) return classifyHazardItem(item.actionType);
+    }
+  }
+  if (oldX !== void 0 && oldY !== void 0) {
+    const dx = s.x - oldX, dy = s.y - oldY;
+    if (Math.abs(dx) <= 80 && Math.abs(dx) >= 1 && dy <= 20 && dy >= -90) {
+      const foot = oldY + 33, row = Math.floor(foot / 32);
+      if (foot - row * 32 <= 5 && row >= 0 && row < w.height) {
+        const a = oldX + 10, b = s.x + 10, lo = Math.floor(Math.min(a, b) / 32), hi = Math.floor(Math.max(a, b) / 32);
+        for (let x = Math.max(0, lo); x <= Math.min(w.width - 1, hi); x++) {
+          const item = ctx.itemsDb.get(w.tiles[row * w.width + x]?.fg);
+          if (item?.id === 4 || item?.actionType === 16 || item?.actionType === 25 || item?.actionType === 136) {
+            return classifyHazardItem(item.actionType);
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+function hasLavaResistance(s) {
+  const xeno = s.world?.xenonite?.enabled ? s.world.xenonite : void 0;
+  if (xeno && xeno.heatResist === 2) return false;
+  const inv = s.account?.inventory;
+  if (!Array.isArray(inv)) return false;
+  return inv.some((slot) => slot && slot.equipped && slot.count > 0 && (slot.itemId === 250 || slot.itemId === 4812));
+}
+function broadcastSetPearl(s, hp) {
+  const clamped = Math.max(0, Math.min(MAX_HAZARD_HP, Math.round(hp)));
+  const pkt = makeVariantPacket(["OnSetPearl", { type: "i32", value: clamped }], s.netId);
+  const peers = s.world?.peers;
+  if (peers && peers.size > 0) {
+    for (const p of peers) p.peer.sendPacket(0, pkt, true);
+  } else if (s.peer) {
+    s.peer.sendPacket(0, pkt, true);
+  }
+}
+function applyHazardHit(ctx, s, kind, now = Date.now()) {
+  if (kind === "lava" && s.world?.xenonite?.enabled && s.world.xenonite.heatResist === 1) return false;
+  if (kind === "spike") {
+    ctx.respawnPlayer(s, true);
+    return true;
+  }
+  if (s.lastHazardHitAt && now - s.lastHazardHitAt < HAZARD_HIT_COOLDOWN_MS) return false;
+  const damage = kind === "lava" && hasLavaResistance(s) ? 10 : 20;
+  const currentHp = typeof s.hp === "number" ? s.hp : MAX_HAZARD_HP;
+  const nextHp = Math.max(0, currentHp - damage);
+  s.hp = nextHp;
+  s.lastHazardHitAt = now;
+  s.lastHazardRegenAt = now;
+  broadcastSetPearl(s, nextHp);
+  if (nextHp <= 0) {
+    ctx.respawnPlayer(s, false);
+    return true;
+  }
+  return false;
+}
+function tickSessionHazardRegen(s, now = Date.now()) {
+  if (!s.world || s.respawnUntil && now < s.respawnUntil) return;
+  const hp = typeof s.hp === "number" ? s.hp : MAX_HAZARD_HP;
+  if (hp <= 0 || hp >= MAX_HAZARD_HP) return;
+  const lastHit = s.lastHazardHitAt || 0;
+  if (now - lastHit < HAZARD_REGEN_DELAY_MS) return;
+  const lastRegen = s.lastHazardRegenAt || 0;
+  if (now - lastRegen < HAZARD_REGEN_INTERVAL_MS) return;
+  const nextHp = Math.min(MAX_HAZARD_HP, hp + HAZARD_REGEN_STEP);
+  s.hp = nextHp;
+  s.lastHazardRegenAt = now;
+  broadcastSetPearl(s, nextHp);
+}
+function processMovementHazard(ctx, s, flags, oldX, oldY, now = Date.now()) {
+  if (isFrozen(s) || s.pullImmuneUntil && now < s.pullImmuneUntil) return false;
+  if ((flags & TANK_FLAG_SPIKE_HIT) !== 0) return applyHazardHit(ctx, s, "spike", now);
+  if ((flags & TANK_FLAG_ACID_HIT) !== 0) return applyHazardHit(ctx, s, "acid", now);
+  if ((flags & TANK_FLAG_PAIN_HIT) !== 0) return applyHazardHit(ctx, s, "pain", now);
+  if ((flags & TANK_FLAG_LAVA_HIT) !== 0) return applyHazardHit(ctx, s, "lava", now);
+  const tileKind = hazardKindAt(ctx, s, oldX, oldY);
+  if (tileKind) return applyHazardHit(ctx, s, tileKind, now);
+  return false;
+}
 
 // server/database/world.ts
 function generateFreshWorld(name) {
@@ -30951,6 +31545,8 @@ function serializeWorldForDisk(w) {
     lastObjectUid: w.lastObjectUid,
     weatherId: w.weatherId,
     ownerUserId: w.ownerUserId,
+    worldBans: w.worldBans || {},
+    xenonite: w.xenonite,
     spawnX: w.spawnX,
     spawnY: w.spawnY
   };
@@ -30965,6 +31561,8 @@ function hydrateWorldFromDisk(raw) {
     lastObjectUid: typeof raw.lastObjectUid === "number" ? raw.lastObjectUid : 0,
     weatherId: typeof raw.weatherId === "number" ? raw.weatherId : 0,
     ownerUserId: typeof raw.ownerUserId === "number" ? raw.ownerUserId : 0,
+    worldBans: raw.worldBans && typeof raw.worldBans === "object" ? Object.fromEntries(Object.entries(raw.worldBans).filter(([k, v]) => /^[1-9][0-9]*$/.test(k) && Number.isSafeInteger(v) && v > Date.now())) : {},
+    xenonite: raw.xenonite,
     spawnX: typeof raw.spawnX === "number" ? raw.spawnX : 48 * 32,
     spawnY: typeof raw.spawnY === "number" ? raw.spawnY : 36 * 32,
     peers: /* @__PURE__ */ new Set()
@@ -30973,23 +31571,99 @@ function hydrateWorldFromDisk(raw) {
 function getLockRadiusForId(lockItemId) {
   if (lockItemId === 202) return 3;
   if (lockItemId === 204) return 6;
-  if (lockItemId === 206) return 10;
+  if (lockItemId === 206 || lockItemId === 4994) return 10;
   return 0;
 }
-function canModifyTile(session, world, tile, tx, ty) {
-  const uid = session.account.userId;
-  if (tile.extra?.kind === "lock") {
-    return tile.extra.ownerUserId === uid || tile.extra.adminIds.includes(uid);
-  }
-  if (world.ownerUserId !== 0 && world.ownerUserId !== uid) {
-    const wlTile = world.tiles.find(
-      (t) => (t.fg === 242 || t.fg === 1796 || t.fg === 7188) && t.extra?.kind === "lock"
-    );
-    if (wlTile && wlTile.extra?.kind === "lock") {
-      if (wlTile.extra.adminIds.includes(uid)) return true;
-      if ((wlTile.extra.settings & 128) !== 0) return true;
+function getAreaLockMaxTiles(lockItemId) {
+  if (lockItemId === 202) return 10;
+  if (lockItemId === 204) return 48;
+  if (lockItemId === 206 || lockItemId === 4994) return 200;
+  return 0;
+}
+function clearAreaLock(world, lx, ly) {
+  const originIdx = ly * world.width + lx;
+  const cleared = [];
+  for (let i = 0; i < world.tiles.length; i++) {
+    if (i === originIdx) continue;
+    const t = world.tiles[i];
+    if ((t.flags & TILE_FLAG_LOCKED) !== 0 && t.parentIndex === originIdx) {
+      t.flags &= ~TILE_FLAG_LOCKED;
+      t.parentIndex = 0;
+      cleared.push(i);
     }
-    return false;
+  }
+  return cleared;
+}
+function applyAreaLock(world, lx, ly) {
+  const maxTiles = getAreaLockMaxTiles(world.tiles[ly * world.width + lx]?.fg || 0);
+  if (maxTiles <= 0) return [];
+  const originIdx = ly * world.width + lx;
+  const lockTile = world.tiles[originIdx];
+  if (!lockTile || lockTile.extra?.kind !== "lock") return [];
+  const ignoreEmptyAir = Boolean(lockTile.extra.emptyAir);
+  clearAreaLock(world, lx, ly);
+  const visited = /* @__PURE__ */ new Set([originIdx]);
+  const queue = [originIdx];
+  const lockedIndices = [];
+  const isLockable = (idx) => {
+    const t = world.tiles[idx];
+    if (!t) return false;
+    if (t.fg === 6 || t.fg === 8) return false;
+    if (t.extra?.kind === "lock") return false;
+    if ((t.flags & TILE_FLAG_LOCKED) !== 0 && t.parentIndex !== originIdx) return false;
+    if (ignoreEmptyAir && t.fg === 0 && t.bg === 0) return false;
+    return true;
+  };
+  for (let qi = 0; qi < queue.length && lockedIndices.length < maxTiles; qi++) {
+    const cur = queue[qi];
+    const cx = cur % world.width;
+    const cy = Math.floor(cur / world.width);
+    const neighbors = [
+      [cx - 1, cy],
+      [cx, cy - 1],
+      [cx + 1, cy],
+      [cx, cy + 1]
+    ];
+    for (const [nx, ny] of neighbors) {
+      if (nx < 0 || nx >= world.width || ny < 0 || ny >= world.height) continue;
+      const nIdx = ny * world.width + nx;
+      if (visited.has(nIdx)) continue;
+      visited.add(nIdx);
+      const nt = world.tiles[nIdx];
+      if (isLockable(nIdx)) {
+        nt.flags |= TILE_FLAG_LOCKED;
+        nt.parentIndex = originIdx;
+        lockedIndices.push(nIdx);
+        queue.push(nIdx);
+        if (lockedIndices.length >= maxTiles) break;
+      } else if (!ignoreEmptyAir && nt && nt.fg === 0 && nt.bg === 0 && (nt.flags & TILE_FLAG_LOCKED) === 0) {
+        queue.push(nIdx);
+      }
+    }
+  }
+  return lockedIndices;
+}
+function getBuildersLockDenial(world, uid, tile, tx, ty, mode = "place") {
+  const checkLock = (lt) => {
+    if (!lt || lt.extra?.kind !== "lock" || lt.extra.ownerUserId === uid) return null;
+    const isAdmin = lt.extra.adminIds.includes(uid);
+    const isPublic = (lt.extra.settings & 128) !== 0;
+    if (lt.fg === 4994) {
+      if (isAdmin) {
+        if (lt.extra.limitAdmins && mode === "break") return "You can't break here, the owner has limited admins!";
+        return null;
+      }
+      if (!isPublic) return "";
+      if (lt.extra.buildOnly && mode === "break") return "This lock allows building only!";
+      if (!lt.extra.buildOnly && mode === "place") return "This lock allows breaking only!";
+      return null;
+    }
+    return isAdmin || isPublic ? null : "";
+  };
+  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0 && tile.parentIndex < world.tiles.length) {
+    const pt = world.tiles[tile.parentIndex];
+    const msg = pt ? checkLock(pt) : null;
+    if (msg !== null) return msg;
   }
   if (tx !== void 0 && ty !== void 0) {
     for (let y = Math.max(0, ty - 10); y <= Math.min(world.height - 1, ty + 10); y++) {
@@ -30999,20 +31673,50 @@ function canModifyTile(session, world, tile, tx, ty) {
         const rad = getLockRadiusForId(lt.fg);
         if (rad <= 0) continue;
         if (Math.abs(x - tx) <= rad && Math.abs(y - ty) <= rad) {
-          if (lt.extra.ownerUserId !== uid && !lt.extra.adminIds.includes(uid) && (lt.extra.settings & 128) === 0) {
-            return false;
-          }
+          const msg = checkLock(lt);
+          if (msg !== null) return msg;
         }
       }
     }
   }
-  return true;
+  return null;
+}
+function canModifyTile(session, world, tile, tx, ty, mode = "place") {
+  const uid = session.account.userId;
+  if (session.account.rank === "developer") return true;
+  if (tile.extra?.kind === "lock") {
+    if (mode === "break") return tile.extra.ownerUserId === uid;
+    return tile.extra.ownerUserId === uid || tile.extra.adminIds.includes(uid);
+  }
+  if (world.ownerUserId !== 0 && world.ownerUserId !== uid) {
+    const wlTile = world.tiles.find(
+      (t) => (t.fg === 242 || t.fg === 1796 || t.fg === 5260 || t.fg === 7188 || t.fg === 10410 || t.fg === 11550 || t.fg === 11586 || t.fg === 11902 || t.fg === 12654) && t.extra?.kind === "lock"
+    );
+    if (wlTile && wlTile.extra?.kind === "lock") {
+      if (wlTile.extra.adminIds.includes(uid)) return true;
+      if ((wlTile.extra.settings & 128) !== 0) return true;
+    }
+    return false;
+  }
+  return getBuildersLockDenial(world, uid, tile, tx, ty, mode) === null;
 }
 var canModifyWorldTile = canModifyTile;
+function getDefaultLockWeather(world) {
+  const wlTile = world.tiles.find(
+    (t) => t.extra?.kind === "lock" && (t.fg === 10410 || t.fg === 11550 || t.fg === 11586 || t.fg === 11902 || t.fg === 12654)
+  );
+  if (!wlTile) return 0;
+  if (wlTile.fg === 10410) return 53;
+  if (wlTile.fg === 11550) return 54;
+  if (wlTile.fg === 11586) return 55;
+  if (wlTile.fg === 11902) return 58;
+  if (wlTile.fg === 12654) return 63;
+  return 0;
+}
 function recomputeWorldWeather(world, itemsDb) {
-  let nextWeather = 0;
+  let nextWeather = getDefaultLockWeather(world);
   for (const t of world.tiles) {
-    if (t.fg !== 0) {
+    if (t.fg !== 0 && (t.flags & 64) !== 0) {
       const def = itemsDb.get(t.fg);
       if (def?.isWeather) {
         nextWeather = itemsDb.getWeatherIdForBlock(t.fg);
@@ -31025,6 +31729,35 @@ function recomputeWorldWeather(world, itemsDb) {
 }
 function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -1) {
   if (totalCount <= 0 || itemId <= 0) return;
+  if (itemId !== 112) {
+    for (let ty = 0; ty < world.height; ty++) {
+      for (let tx = 0; tx < world.width; tx++) {
+        const t = world.tiles[ty * world.width + tx];
+        if (t.extra && t.extra.kind === "sucker" && t.extra.enabled && t.extra.itemId === itemId) {
+          const maxCap = t.fg === 5638 ? 5e3 : 1500;
+          if (t.extra.count < maxCap) {
+            const space = maxCap - t.extra.count;
+            const absorbed = Math.min(totalCount, space);
+            t.extra.count += absorbed;
+            totalCount -= absorbed;
+            const flyPkt = buildTankPacket({
+              type: PACKET_ITEM_EFFECT,
+              netId: -1,
+              x: tx * 32 + 16,
+              y: ty * 32 + 16,
+              speedX: x,
+              speedY: y,
+              punchX: itemId
+            });
+            for (const p of world.peers) p.peer.sendPacket(0, flyPkt, true);
+            const updPkt = makeTileUpdatePacket(tx, ty, t, Date.now());
+            for (const p of world.peers) p.peer.sendPacket(0, updPkt, true);
+            if (totalCount <= 0) return;
+          }
+        }
+      }
+    }
+  }
   if (itemId === 112) {
     let rem = Math.min(5e3, Math.floor(totalCount));
     const denoms = [100, 50, 10, 5, 1];
@@ -31226,11 +31959,18 @@ function gtps3PlaymodTime(seconds) {
   if (!hour && !minute && !second) return "Removing now ";
   return (hour > 0 ? `${hour} hours` : "") + (minute > 0 ? `${hour > 0 ? ", " : ""}${minute} mins` : "") + (second > 0 ? `${minute > 0 ? ", " : ""}${second} secs ` : " ");
 }
+var HAIR_DYE_ITEMS = /* @__PURE__ */ new Set([3822, 3824, 3826, 3828, 3830]);
+var EYE_ITEMS = /* @__PURE__ */ new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
 function useConsumable(ctx, s, id, tx, ty) {
   const def = ctx.itemsDb.get(id);
   if (def?.actionType !== 8) return false;
+  if (HAIR_DYE_ITEMS.has(id) || EYE_ITEMS.has(id)) return false;
   const world = s.world;
   if (!world || !Number.isInteger(tx) || !Number.isInteger(ty) || tx < 0 || ty < 0 || tx >= world.width || ty >= world.height) return true;
+  if (world.xenonite?.enabled && world.xenonite.powerups === 1) {
+    bubble(s, "`4Powerups are blocked in this world by the Xenonite Crystal!``");
+    return true;
+  }
   const mod = MODS.find((m) => m.item === id), food = SIMPLE_FOODS.find((m) => m.item === id);
   const spraySeconds = { 228: 3600, 10672: 3600, 1062: 30 * 86400, 1778: 86400, 5764: 259200 };
   if (Object.prototype.hasOwnProperty.call(spraySeconds, id)) {
@@ -31239,7 +31979,7 @@ function useConsumable(ctx, s, id, tx, ty) {
       bubble(s, "Use this on a growing tree to speed it's growth.");
       return true;
     }
-    if (!canModifyWorldTile(s, world, tile)) return true;
+    if (!canModifyWorldTile(s, world, tile, tx, ty, "place")) return true;
     const growMs = Math.max(1, tree.growTime || 15) * 1e3;
     if (now2 - tile.extra.plantedAtMs >= growMs) {
       bubble(s, "This tree has already bloomed, don't waste your spray on it!");
@@ -31304,7 +32044,7 @@ function useConsumable(ctx, s, id, tx, ty) {
       bubble(s, "`4This potion is clearly labeled for use only on rocks.``");
       return true;
     }
-    if (!canModifyWorldTile(s, world, tile)) return true;
+    if (!canModifyWorldTile(s, world, tile, tx, ty, "place")) return true;
     if (!ctx.consumeInventoryItem(s, id, 1, true, false)) return true;
     tile.fg = 392;
     tile.extra = void 0;
@@ -31348,13 +32088,17 @@ function useConsumable(ctx, s, id, tx, ty) {
       ctx.sendCharacterState(target);
       applySkinColorUpdate(target, false);
     } else {
+      const wasActive = target.account.playmods.some((m) => m.id === mod.id);
       if (mod.group) {
         const equivalentIds = new Set(MODS.filter((d) => d.group === mod.group).map((d) => d.id));
         target.account.playmods = target.account.playmods.filter((m) => !equivalentIds.has(m.id));
       }
-      if (!target.account.playmods.some((m) => m.id === mod.id)) {
+      if (mod.group === "floating" || !target.account.playmods.some((m) => m.id === mod.id)) {
         target.account.playmods.push({ id: mod.id, expiresAt: now + mod.seconds * 1e3 });
-        OnConsoleMessage(target, `${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+        if (!wasActive) {
+          OnConsoleMessage(target, `${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+        }
+        ctx.dirty = true;
         ctx.sendCharacterState(target);
         applySkinColorUpdate(target, false);
       } else if (id === 782) {
@@ -31413,10 +32157,14 @@ function expireSessionMods(ctx, s, now) {
   }
   ctx.sendCharacterState(s);
   applySkinColorUpdate(s, false);
+  if (expired.some((m) => MODS.find((d) => d.id === m.id && (d.flags & 1 << 11) !== 0)) && !isFrozen(s) && (!s.pullImmuneUntil || Date.now() >= s.pullImmuneUntil) && overlapsHazard(ctx, s)) ctx.respawnPlayer(s, false);
 }
 function expireMods(ctx) {
   const now = Date.now();
-  for (const s of ctx.sessions) expireSessionMods(ctx, s, now);
+  for (const s of ctx.sessions) {
+    expireSessionMods(ctx, s, now);
+    tickSessionHazardRegen(s, now);
+  }
 }
 function infectByPunch(ctx, attacker, tx, ty) {
   const world = attacker.world, now = Date.now();
@@ -31622,10 +32370,11 @@ var ServerContext = class {
   findSessionByNameGlobal(name) {
     const q = name.trim().toLowerCase();
     if (!q) return void 0;
-    for (const s of this.sessions) {
-      if (s.account.name.toLowerCase() === q) return s;
-    }
-    return void 0;
+    const sessions = [...this.sessions];
+    const exact = sessions.find((s) => s.account.name.toLowerCase() === q);
+    if (exact) return exact;
+    const matches = sessions.filter((s) => s.account.name.toLowerCase().startsWith(q));
+    return matches.length === 1 ? matches[0] : void 0;
   }
   findOnlineSessionByName(name) {
     return this.findSessionByNameGlobal(name);
@@ -31722,8 +32471,8 @@ var ServerContext = class {
     const pkt = makeSetCharacterStatePacket(state);
     session.peer.sendPacket(0, pkt, true);
     if (session.world) {
-      for (const other of session.world.peers) {
-        if (other !== session) other.peer.sendPacket(0, pkt, true);
+      for (const other2 of session.world.peers) {
+        if (other2 !== session) other2.peer.sendPacket(0, pkt, true);
       }
     }
     if (riftCape) {
@@ -31739,24 +32488,27 @@ var ServerContext = class {
   syncWorldPeersForJoiner(session) {
     const world = session.world;
     if (!world) return;
-    for (const other of world.peers) {
-      if (other === session) continue;
-      OnSpawn(session, other, false);
-      session.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(other, this.itemsDb)), true);
-      session.peer.sendPacket(0, buildSetClothingPacket(other, this.itemsDb, false), true);
+    for (const other2 of world.peers) {
+      if (other2 === session) continue;
+      OnSpawn(session, other2, false);
+      session.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(other2, this.itemsDb)), true);
+      session.peer.sendPacket(0, buildSetClothingPacket(other2, this.itemsDb, false), true);
       session.peer.sendPacket(
         0,
-        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
+        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other2.account) >>> 0 }], other2.netId),
         true
       );
-      OnSpawn(other, session, false);
+      if (other2.lastIconStatePacket) {
+        session.peer.sendPacket(0, other2.lastIconStatePacket, true);
+      }
+      OnSpawn(other2, session, false);
     }
     const entry = `\`5<${displayName(session)} entered, \`w${world.peers.size - 1}\`\` others here>\`\``;
-    for (const other of world.peers) {
-      if (other === session) continue;
-      OnConsoleMessage(other, entry);
-      OnTalkBubble(other, session.netId, entry, 1);
-      OnTalkBubble(session, other.netId, displayName(other), 1);
+    for (const other2 of world.peers) {
+      if (other2 === session) continue;
+      OnConsoleMessage(other2, entry);
+      OnTalkBubble(other2, session.netId, entry, 1);
+      OnTalkBubble(session, other2.netId, displayName(other2), 1);
     }
   }
   schedulePostSpawnSkinSync(session, expectedWorld, expectedNetId) {
@@ -31803,9 +32555,14 @@ var ServerContext = class {
       return;
     }
     const world = this.getOrCreateWorld(destination.name);
+    if (!hasPermission(session.account, "moderate") && (world.worldBans?.[String(session.account.userId)] || 0) > Date.now()) {
+      OnConsoleMessage(session, `You are temporarily banned from ${world.name}.`);
+      session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true);
+      return;
+    }
     this.leaveCurrentWorld(session, false);
     const spawn = this.findMainDoorPixel(world);
-    this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_shut.wav", true);
+    this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_open.wav", true);
   }
   moveToWorld(session, world, x, y) {
     if (!isPlayableWorldName(world.name)) return;
@@ -31814,6 +32571,9 @@ var ServerContext = class {
   }
   enterWorldAtPixel(session, world, x, y, entrySfx, announceEntry) {
     session.world = world;
+    session.hp = 100;
+    session.lastHazardHitAt = 0;
+    session.lastHazardRegenAt = 0;
     session.respawnUntil = 0;
     session.respawnGeneration = (session.respawnGeneration || 0) + 1;
     session.x = x;
@@ -31854,17 +32614,47 @@ var ServerContext = class {
         session,
         `World \`w${world.name}\`\` entered. There are \`w${world.peers.size - 1}\`\` other people here, \`w${this.sessions.size}\`\` online.${lockNote}`
       );
+      for (const peer of world.peers) {
+        if (peer !== session) {
+          OnConsoleMessage(
+            peer,
+            `\`o<\`w${session.account.name}\`\` entered, \`w${world.peers.size - 1}\`\` others here>\`\``
+          );
+        }
+      }
     }
   }
   leaveCurrentWorld(session, notifySelf) {
+    cancelTrade(session, "Trade cancelled: player left the world.");
     const world = session.world;
     if (!world) return;
+    OnPlayPositioned(session, "audio/door_shut.wav");
+    for (const other2 of world.peers) if (other2 !== session) OnPlayPositioned(other2, "audio/door_shut.wav");
+    session.pullGeneration = (session.pullGeneration || 0) + 1;
+    session.pullUntil = 0;
+    session.pullImmuneUntil = 0;
+    session.brb = false;
+    session.iconState = 0;
+    session.lastIconStatePacket = void 0;
+    if (session.magplantRemote) {
+      session.magplantRemote = null;
+      session.peer.sendPacket(
+        0,
+        makeVariantPacket([
+          "OnPlanterActivated",
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 }
+        ]),
+        true
+      );
+    }
     world.peers.delete(session);
     session.world = null;
     broadcastOnRemove(world, session);
-    for (const other of world.peers) {
+    for (const other2 of world.peers) {
       OnConsoleMessage(
-        other,
+        other2,
         `\`5< \`w${session.account.name}\`5 left, \`w${world.peers.size}\`5 others here >\`\``
       );
     }
@@ -31884,6 +32674,9 @@ var ServerContext = class {
     const netId = session.netId;
     session.x = spawn.x;
     session.y = spawn.y;
+    session.hp = 100;
+    session.lastHazardHitAt = 0;
+    session.lastHazardRegenAt = 0;
     session.respawnUntil = Date.now() + 2020;
     if (!isSpike) {
       session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", { type: "u32", value: 2 }], netId), true);
@@ -31891,15 +32684,19 @@ var ServerContext = class {
       for (const p of world.peers) p.peer.sendPacket(0, killedPkt, true);
     }
     const generation = session.respawnGeneration = (session.respawnGeneration || 0) + 1;
-    const valid = () => session.world === world && session.netId === netId && session.respawnGeneration === generation && this.sessions.has(session);
+    const valid2 = () => session.world === world && session.netId === netId && session.respawnGeneration === generation && this.sessions.has(session);
     setTimeout(() => {
-      if (!valid()) return;
+      if (!valid2()) return;
       const position = makeVariantPacket(["OnSetPos", { type: "vec2", x: spawn.x, y: spawn.y }], netId);
-      for (const p of world.peers) p.peer.sendPacket(0, position, true);
+      const pearl = makeVariantPacket(["OnSetPearl", { type: "i32", value: 100 }], netId);
+      for (const p of world.peers) {
+        p.peer.sendPacket(0, position, true);
+        p.peer.sendPacket(0, pearl, true);
+      }
       broadcastPositionedSfx(world, netId, "audio/teleport.wav");
     }, 2e3).unref();
     setTimeout(() => {
-      if (!valid()) return;
+      if (!valid2()) return;
       session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", { type: "u32", value: 0 }], netId), true);
       session.respawnUntil = 0;
     }, 2020).unref();
@@ -31934,56 +32731,82 @@ function protonHash(buf) {
 }
 var SECRET_KEY = "PBG892FXX982ABC*";
 var WEATHER_BY_ITEM_ID = {
-  932: 0,
+  932: 4,
   // Weather Machine - Sunny
   934: 2,
   // Weather Machine - Night
   946: 3,
   // Weather Machine - Arid
-  984: 4,
+  984: 5,
   // Weather Machine - Rainy City
   1210: 8,
   // Weather Machine - Spooky
+  1490: 10,
+  // Weather Machine - Nothingness
   1364: 11,
   // Weather Machine - Snowy
-  1490: 15,
-  // Weather Machine - Nothingness
-  1750: 17,
+  1750: 15,
   // Weather Machine - Warp Speed
-  2046: 18,
+  2046: 17,
   // Weather Machine - Comet
-  2284: 20,
+  2284: 18,
   // Weather Machine - Party
-  2744: 22,
+  2744: 19,
   // Weather Machine - Pineapples
-  3252: 28,
+  3252: 20,
   // Weather Machine - Snowy Night
-  3446: 29,
+  3446: 21,
   // Weather Machine - Spring
-  3534: 30,
+  3534: 22,
   // Weather Machine - Howling Sky
-  3694: 31,
+  3694: 28,
   // Weather Machine - Heatwave
-  3832: 34,
+  3832: 29,
   // Weather Machine - Stuff
-  4242: 36,
+  4242: 30,
   // Weather Machine - Pagoda
-  4486: 37,
-  // Weather Machine - Monochrome
-  4776: 38,
-  // Weather Machine - Treasure
-  5e3: 42,
+  4486: 31,
+  // Weather Machine - Apocalypse
+  4776: 32,
+  // Weather Machine - Jungle
+  4892: 33,
+  // Weather Machine - Balloon Warz
+  5e3: 34,
+  // Weather Machine - Background
+  5112: 35,
+  // Weather Machine - Autumn
+  5654: 36,
+  // Weather Machine - Valentine's
+  5716: 37,
+  // Weather Machine - St. Paddy's Day
+  5958: 38,
+  // Epoch Machine
+  6854: 42,
   // Weather Machine - Digital Rain
-  5112: 44,
+  7644: 44,
   // Weather Machine - Frozen Cliffs
-  5654: 47,
-  // Weather Machine - Starry Night
-  5716: 48,
-  // Weather Machine -Mars
-  6854: 51,
-  // Weather Machine - Undersea
-  10058: 41
+  8896: 47,
+  // Weather Machine - Meteor Shower
+  8836: 48,
+  // Weather Machine - Stargazing
+  10058: 41,
   // Infinity Weather Machine
+  10286: 51,
+  // Weather Machine - Celebrity Hills
+  11880: 59,
+  // Weather Machine - Plaza
+  12054: 60,
+  // Weather Machine - Nebula
+  12056: 61,
+  // Weather Machine - Protostar Landing
+  12408: 64,
+  // Weather Machine - Dark Mountains
+  12844: 65,
+  // Weather Machine - Mt. Growmore
+  13004: 66,
+  // Weather Machine - Crack in Reality
+  13070: 68
+  // Weather Machine - Nian's Mountains
 };
 var ItemDatabase = class _ItemDatabase {
   version;
@@ -32072,7 +32895,7 @@ var ItemDatabase = class _ItemDatabase {
       const isBouncy = actionType === 7 || actionType === 24 || actionType === 108;
       const isCheckpoint = actionType === 27;
       const isPlatform = actionType === 14 || collisionType === 2;
-      const isBedrock = id === 8 || id === 6 || (flags & 1024) !== 0 && breakHitsRaw === 0;
+      const isBedrock = id === 8 || id === 6 || (flags & 1024) !== 0 && id !== 12258;
       const def = {
         id,
         flags,
@@ -32107,13 +32930,13 @@ var ItemDatabase = class _ItemDatabase {
         isBedrock
       };
       const row = reference.get(id);
-      const allowed = !!row && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
+      const allowed2 = !!row && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
       const record = itemsDatBuf.subarray(recordStart, pos);
       if (id === 0) {
-        if (!allowed) throw new Error("Item 0 does not match the original reference");
+        if (!allowed2) throw new Error("Item 0 does not match the original reference");
         emptyRecord = Buffer.from(record);
       }
-      if (!allowed) {
+      if (!allowed2) {
         if (!emptyRecord) throw new Error("Missing empty item template");
         const oldNameLen = emptyRecord.readUInt16LE(8);
         const label = Buffer.from("Unavailable Item");
@@ -32136,8 +32959,8 @@ var ItemDatabase = class _ItemDatabase {
       }
     }
     if (pos !== itemsDatBuf.length) throw new Error("Unexpected items.dat trailing data");
-    this.rawItemsDat = Buffer.concat(recordChunks);
-    this.itemsDatHash = protonHash(this.rawItemsDat);
+    this.rawItemsDat = itemsDatBuf;
+    this.itemsDatHash = protonHash(itemsDatBuf);
     const resolveSeedId = (itemOrSeedName) => {
       const lower = itemOrSeedName.toLowerCase();
       const direct = this.nameIndex.get(lower);
@@ -32338,19 +33161,19 @@ var ItemDatabase = class _ItemDatabase {
     const def = this.items.get(itemId);
     if (!def) return 0;
     const nm = def.name.toLowerCase();
-    if (nm.includes("night") && nm.includes("snow")) return 28;
+    if (nm.includes("night") && nm.includes("snow")) return 20;
     if (nm.includes("night")) return 2;
     if (nm.includes("arid") || nm.includes("desert")) return 3;
-    if (nm.includes("rain")) return 4;
+    if (nm.includes("rain")) return 5;
     if (nm.includes("spooky") || nm.includes("halloween")) return 8;
+    if (nm.includes("nothing") || nm.includes("void")) return 10;
     if (nm.includes("snow") || nm.includes("winter")) return 11;
-    if (nm.includes("nothing") || nm.includes("void")) return 15;
-    if (nm.includes("warp") || nm.includes("space")) return 17;
-    if (nm.includes("comet") || nm.includes("meteor")) return 18;
-    if (nm.includes("party")) return 20;
-    if (nm.includes("pineapple")) return 22;
-    if (nm.includes("spring") || nm.includes("blossom")) return 29;
-    if (nm.includes("stuff")) return 34;
+    if (nm.includes("warp") || nm.includes("space")) return 15;
+    if (nm.includes("comet") || nm.includes("meteor")) return 17;
+    if (nm.includes("party")) return 18;
+    if (nm.includes("pineapple")) return 19;
+    if (nm.includes("spring") || nm.includes("blossom")) return 21;
+    if (nm.includes("stuff")) return 29;
     if (nm.includes("infinity")) return 41;
     return 4;
   }
@@ -32553,22 +33376,24 @@ var DEFAULT_FIND_SHOWCASE = [
   12,
   20
 ];
-function openItemFinderDialog(ctx, session, query) {
+function openItemFinderDialog(ctx, session, query, page = 0) {
   const q = query.trim();
   session.lastItemSearchQuery = q;
-  const matches = q ? ctx.itemsDb.search(q, 32) : DEFAULT_FIND_SHOWCASE.map((id) => ctx.itemsDb.get(id)).filter((d) => d !== void 0);
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${SERVER_NAME} Item Finder\`\``, 6016).addTextbox(`Search ${ctx.itemsDb.items.size} enabled reference items:`).addTextInput("search_q", "Item name or ID:", q.replace(/\|/g, ""), 40).addSpacer("small");
+  session.lastFindItemIds = [];
+  page = Math.max(0, Math.min(500, Math.floor(page)));
+  const allMatches = q ? ctx.itemsDb.search(q, ctx.itemsDb.items.size) : DEFAULT_FIND_SHOWCASE.map((id) => ctx.itemsDb.get(id)).filter((d) => d !== void 0);
+  const matches = allMatches.slice(page * 32, (page + 1) * 32 + 1);
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wFound \`2${allMatches.length} items\`\``, 6016).addTextbox("Select items below.").addTextInput("search_q", "Item name or ID:", q.replace(/\|/g, ""), 40).addSpacer("small");
   if (matches.length > 0) {
-    for (const m of matches) {
-      dlg.addButtonWithIcon(
-        `claim_${m.id}`,
-        `\`w${stripGtColors(m.name)}\`\``,
-        m.id,
-        "staticBlueFrame",
-        m.id
-      );
+    session.lastFindItemIds = matches.slice(0, 32).map((m) => m.id);
+    for (const m of matches.slice(0, 32)) {
+      const full = stripGtColors(m.name).replace(/[|\r\n]/g, " ");
+      dlg.raw(`add_checkicon|item_${m.id}|${full}|staticframe|${m.id}||${session.findSelectedItemIds?.includes(m.id) ? 1 : 0}|
+`);
     }
-    dlg.raw("add_button_with_icon||END_LIST|noflags|0|\n");
+    dlg.addButton("claim_selected", "Claim selected");
+    if (page > 0) dlg.addButton(`findpage_${page - 1}`, "Previous");
+    if (matches.length > 32) dlg.addButton(`findpage_${page + 1}`, "Next");
   } else {
     dlg.addTextbox("`4No matching items found. Try another keyword!``");
   }
@@ -32577,26 +33402,34 @@ function openItemFinderDialog(ctx, session, query) {
 }
 function handleFindItemDialogReturn(ctx, session, kv) {
   const btn = kv.buttonClicked || "";
-  if (btn.startsWith("claim_")) {
+  const selected = new Set(session.findSelectedItemIds || []);
+  for (const id of session.lastFindItemIds || []) {
+    if (kv[`item_${id}`] === "1") {
+      if (selected.size < 512) selected.add(id);
+    } else if (kv[`item_${id}`] === "0") selected.delete(id);
+  }
+  session.findSelectedItemIds = [...selected];
+  if (/^findpage_\d+$/.test(btn)) {
+    openItemFinderDialog(ctx, session, session.lastItemSearchQuery, Number(btn.slice(9)));
+    return;
+  }
+  if (btn === "claim_selected") {
     if (!hasPermission(session.account, "grantItems")) {
       OnConsoleMessage(session, "`4Item grants are operator-only.``");
       return;
     }
-    const id = parseInt(btn.slice(6), 10);
-    const def = ctx.itemsDb.get(id);
-    if (def && !def.name.startsWith("null_")) {
-      const qty = def.isClothing || def.isLock ? 1 : 50;
-      const added = ctx.giveInventoryItem(session, id, qty, true);
-      if (added > 0) {
-        OnPlayPositioned(session, "audio/object_collect.wav");
-        OnConsoleMessage(
-          session,
-          `\`2Claimed \`w${added}x ${stripGtColors(def.name)}\`2 (#${def.id})!\`\``
-        );
-      } else {
-        OnConsoleMessage(session, "`4Backpack full or stack already at 200!``");
-      }
+    const ids = session.findSelectedItemIds || [];
+    session.findSelectedItemIds = [];
+    session.lastFindItemIds = [];
+    for (const id of ids) {
+      const def = ctx.itemsDb.get(id);
+      if (!def || def.name.startsWith("null_")) continue;
+      const added = ctx.giveInventoryItem(session, id, def.isClothing || def.isLock ? 1 : 50, true);
+      if (added > 0) OnConsoleMessage(session, `Claimed ${added}x ${stripGtColors(def.name)} (#${id}).`);
+      else OnConsoleMessage(session, `Could not claim ${stripGtColors(def.name)}: backpack or stack full.`);
     }
+    if (ids.length) OnPlayPositioned(session, "audio/object_collect.wav");
+    else OnConsoleMessage(session, "Select at least one item.");
     return;
   }
   if (kv.search_q !== void 0 && btn !== "Close") {
@@ -32711,6 +33544,233 @@ function handleGrowIdApplyReturn(ctx, session, kv) {
   applyGrowIdUpgrade(ctx, session, logon, pass, verify);
 }
 
+// server/action/dialog_return/growscan.ts
+function openGrowScanDialog(session, world) {
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wWorld Stats``", 6016).addSpacer("small").addTextbox("`wThis amazing block can show the stats for the whole world!|left").addSpacer("small").addTextbox("`wWhich stats would you like to view?|left").addButton("worldBlocks", "World Blocks").addButton("floatingItems", "Floating Items").addSpacer("small").addQuickExit().endDialog("statsblock", "Cancel", "Apply");
+  OnDialogRequest(session, dlg);
+}
+function handleGrowScanDialogReturn(ctx, session, kv) {
+  const world = session.world;
+  if (!world) return false;
+  const btn = kv.buttonClicked || "";
+  if (btn === "worldBlocks") {
+    let totalBlocks = 0;
+    let totalBg = 0;
+    let totalSeeds = 0;
+    let totalLocks = 0;
+    for (const t of world.tiles) {
+      if (t.fg > 0) totalBlocks++;
+      if (t.bg > 0) totalBg++;
+      if (t.extra?.kind === "seed") totalSeeds++;
+      if (t.extra?.kind === "lock") totalLocks++;
+    }
+    const dlgStr = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wWorld Blocks``", 6016).addSpacer("small").addTextbox(`\`wTotal Foreground Blocks: \`2${totalBlocks}\`\`|left`).addTextbox(`\`wTotal Backgrounds: \`2${totalBg}\`\`|left`).addTextbox(`\`wTotal Planted Trees/Seeds: \`2${totalSeeds}\`\`|left`).addTextbox(`\`wTotal Placed Locks: \`2${totalLocks}\`\`|left`).addSpacer("small").addButton("statsblock_back", "Back").addQuickExit().endDialog("statsblock", "Close", "");
+    OnDialogRequest(session, dlgStr);
+    return true;
+  }
+  if (btn === "floatingItems") {
+    const totalFloating = world.objects.length;
+    let totalItemsCount = 0;
+    const itemMap = /* @__PURE__ */ new Map();
+    for (const obj of world.objects) {
+      if (obj.itemId > 0 && obj.count > 0) {
+        totalItemsCount += obj.count;
+        itemMap.set(obj.itemId, (itemMap.get(obj.itemId) || 0) + obj.count);
+      }
+    }
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wFloating Items``", 6016).addSpacer("small").addTextbox(`\`wTotal Floating Item Stacks: \`2${totalFloating}\`\`|left`).addTextbox(`\`wTotal Items Dropped: \`2${totalItemsCount}\`\`|left`).addSpacer("small");
+    if (itemMap.size === 0) {
+      dlg.addTextbox("No floating items found in this world.");
+    } else {
+      let count = 0;
+      for (const [itemId, amt] of itemMap) {
+        if (count >= 15) break;
+        const def = ctx.itemsDb.get(itemId);
+        const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
+        dlg.addLabelWithIcon("small", `\`w${name}\`\`: \`2${amt}\`\``, itemId);
+        count++;
+      }
+    }
+    const dlgStr = dlg.addSpacer("small").addButton("statsblock_back", "Back").addQuickExit().endDialog("statsblock", "Close", "");
+    OnDialogRequest(session, dlgStr);
+    return true;
+  }
+  if (btn === "statsblock_back") {
+    openGrowScanDialog(session, world);
+    return true;
+  }
+  return true;
+}
+
+// server/action/world-moderation.ts
+function canWorldAct(s, t, w) {
+  if (s === t || t.world !== w || s.world !== w) return false;
+  if (w.ownerUserId === s.account.userId) return true;
+  if (hasPermission(s.account, "moderate")) return canModerate(s.account, t.account);
+  if (hasPermission(t.account, "moderate")) return false;
+  const lock = w.tiles.find((x) => [242, 1796, 7188, 11550].includes(x.fg) && x.extra?.kind === "lock");
+  return !!lock && lock.extra?.kind === "lock" && lock.extra.adminIds.includes(s.account.userId) && t.account.userId !== w.ownerUserId && !lock.extra.adminIds.includes(t.account.userId);
+}
+function worldModerate(ctx, s, t, kind) {
+  const w = s.world;
+  if (kind === "worldban" && hasPermission(t.account, "moderate")) {
+    OnConsoleMessage(s, "`4Ranked players cannot be world banned.``");
+    return;
+  }
+  if (!w || !canWorldAct(s, t, w)) {
+    OnConsoleMessage(s, "`4You cannot do that to this player.``");
+    return;
+  }
+  if (kind === "pull") {
+    const generation = t.pullGeneration = (t.pullGeneration || 0) + 1, startX = t.x, startY = t.y, endX = s.x, endY = s.y, net = t.netId;
+    t.pullUntil = Date.now() + 480;
+    t.pullImmuneUntil = Date.now() + 1800;
+    const puff = (x, y) => {
+      for (const [dx, dy] of [[-5, 0], [0, -4], [5, 0], [0, 4]]) {
+        const pkt = makeParticleEffectPacket(20, x + 10 + dx, y + 15 + dy);
+        for (const p of w.peers) p.peer.sendPacket(0, pkt, true);
+      }
+    };
+    puff(startX, startY);
+    OnTextOverlay(t, `You were pulled by ${s.account.name}`);
+    broadcastConsoleMessage(w, s.account.name + " `5pulls`` " + t.account.name + "!");
+    broadcastPositionedSfx(w, net, "audio/teleport.wav");
+    for (let step = 1; step <= 8; step++) setTimeout(() => {
+      if (t.world !== w || t.netId !== net || t.pullGeneration !== generation || !ctx.sessions.has(t)) return;
+      const ratio = step / 8, eased = 1 - (1 - ratio) * (1 - ratio);
+      t.x = startX + (endX - startX) * eased;
+      t.y = startY + (endY - startY) * eased;
+      broadcastSetPos(w, net, t.x, t.y);
+      if (step === 8) {
+        t.pullUntil = 0;
+        puff(endX, endY);
+      }
+    }, step * 60).unref();
+  } else if (kind === "kick") {
+    broadcastConsoleMessage(w, `${s.account.name} kicks ${t.account.name}!`);
+    ctx.respawnPlayer(t, false);
+    OnPlayPositioned(t, "audio/teleport.wav");
+  } else {
+    w.worldBans ??= {};
+    w.worldBans[String(t.account.userId)] = Date.now() + 36e5;
+    ctx.dirty = true;
+    ctx.savePersistentState();
+    broadcastConsoleMessage(w, `${s.account.name} world bans ${t.account.name} for one hour.`);
+    ctx.exitToWorldSelect(t);
+    OnConsoleMessage(t, `You are banned from ${w.name} for one hour.`);
+    OnPlayPositioned(s, "audio/repair.wav");
+  }
+}
+
+// server/action/friends.ts
+var requests = /* @__PURE__ */ new WeakMap();
+function handleFriends(_ctx, session) {
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wSocial Portal``", 1366).addSpacer("small").addButton("showfriend", "`wShow Friends``").addQuickExit();
+  OnDialogRequest(session, dlg.endDialog("socialportal", "", "Back"));
+}
+function showFriendList(ctx, s, all = false) {
+  const ids = s.account.friendIds || [], online = [...ctx.sessions].filter((x) => ids.includes(x.account.userId));
+  const d = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `${online.length} of ${ids.length} \`wFriends Online\`\``, 1366).addSpacer("small");
+  if (!ids.length) d.addTextbox("Use the wrench on a player, then choose Add as friend.");
+  else if (!online.length) d.addTextbox("None of your friends are currently online.");
+  for (const id of ids) {
+    const p = [...ctx.sessions].find((x) => x.account.userId === id), a = [...ctx.accounts.values()].find((x) => x.userId === id);
+    if (!p && !all) continue;
+    const name = (a?.name || "Unknown").replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
+    d.addButton(`friend_${id}`, `${p ? "`2" : "`4"}${name}\`\` ${p ? "(" + (p.world?.name || "World Menu") + ")" : "(offline)"}`);
+  }
+  d.addButton("friend_all", all ? "Show online" : "Show offline too").addButton("back", "Back").addQuickExit();
+  OnDialogRequest(s, d.endDialog("friends", "", "Close"));
+}
+function friendRequest(ctx, s, netid) {
+  const other2 = [...s.world?.peers || []].find((p) => p.netId === netid);
+  if (!other2 || other2 === s || !ctx.sessions.has(other2) || Math.abs(s.x - other2.x) > 96 || Math.abs(s.y - other2.y) > 96) {
+    OnConsoleMessage(s, "`4Stand closer to that player.``");
+    return;
+  }
+  const a = s.account, b = other2.account;
+  if ((a.friendIds || []).includes(b.userId)) {
+    OnConsoleMessage(s, "You are already friends.");
+    return;
+  }
+  if (requests.get(other2)?.has(s)) {
+    requests.get(other2).delete(s);
+    a.friendIds ??= [];
+    b.friendIds ??= [];
+    if (a.friendIds.length >= 200 || b.friendIds.length >= 200) {
+      OnConsoleMessage(s, "`4Friend list full.``");
+      return;
+    }
+    a.friendIds.push(b.userId);
+    b.friendIds.push(a.userId);
+    try {
+      ctx.savePlayersNow();
+    } catch (e) {
+      a.friendIds.pop();
+      b.friendIds.pop();
+      throw e;
+    }
+    OnConsoleMessage(s, `You are now friends with ${b.name}!`);
+    OnConsoleMessage(other2, `You are now friends with ${a.name}!`);
+    return;
+  }
+  const sent = requests.get(s) || /* @__PURE__ */ new Set();
+  sent.add(other2);
+  requests.set(s, sent);
+  OnPlayPositioned(other2, "audio/friend_beep.wav");
+  OnConsoleMessage(s, `Friend request sent to ${b.name}.`);
+  OnConsoleMessage(other2, `${a.name} wants to be your friend! Wrench them and choose Add as friend.`);
+}
+function friendDialogReturn(ctx, s, dlg, button) {
+  if (dlg === "playerportal" && button === "socialportal") {
+    handleFriends(ctx, s);
+    return true;
+  }
+  if (dlg === "socialportal" || dlg === "social_portal") {
+    if (button === "showfriend") showFriendList(ctx, s);
+    return true;
+  }
+  if (dlg === "friends") {
+    if (button === "back") {
+      handleFriends(ctx, s);
+      return true;
+    }
+    if (button === "friend_all") {
+      showFriendList(ctx, s, true);
+      return true;
+    }
+    const m = /^friend_(\d+)$/.exec(button);
+    if (m) {
+      const id = Number(m[1]);
+      if (!(s.account.friendIds || []).includes(id)) return true;
+      const a = [...ctx.accounts.values()].find((x) => x.userId === id);
+      const d = new DialogBuilder().addLabelWithIcon("big", `\`w${a?.name || "Friend"}\`\``, 1366).addButton(`remove_${id}`, "`4Remove Friend``").addQuickExit();
+      OnDialogRequest(s, d.endDialog("friend_edit", "Back", ""));
+    }
+    return true;
+  }
+  if (dlg === "friend_edit") {
+    const m = /^remove_(\d+)$/.exec(button);
+    if (m) {
+      const id = Number(m[1]), a = s.account, b = [...ctx.accounts.values()].find((x) => x.userId === id);
+      if (!(a.friendIds || []).includes(id)) return true;
+      const oldA = a.friendIds, oldB = b?.friendIds;
+      a.friendIds = (a.friendIds || []).filter((x) => x !== id);
+      if (b) b.friendIds = (b.friendIds || []).filter((x) => x !== a.userId);
+      try {
+        ctx.savePlayersNow();
+      } catch (e) {
+        a.friendIds = oldA;
+        if (b) b.friendIds = oldB;
+        throw e;
+      }
+    }
+    showFriendList(ctx, s, true);
+    return true;
+  }
+  return false;
+}
+
 // server/progression/commands.ts
 function showAchievements(s) {
   const p = progression(s.account);
@@ -32787,7 +33847,7 @@ function handleWrenchPlayer(ctx, session, kv) {
   }
   if (target === session) {
     const acct = session.account, p = progression(acct);
-    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").raw(`add_custom_label|(${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`).customBreak().addSpacer("small").customSpacing(0, 0);
+    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").raw(`add_custom_label|(${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`).customButton("emojis", "gui_wrench_growmojis").customBreak().addSpacer("small").customSpacing(0, 0);
     const mods = activeMods(acct);
     const equipmentEffects = [];
     const abilities = equippedAbilities(acct);
@@ -32809,59 +33869,92 @@ function handleWrenchPlayer(ctx, session, kv) {
     OnDialogRequest(session, dlg2.addQuickExit().endDialog("popup", "", "Continue"));
     return;
   }
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", displayName(target), 32).addSmalltext(`\`9User ID: \`w${target.account.userId}\`9 | Gems: \`2${target.account.gems}\`\``).addSpacer("small").addButtonWithIcon(`trade_start_${target.netId}`, "`2Trade Item``", 1422);
-  if (canModerate(session.account, target.account)) {
-    dlg.addButtonWithIcon(`mod_pull_${target.netId}`, "Pull to Me", 32).addButtonWithIcon(`mod_kick_${target.netId}`, "`4Kick``", 32, "staticRedFrame").addButtonWithIcon(`mod_ban_${target.netId}`, "`4Ban``", 32, "staticRedFrame");
+  const dlg = new DialogBuilder().embedData("netID", target.netId).setDefaultColor("`o").addLabelWithIcon("big", `${displayName(target)} \`0(\`\`\`2${progression(target.account).level}\`\`\`0)\`\``, 18).addSpacer("small").addButton("trade", "`wTrade``");
+  if (canWorldAct(session, target, world)) {
+    dlg.addButton("kick", "`4Kick``").addButton("pull", "`5Pull``");
+    if (!hasPermission(target.account, "moderate")) dlg.addButton("worldban", "`4World Ban``");
   }
+  if (!(session.account.friendIds || []).includes(target.account.userId)) dlg.addButton("friend_add", "`wAdd as friend``");
   dlg.addQuickExit();
-  OnDialogRequest(session, dlg.endDialog("target_wrench", "Close", ""));
-}
-function openTradeOfferDialog(ctx, session) {
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wTrade Offer``", 1422).addTextbox("`9Select an item from your inventory to offer:``").addSpacer("small");
-  let listed = 0;
-  for (const slot of session.account.inventory) {
-    if (slot.count <= 0 || slot.itemId === 18 || slot.itemId === 32) continue;
-    const def = ctx.itemsDb.get(slot.itemId);
-    if (!def || def.name.startsWith("null_")) continue;
-    const clean = def.name.replace(/`.|``/g, "").replace(/\|/g, "");
-    dlg.addButtonWithIcon(`trade_offer_${slot.itemId}`, `\`w1x ${clean}\`\``, slot.itemId, "staticBlueFrame", slot.count);
-    listed++;
-    if (listed >= 48) break;
-  }
-  if (listed === 0) {
-    dlg.addTextbox("`4Your inventory has no tradeable items!``");
-  }
-  OnDialogRequest(session, dlg.endDialog("trade_offer", "Close", ""));
-}
-function handleTradeStart(ctx, session, targetNetId) {
-  const world = session.world;
-  if (!world) return;
-  const target = Array.from(world.peers).find((p) => p.netId === targetNetId);
-  if (!target || target === session) {
-    OnConsoleMessage(session, "`4Player not found!``");
-    return;
-  }
-  if (session.pendingTradeOffer || target.pendingTradeOffer) {
-    OnConsoleMessage(session, "`4One of you is already in a trade!``");
-    return;
-  }
-  session.pendingTradeOffer = {
-    role: "offering",
-    fromNetId: session.netId,
-    toNetId: target.netId,
-    itemId: 0
-  };
-  target.pendingTradeOffer = {
-    role: "awaiting",
-    fromNetId: session.netId,
-    toNetId: target.netId,
-    itemId: 0
-  };
-  openTradeOfferDialog(ctx, session);
+  OnDialogRequest(session, dlg.endDialog("popup", "", "Continue"));
 }
 
 // server/action/dialog_return/player_dialogs.ts
+function showGrowmojisDialog(session) {
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "Growmojis", 1366);
+  const emojis = [
+    "wl",
+    "oops",
+    "sleep",
+    "punch",
+    "bheart",
+    "grow",
+    "gems",
+    "gtoken",
+    "cry",
+    "vend",
+    "bunny",
+    "cactus",
+    "pine",
+    "peace",
+    "terror",
+    "troll",
+    "evil",
+    "fireworks",
+    "football",
+    "alien",
+    "party",
+    "pizza",
+    "clap",
+    "song",
+    "ghost",
+    "nuke",
+    "halo",
+    "turkey",
+    "gift",
+    "cake",
+    "heartarrow",
+    "lucky",
+    "shamrock",
+    "grin",
+    "ill",
+    "eyes",
+    "weary",
+    "moyai",
+    "plead",
+    "yes",
+    "no",
+    "love",
+    "shy",
+    "wink",
+    "tongue",
+    "agree",
+    "music",
+    "build",
+    "megaphone",
+    "sigh",
+    "mad",
+    "wow",
+    "dance",
+    "see-no-evil",
+    "heart",
+    "kiss",
+    "lol",
+    "smile",
+    "cool"
+  ];
+  for (const em of emojis) {
+    dlg.raw(`add_smalltext_forced| (${em}) |left|
+`);
+  }
+  const dialogStr = dlg.addSpacer("small").addQuickExit().endDialog("growmoji_dialog", "", "Back");
+  OnDialogRequest(session, dialogStr);
+}
 function openCheatsMenu(session) {
+  if (!SERVER_CONFIG.enableDeveloperMenu) {
+    OnConsoleMessage(session, "`4Developer menu is temporarily disabled in server config.``");
+    return;
+  }
   if (!hasPermission(session.account, "debug")) {
     OnConsoleMessage(session, "Developer permission required.");
     return;
@@ -32874,12 +33967,63 @@ function openCheatsMenu(session) {
 }
 function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
   const btn = kv.buttonClicked || "";
+  if (friendDialogReturn(ctx, session, dlgName, btn)) return true;
   if (dlgName === "gazette") {
     if (btn === "gazette_get_growid") {
       showGrowIdApplyModal(session);
     } else if (btn === "gazette_find_items") {
       openItemFinderDialog(ctx, session, "");
     }
+    return true;
+  }
+  if (dlgName === "phone_dialog") {
+    if (btn === "call_police") {
+      OnConsoleMessage(session, "`4*Ring Ring* Officer: Emergency services standing by! Stay vigilant in Growtopia!``");
+    } else if (btn === "call_locke") {
+      const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wLocke's Traveling Wagon``", 1796).addTextbox("`wWelcome to Locke's Traveling Wagon! Locke offers rare goods from distant lands.``").addTextbox("`2Today's Special: `wUltra Gem Pack`` (1 Diamond Lock for 100,000 Gems)!").addButton("locke_trade", "`wTrade 1 DL for 100,000 Gems``").addQuickExit().endDialog("locke_dialog", "Close", "");
+      OnDialogRequest(session, dlg);
+    } else if (btn === "call_daily") {
+      OnConsoleMessage(session, "`2*Ring Ring* Crazy Jim: Check your /daily quests anytime for awesome rewards!``");
+    }
+    return true;
+  }
+  if (dlgName === "phone_dial") {
+    const dialed = (kv.phone_number || kv.buttonClicked || "").trim();
+    if (dialed === "12345") {
+      const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wDaily Tasks``", 2946).addTextbox("Complete daily tasks to get personal points and earn yourself awesome rewards along the way!").addSpacer("small").addLabelWithIcon("small", "Play for 30 minutes", 2946).addLabelWithIcon("small", "Break 1,000 blocks", 2946).addLabelWithIcon("small", "Place 1,000 blocks", 2946).addLabelWithIcon("small", "Harvest provider", 2946).addLabelWithIcon("small", "Login once per day", 2946).addSpacer("small").addQuickExit().endDialog("daily_tasks_dialog", "Close", "");
+      OnDialogRequest(session, dlg);
+      return true;
+    }
+    if (dialed === "911") {
+      OnTalkBubble(session, session.netId, "Officer: Emergency services standing by! Stay vigilant in Growtopia!", 0, true);
+      OnConsoleMessage(session, "`4*Ring Ring* Officer: Emergency services standing by! Stay vigilant in Growtopia!``");
+      return true;
+    }
+    if (dialed === "53785") {
+      const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`9GTPS Salesman``", 9828).addSpacer("small").addTextbox("Ho there, friend! Locke's my name, and locks are my game. I Love 'em all, Diamond, Huge.. even Small! If you can part with some locks, I'll give you something special in return. Whaddya say?").addSpacer("small").addButton("locke_trade", "`wTrade 1 DL for 100,000 Gems``").addQuickExit().endDialog("locke_dialog", "Close", "");
+      OnDialogRequest(session, dlg);
+      return true;
+    }
+    OnTalkBubble(session, session.netId, "I'm sorry, the number you have dialed is not in service.", 0, true);
+    return true;
+  }
+  if (dlgName === "locke_dialog") {
+    if (btn === "locke_trade") {
+      const dlSlot = session.account.inventory.find((i) => i.itemId === 1796 && i.count >= 1);
+      if (dlSlot) {
+        ctx.consumeInventoryItem(session, 1796, 1);
+        session.account.gems = (session.account.gems || 0) + 1e5;
+        ctx.savePlayersNow();
+        OnSetBux(session);
+        OnConsoleMessage(session, "`2[Locke] Traded 1 Diamond Lock for 100,000 Gems! Thank you for your business!``");
+      } else {
+        OnConsoleMessage(session, "`4[Locke] You need at least 1 Diamond Lock to make this trade!``");
+      }
+    }
+    return true;
+  }
+  if (dlgName === "growmoji_dialog") {
+    handleWrenchPlayer(ctx, session, { netid: String(session.netId) });
     return true;
   }
   if (dlgName === "store_dialog" || dlgName === "store") {
@@ -32889,7 +34033,7 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     return true;
   }
   if (dlgName === "cheats_menu") {
-    if (!hasPermission(session.account, "debug")) return true;
+    if (!SERVER_CONFIG.enableDeveloperMenu || !hasPermission(session.account, "debug")) return true;
     if (btn === "cheat_toggle_noclip" || btn === "cheat_toggle_speed" || btn === "cheat_toggle_fly") {
       if (btn === "cheat_toggle_noclip") session.cheats.noclip = !session.cheats.noclip;
       if (btn === "cheat_toggle_speed") session.cheats.speed = !session.cheats.speed;
@@ -32927,8 +34071,21 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     return true;
   }
   if (dlgName === "popup") {
+    const targetNetId = Number.parseInt(kv.netID || kv.netid || "", 10);
+    const target = [...session.world?.peers || []].find((p) => p.netId === targetNetId);
+    if (target && target !== session) {
+      if (btn === "friend_add") friendRequest(ctx, session, target.netId);
+      else if (btn === "trade") requestTrade(ctx, session, target.netId);
+      else if (btn === "kick" || btn === "pull" || btn === "worldban") worldModerate(ctx, session, target, btn);
+      return true;
+    }
+    if (["friend_add", "trade", "kick", "pull", "worldban"].includes(btn)) return true;
     if (btn === "alist") {
       showAchievements(session);
+      return true;
+    }
+    if (btn === "emojis") {
+      showGrowmojisDialog(session);
       return true;
     }
     if (btn === "notebook_edit") {
@@ -32942,100 +34099,195 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     if (btn === "acct_growid") showGrowIdApplyModal(session);
     return true;
   }
-  if (dlgName === "target_wrench") {
-    const tradeMatch = btn.match(/^trade_start_(\d+)$/);
-    if (tradeMatch) {
-      handleTradeStart(ctx, session, parseInt(tradeMatch[1], 10));
-      return true;
-    }
-    if (hasPermission(session.account, "moderate") && session.world) {
-      const modMatch = btn.match(/^mod_(kick|pull|ban)_(\d+)$/);
-      if (modMatch) {
-        const mode = modMatch[1];
-        const tNet = parseInt(modMatch[2], 10);
-        const target = Array.from(session.world.peers).find((p) => p.netId === tNet);
-        if (target && canModerate(session.account, target.account)) {
-          if (mode === "kick") {
-            target.peer.sendDisconnect();
-          } else if (mode === "pull") {
-            ctx.moveToWorld(target, session.world, session.x, session.y);
-          } else if (mode === "ban") {
-            target.account.banned = true;
-            ctx.savePlayersNow();
-            target.peer.sendDisconnect();
-          }
-        }
-      }
-    }
+  if (dlgName === "target_wrench") return true;
+  if (dlgName === "trade_confirm") {
+    confirmTrade(ctx, session, btn);
     return true;
   }
-  if (dlgName === "trade_offer") {
-    const m = btn.match(/^trade_offer_(\d+)$/);
-    if (!m || !session.world) {
-      session.pendingTradeOffer = null;
-      return true;
-    }
-    const offer = session.pendingTradeOffer;
-    if (!offer || offer.role !== "offering" || offer.fromNetId !== session.netId) return true;
-    const itemId = parseInt(m[1], 10);
-    const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
-    if (!slot) return true;
-    offer.itemId = itemId;
-    const target = Array.from(ctx.sessions).find(
-      (s) => s.world === session.world && s.pendingTradeOffer?.role === "awaiting" && s.pendingTradeOffer.fromNetId === session.netId
-    );
-    if (!target || !target.pendingTradeOffer) return true;
-    target.pendingTradeOffer.itemId = itemId;
-    const def = ctx.itemsDb.get(itemId);
-    const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
-    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wIncoming Trade Offer``", itemId).addTextbox(`\`w${session.account.name}\`\` offers \`w1x ${name}\`\` to you!`).addButtonWithIcon(`trade_accept_${session.netId}_${itemId}`, "`2Accept``", 1422).addButtonWithIcon(`trade_decline_${session.netId}`, "`4Decline``", 32, "staticRedFrame").endDialog("trade_request", "Close", "");
-    OnDialogRequest(target, dlg);
-    OnConsoleMessage(session, "`2Trade offer sent!``");
-    return true;
-  }
-  if (dlgName === "trade_request") {
-    const accept = btn.match(/^trade_accept_(\d+)_(\d+)$/);
-    const decline = btn.match(/^trade_decline_(\d+)$/);
-    if (accept && session.world) {
-      const fromNetId = parseInt(accept[1], 10);
-      const itemId = parseInt(accept[2], 10);
-      const requester = Array.from(session.world.peers).find(
-        (s) => s.pendingTradeOffer?.role === "offering" && s.netId === fromNetId
-      );
-      if (!requester || requester.pendingTradeOffer?.itemId !== itemId) {
-        session.pendingTradeOffer = null;
-        OnConsoleMessage(session, "`4Trade offer is no longer valid!``");
-        return true;
-      }
-      if (!ctx.consumeInventoryItem(requester, itemId, 1, true)) {
-        requester.pendingTradeOffer = null;
-        session.pendingTradeOffer = null;
-        OnConsoleMessage(session, "`4Player no longer has that item!``");
-        return true;
-      }
-      ctx.giveInventoryItem(session, itemId, 1, true);
-      requester.pendingTradeOffer = null;
-      session.pendingTradeOffer = null;
-      broadcastConsoleMessage(
-        session.world,
-        `\`2Trade complete: \`w${requester.account.name}\`2 <-> \`w${session.account.name}\`2!\`\``
-      );
-      return true;
-    }
-    if (decline && session.world) {
-      const fromNetId = parseInt(decline[1], 10);
-      const requester = Array.from(session.world.peers).find((s) => s.netId === fromNetId);
-      if (requester) {
-        requester.pendingTradeOffer = null;
-        OnConsoleMessage(requester, "`4Trade declined.``");
-      }
-      session.pendingTradeOffer = null;
-      return true;
-    }
-    session.pendingTradeOffer = null;
+  if (dlgName === "trade_add") {
+    if (kv.buttonClicked !== "Cancel" && kv.itemID && kv.count) addTradeItem(ctx, session, Number(kv.itemID.replace(/\|$/, "")), Number(kv.count.replace(/\|$/, "")));
     return true;
   }
   return false;
+}
+
+// server/action/dialog_return/sucker.ts
+function openSuckerDialog(ctx, session, world, tile, tx, ty) {
+  session.pendingEditTile = { x: tx, y: ty };
+  if (!tile.extra || tile.extra.kind !== "sucker") {
+    tile.extra = { kind: "sucker", itemId: 0, count: 0, enabled: true };
+  }
+  const extra = tile.extra;
+  const def = ctx.itemsDb.get(tile.fg) || { name: "Item Sucker" };
+  const machineName = stripGtColors(def.name);
+  const maxCap = tile.fg === 5638 ? 5e3 : 1500;
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${machineName}\`\``, tile.fg).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty);
+  if (extra.itemId === 0) {
+    dlg.addTextbox("`6The machine is empty.``");
+    dlg.addItemPicker("selectitem", "`wChoose Item``", `Choose an item to put in the ${machineName}!`);
+    const dlgStr2 = dlg.endDialog("itemsucker_block", "Close", "");
+    OnDialogRequest(session, dlgStr2);
+    return;
+  }
+  const itemDef = ctx.itemsDb.get(extra.itemId);
+  const itemName = itemDef ? stripGtColors(itemDef.name) : "Item";
+  const backpackCount = session.account.inventory.find((s) => s.itemId === extra.itemId)?.count || 0;
+  dlg.addLabelWithIcon("small", `\`2${itemName}\`\``, extra.itemId);
+  if (extra.count === 0) {
+    dlg.addTextbox("`6The machine is currently empty!``");
+  } else {
+    dlg.addTextbox(`The machine contains ${extra.count} \`2${itemName}\`\``);
+  }
+  if (backpackCount > 0) {
+    if (extra.count >= maxCap) {
+      dlg.addSmalltext("`4The machine is at maximum capacity!``");
+    } else {
+      dlg.addButton("additem", "Add Items to the machine");
+    }
+  }
+  if (extra.count > 0) {
+    dlg.addButton("retrieveitem", "Retrieve Item");
+  } else {
+    dlg.addButton("clearitem", "Change Item");
+  }
+  if (tile.fg === 5638) {
+    const modeStr = extra.magnetron ? "`5ACTIVE" : "`6DISABLED";
+    dlg.addTextbox(`Building mode: ${modeStr}\`\``);
+    dlg.addTextbox(`Use the Magplant Remote to build \`2${itemName}\`\` directly from the ${machineName}'s storage.`);
+    dlg.addButton("getplantationdevice", "Get Remote");
+  }
+  dlg.addCheckbox("chk_enablesucking", "Enable Collection.", Boolean(extra.enabled));
+  const dlgStr = dlg.endDialog("itemsucker_block", "Close", "Update");
+  OnDialogRequest(session, dlgStr);
+}
+function handleSuckerDialogReturn(ctx, session, kv) {
+  const world = session.world;
+  if (!world) return false;
+  const tx = parseInt(kv.tilex || "0", 10);
+  const ty = parseInt(kv.tiley || "0", 10);
+  if (tx < 0 || tx >= world.width || ty < 0 || ty >= world.height) return false;
+  const tile = world.tiles[ty * world.width + tx];
+  if (!tile || tile.fg !== 5638 && tile.fg !== 6948 && tile.fg !== 6946) return false;
+  if (!canModifyWorldTile(session, world, tile, tx, ty)) {
+    OnConsoleMessage(session, "`4You don't have permission to edit this block.``");
+    return true;
+  }
+  if (!tile.extra || tile.extra.kind !== "sucker") {
+    tile.extra = { kind: "sucker", itemId: 0, count: 0, enabled: true };
+  }
+  const extra = tile.extra;
+  const maxCap = tile.fg === 5638 ? 5e3 : 1500;
+  const btn = kv.buttonClicked || "";
+  if (btn === "getplantationdevice" && tile.fg === 5638 && extra.itemId > 0) {
+    const hasRemote = session.account.inventory.some((s) => s.itemId === 5640 && s.count > 0);
+    if (!hasRemote) {
+      if (ctx.giveInventoryItem(session, 5640, 1, true) <= 0) {
+        OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+        OnConsoleMessage(session, "You don't have room in your backpack!");
+        return true;
+      }
+    }
+    session.magplantRemote = { x: tx, y: ty, itemId: extra.itemId };
+    extra.magnetron = true;
+    ctx.dirty = true;
+    const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+    const planterPkt = makeVariantPacket([
+      "OnPlanterActivated",
+      { type: "i32", value: extra.itemId },
+      { type: "i32", value: tx },
+      { type: "i32", value: ty }
+    ]);
+    session.peer.sendPacket(0, planterPkt, true);
+    OnTalkBubble(session, session.netId, "You received a Magplant 5000 Remote.", 0, true);
+    OnConsoleMessage(session, "You received a Magplant 5000 Remote.");
+    return true;
+  }
+  if (kv.selectitem && extra.itemId === 0) {
+    const selectedId = parseInt(kv.selectitem, 10);
+    const itemDef = ctx.itemsDb.get(selectedId);
+    if (!itemDef) return true;
+    if (tile.fg === 6948 && itemDef.isSeed) {
+      OnTalkBubble(session, session.netId, "You cannot store seeds in this machine.", 0, true);
+      OnConsoleMessage(session, "You cannot store seeds in this machine.");
+      return true;
+    }
+    if (tile.fg === 6946 && !itemDef.isSeed) {
+      OnTalkBubble(session, session.netId, "You can only store seeds in this machine.", 0, true);
+      OnConsoleMessage(session, "You can only store seeds in this machine.");
+      return true;
+    }
+    extra.itemId = selectedId;
+    extra.enabled = true;
+    ctx.dirty = true;
+    const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+    openSuckerDialog(ctx, session, world, tile, tx, ty);
+    return true;
+  }
+  if (btn === "additem" && extra.itemId > 0) {
+    if (extra.count >= maxCap) {
+      OnTalkBubble(session, session.netId, "`4The machine is at maximum capacity!``", 0, true);
+      return true;
+    }
+    const slot = session.account.inventory.find((s) => s.itemId === extra.itemId);
+    if (slot && slot.count > 0) {
+      const addable = Math.min(slot.count, maxCap - extra.count);
+      if (addable > 0) {
+        extra.count += addable;
+        ctx.consumeInventoryItem(session, extra.itemId, addable, true);
+        ctx.dirty = true;
+        const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+        openSuckerDialog(ctx, session, world, tile, tx, ty);
+      }
+    }
+    return true;
+  }
+  if (btn === "retrieveitem" && extra.itemId > 0 && extra.count > 0) {
+    const take = Math.min(200, extra.count);
+    const given = ctx.giveInventoryItem(session, extra.itemId, take, true);
+    if (given > 0) {
+      extra.count -= given;
+      ctx.dirty = true;
+      const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+      for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+      openSuckerDialog(ctx, session, world, tile, tx, ty);
+    } else {
+      OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+    }
+    return true;
+  }
+  if (btn === "clearitem" && extra.count === 0) {
+    extra.itemId = 0;
+    extra.enabled = true;
+    extra.magnetron = false;
+    const clearPkt = makeVariantPacket([
+      "OnPlanterActivated",
+      { type: "i32", value: 0 },
+      { type: "i32", value: 0 },
+      { type: "i32", value: 0 }
+    ]);
+    for (const p of world.peers) {
+      if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
+        p.magplantRemote = null;
+        p.peer.sendPacket(0, clearPkt, true);
+      }
+    }
+    ctx.dirty = true;
+    const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+    openSuckerDialog(ctx, session, world, tile, tx, ty);
+    return true;
+  }
+  if (kv.chk_enablesucking !== void 0) {
+    extra.enabled = kv.chk_enablesucking === "1";
+    ctx.dirty = true;
+    const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+    return true;
+  }
+  return true;
 }
 
 // server/action/dialog_return/tile_edit.ts
@@ -33045,12 +34297,20 @@ function convertPlacedLock(ctx, session, world, tx, ty) {
   const curId = tile.fg;
   const idx = LOCK_CONVERT_CHAIN.indexOf(curId);
   if (idx === -1) return;
+  const existingStack = session.account.inventory.some(
+    (s) => s.itemId === curId && s.count > 0 && s.count < 200
+  );
+  const usedSlots = session.account.inventory.filter((s) => s.count > 0).length;
+  if (!existingStack && usedSlots >= session.account.backpackSize) {
+    OnConsoleMessage(session, "`4You don't have enough room in your backpack!``");
+    return;
+  }
   const nextId = LOCK_CONVERT_CHAIN[(idx + 1) % LOCK_CONVERT_CHAIN.length];
   ctx.giveInventoryItem(session, curId, 1, true);
   tile.fg = nextId;
   tile.extra = {
     kind: "lock",
-    settings: 0,
+    settings: tile.extra?.kind === "lock" ? tile.extra.settings : 0,
     ownerUserId: session.account.userId,
     adminIds: tile.extra?.kind === "lock" ? tile.extra.adminIds : []
   };
@@ -33088,11 +34348,102 @@ function openSignEditDialog(session, tx, ty) {
   const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wEdit Sign``", tile.fg || 20).addTextInput("tile_label", "Sign Text:", label.replace(/\|/g, ""), 100).endDialog("save_tile_label", "Cancel", "Apply");
   OnDialogRequest(session, dlg);
 }
-function openWeatherPickerDialog(session, tx, ty) {
+function openWeatherPickerDialog(session, tx, ty, ctx) {
   if (!session.world) return;
   session.pendingEditTile = { x: tx, y: ty };
+  const tile = session.world.tiles[ty * session.world.width + tx];
+  const fg = tile?.fg || 0;
+  if (fg === 3694) {
+    const cur = tile.extra?.kind === "weatherBg" ? tile.extra : { r: 255, g: 120, b: 40 };
+    const dlg2 = [
+      "set_default_color|`o",
+      `add_label_with_icon|big|\`wWeather Machine - Heatwave\`\`|left|3694|`,
+      "add_spacer|small|",
+      `embed_data|tilex|${tx}`,
+      `embed_data|tiley|${ty}`,
+      "add_textbox|Adjust the color of your heat wave here, by including 0-255 of Red, Green, and Blue.|left|",
+      `add_text_input|red|Red|${cur.r ?? 255}|3|`,
+      `add_text_input|green|Green|${cur.g ?? 120}|3|`,
+      `add_text_input|blue|Blue|${cur.b ?? 40}|3|`,
+      "end_dialog|weatherspcl|Cancel|Okay|"
+    ].join("\n");
+    OnDialogRequest(session, dlg2);
+    return;
+  }
+  if (fg === 5e3 || fg === 3832) {
+    const itemId = fg === 5e3 ? tile.extra?.kind === "weatherBg" && tile.extra.itemId ? tile.extra.itemId : 14 : tile.extra?.kind === "weatherStuff" && tile.extra.itemId ? tile.extra.itemId : 2;
+    const itemName = stripGtColors(ctx?.itemsDb.get(itemId)?.name || (fg === 5e3 ? "Cave Background" : "Dirt"));
+    const lines = [
+      "set_default_color|`o",
+      `add_label_with_icon|big|\`w${fg === 5e3 ? "Weather Machine - Background" : "Weather Machine - Stuff"}\`\`|left|${fg}|`,
+      "add_spacer|small|",
+      `embed_data|tilex|${tx}`,
+      `embed_data|tiley|${ty}`
+    ];
+    if (fg === 5e3) {
+      lines.push("add_textbox|You can scan any Background Block to set it up in your weather machine.|left|");
+      lines.push(`add_item_picker|choose|Item: \`2${itemName}\`\`|Select any Background Block|`);
+    } else {
+      const ws = tile.extra?.kind === "weatherStuff" ? tile.extra : { gravity: 50, spin: false, invert: false };
+      lines.push(`add_item_picker|choose|Item: \`2${itemName}\`\`|Select any item to rain down|`);
+      lines.push(`add_text_input|gravity|Gravity:|${ws.gravity ?? 50}|5|`);
+      lines.push(`add_checkbox|spin|Spin Items|${ws.spin ? "1" : "0"}`);
+      lines.push(`add_checkbox|invert|Invert Sky Colors|${ws.invert ? "1" : "0"}`);
+    }
+    lines.push("end_dialog|weatherspcl|Cancel|Okay|");
+    OnDialogRequest(session, lines.join("\n"));
+    return;
+  }
   const wId = session.world.weatherId;
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wWeather Machine``", 932).addTextbox(`\`9Current World Weather ID: \`2#${wId}\`\``).addTextInput("weather_id", "Weather ID (0-60):", String(wId), 4).endDialog("weather_picker", "Cancel", "Apply");
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wWeather Machine``", fg || 932).addTextbox(`\`9Current World Weather ID: \`2#${wId}\`\``).addTextInput("weather_id", "Weather ID (0-85):", String(wId), 4).endDialog("weather_picker", "Cancel", "Apply");
+  OnDialogRequest(session, dlg);
+}
+function openXenoniteDialog(ctx, session, tx, ty) {
+  const world = session.world;
+  if (!world) return;
+  session.pendingEditTile = { x: tx, y: ty };
+  const x = world.xenonite || {
+    enabled: true,
+    doubleJump: 0,
+    highJump: 0,
+    heatResist: 0,
+    strongPunch: 0,
+    longPunch: 0,
+    longBuild: 0,
+    speedy: 0,
+    powerups: 0
+  };
+  const dlg = [
+    "set_default_color|`o",
+    "add_label_with_icon|big|`wXenonite Crystal``|left|2072|",
+    "add_textbox|This crystal can either grant or block super powers for all players in your world! Any power that's unchecked will work as normal - people will have the power if they equip an item with it.|left|",
+    "add_spacer|small|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    `add_checkbox|checkbox_force_dbl|Force Double Jump|${x.doubleJump === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_dbl|Block Double Jump|${x.doubleJump === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_hig|Force High Jump|${x.highJump === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_hig|Block High Jump|${x.highJump === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_asb|Force Heat Resist|${x.heatResist === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_asb|Block Heat Resist|${x.heatResist === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_pun|Force Strong Punch|${x.strongPunch === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_pun|Block Strong Punch|${x.strongPunch === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_lng|Force Long Punch|${x.longPunch === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_lng|Block Long Punch|${x.longPunch === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_spd|Force Speedy|${x.speedy === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_spd|Block Speedy|${x.speedy === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_force_lngb|Force Long Build|${x.longBuild === 1 ? 1 : 0}`,
+    `add_checkbox|checkbox_block_lngb|Block Long Build|${x.longBuild === 2 ? 1 : 0}`,
+    "add_spacer|small|",
+    `add_checkbox|checkbox_block_pwr|Block Use of Powerups|${x.powerups === 1 ? 1 : 0}`,
+    "end_dialog|xenonite_edit|Cancel|Update|"
+  ].join("\n");
   OnDialogRequest(session, dlg);
 }
 function openLockSettingsDialog(ctx, session, tx, ty) {
@@ -33100,23 +34451,67 @@ function openLockSettingsDialog(ctx, session, tx, ty) {
   session.pendingEditTile = { x: tx, y: ty };
   const tile = session.world.tiles[ty * session.world.width + tx];
   if (tile.extra?.kind !== "lock") return;
-  const owner = ctx.findAccountByUserId(tile.extra.ownerUserId);
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wEdit Lock``", tile.fg || 242).addTextbox(`\`9Owner: \`w${owner ? owner.name : "Unknown"}\`\``).addTextInput("lock_admin", "Add Access (Name):", "", 18).addButtonWithIcon("lock_convert", "`2Cycle Lock Tier``", tile.fg || 242).addButtonWithIcon("lock_remove", "`4Reclaim Lock``", 32, "staticRedFrame").endDialog("lock_settings", "Cancel", "Apply");
+  const lock = tile.extra;
+  const name = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
+  const isOwnerOrDev = lock.ownerUserId === session.account.userId || session.account.rank === "developer";
+  const isAdmin = lock.adminIds.includes(session.account.userId);
+  if (!isOwnerOrDev && !isAdmin) {
+    session.pendingEditTile = null;
+    return;
+  }
+  if (!isOwnerOrDev && isAdmin) {
+    const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`w" + name + "``", tile.fg || 242).raw(`embed_data|tilex|${tx}
+embed_data|tiley|${ty}
+add_spacer|small|
+`).addTextbox("You currently have access to this lock.").raw("add_button|removeaccess|`wRemove My Access``|noflags|0|0|\n").endDialog("lock_edit", "Cancel", "");
+    OnDialogRequest(session, dlg2);
+    return;
+  }
+  const isAreaLock = tile.fg === 202 || tile.fg === 204 || tile.fg === 206 || tile.fg === 4994;
+  const dlgBuilder = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wEdit " + name + "``", tile.fg || 242).raw("add_popup_name|LockEdit|\nadd_label|small|`wAccess list:``|left\n").raw(`embed_data|tilex|${tx}
+embed_data|tiley|${ty}
+add_spacer|small|
+`);
+  if (!lock.adminIds.length) {
+    dlgBuilder.raw("add_label|small|Currently, you're the only one with access.``|left\n");
+  }
+  for (const id of lock.adminIds) {
+    const account = ctx.findAccountByUserId(id);
+    dlgBuilder.raw(`add_checkbox|acc_${id}|${(account?.name || String(id)).replace(/[|\r\n]/g, " ")}|1|
+`);
+  }
+  dlgBuilder.raw("add_spacer|small|\nadd_player_picker|playerNetID|`wAdd``|\n");
+  const pubLabel = tile.fg === 4994 ? "Allow anyone to Build or Break" : "Allow anyone to Build and Break";
+  dlgBuilder.raw(`add_checkbox|checkbox_public|${pubLabel}|${lock.settings & 128 ? 1 : 0}|
+`);
+  if (isAreaLock) {
+    dlgBuilder.raw(`add_checkbox|checkbox_ignore|Ignore empty air|${lock.emptyAir ? 1 : 0}|
+`).raw("add_button|recalcLock|`wRe-apply lock``|noflags|0|0|\n");
+    if (tile.fg === 4994) {
+      dlgBuilder.raw("add_spacer|small|\nadd_smalltext|This lock allows Building or Breaking.|left|\nadd_smalltext|(ONLY if 'Allow anyone to Build or Break' is checked above)!|left|\nadd_spacer|small|\nadd_smalltext|Leaving this box unchecked only allows Breaking.|left|\n").raw(`add_checkbox|checkbox_buildonly|Only Allow Building!|${lock.buildOnly ? 1 : 0}|
+`).raw("add_smalltext|People with lock access can both build and break unless you check below. The lock owner can always build and break.|left|\n").raw(`add_checkbox|checkbox_admins|Admins Are Limited|${lock.limitAdmins ? 1 : 0}|
+`);
+    }
+  }
+  const dlg = dlgBuilder.endDialog("lock_edit", "Cancel", "OK");
   OnDialogRequest(session, dlg);
 }
 function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
   if (!session.pendingEditTile || !session.world) return false;
-  if (dlgName !== "save_tile_label" && dlgName !== "door_settings" && dlgName !== "weather_picker" && dlgName !== "lock_settings") {
+  if (dlgName !== "save_tile_label" && dlgName !== "door_settings" && dlgName !== "weather_picker" && dlgName !== "weatherspcl" && dlgName !== "xenonite_edit" && dlgName !== "lock_settings" && dlgName !== "lock_edit") {
     return false;
   }
-  const { x, y } = session.pendingEditTile;
+  const fallback = session.pendingEditTile;
+  const x = kv.tilex !== void 0 ? parseInt(kv.tilex, 10) : fallback.x;
+  const y = kv.tiley !== void 0 ? parseInt(kv.tiley, 10) : fallback.y;
   session.pendingEditTile = null;
   if (kv.buttonClicked === "Cancel") return true;
   const world = session.world;
+  if (x < 0 || x >= world.width || y < 0 || y >= world.height) return true;
   const tile = world.tiles[y * world.width + x];
   if (!tile) return true;
   if (dlgName === "save_tile_label") {
-    if (tile.extra?.kind === "sign" && canModifyWorldTile(session, world, tile)) {
+    if (tile.extra?.kind === "sign" && canModifyWorldTile(session, world, tile, x, y, "wrench")) {
       tile.extra.label = (kv.tile_label || "").replace(/\|/g, "").slice(0, 120);
       ctx.dirty = true;
       const upd = makeTileUpdatePacket(x, y, tile, Date.now());
@@ -33125,7 +34520,7 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
     return true;
   }
   if (dlgName === "door_settings") {
-    if (tile.extra?.kind === "door" && canModifyWorldTile(session, world, tile)) {
+    if (tile.extra?.kind === "door" && canModifyWorldTile(session, world, tile, x, y, "wrench")) {
       if (tile.fg === 6) {
         OnConsoleMessage(session, "The Main Door always exits the world.");
         return true;
@@ -33149,9 +34544,43 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
     }
     return true;
   }
+  if (dlgName === "weatherspcl") {
+    if (!canModifyWorldTile(session, world, tile, x, y, "wrench")) return true;
+    if (tile.fg === 3694) {
+      const r = Math.max(0, Math.min(255, parseInt((kv.red || "0").trim(), 10) || 0));
+      const g = Math.max(0, Math.min(255, parseInt((kv.green || "0").trim(), 10) || 0));
+      const b = Math.max(0, Math.min(255, parseInt((kv.blue || "0").trim(), 10) || 0));
+      if (r < 40 && g < 40 && b < 40) {
+        OnTalkBubble(session, session.netId, "You can't make a heatwave that dark (one of the colors must be 40+)!", 0, true);
+        return true;
+      }
+      tile.extra = { kind: "weatherBg", itemId: 14, r, g, b };
+    } else if (tile.fg === 5e3) {
+      const picked = parseInt((kv.choose || "14").trim(), 10);
+      if (Number.isFinite(picked) && ctx.itemsDb.get(picked)) {
+        tile.extra = { kind: "weatherBg", itemId: picked };
+      }
+    } else if (tile.fg === 3832) {
+      const prev = tile.extra?.kind === "weatherStuff" ? tile.extra : { itemId: 2, gravity: 50, spin: false, invert: false };
+      const picked = kv.choose !== void 0 ? parseInt(kv.choose.trim(), 10) : prev.itemId;
+      const nextItem = Number.isFinite(picked) && ctx.itemsDb.get(picked) ? picked : prev.itemId || 2;
+      const rawGrav = kv.gravity !== void 0 ? parseInt(kv.gravity.trim(), 10) : prev.gravity ?? 50;
+      const gravity = Number.isFinite(rawGrav) ? Math.max(-500, Math.min(500, rawGrav)) : prev.gravity ?? 50;
+      const spin = kv.spin !== void 0 ? kv.spin === "1" : Boolean(prev.spin);
+      const invert = kv.invert !== void 0 ? kv.invert === "1" : Boolean(prev.invert);
+      tile.extra = { kind: "weatherStuff", itemId: nextItem, gravity, spin, invert };
+    } else {
+      return true;
+    }
+    ctx.dirty = true;
+    const upd = makeTileUpdatePacket(x, y, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+    broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
+    return true;
+  }
   if (dlgName === "weather_picker") {
-    if (canModifyWorldTile(session, world, tile)) {
-      const wId = Math.max(0, Math.min(60, parseInt((kv.weather_id || "0").trim(), 10) || 0));
+    if (canModifyWorldTile(session, world, tile, x, y, "wrench")) {
+      const wId = Math.max(0, Math.min(85, parseInt((kv.weather_id || "0").trim(), 10) || 0));
       world.weatherId = wId;
       ctx.dirty = true;
       broadcastSetCurrentWeather(world, wId);
@@ -33160,27 +34589,95 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
     }
     return true;
   }
-  if (dlgName === "lock_settings") {
-    if (tile.extra?.kind !== "lock" || tile.extra.ownerUserId !== session.account.userId) {
+  if (dlgName === "xenonite_edit") {
+    if (tile.fg !== 2072 || !canModifyWorldTile(session, world, tile, x, y, "wrench")) return true;
+    const readPower = (forceKey, blockKey) => {
+      const f = kv[forceKey] === "1";
+      const b = kv[blockKey] === "1";
+      if (f && b) return null;
+      return f ? 1 : b ? 2 : 0;
+    };
+    const doubleJump = readPower("checkbox_force_dbl", "checkbox_block_dbl");
+    const highJump = readPower("checkbox_force_hig", "checkbox_block_hig");
+    const heatResist = readPower("checkbox_force_asb", "checkbox_block_asb");
+    const strongPunch = readPower("checkbox_force_pun", "checkbox_block_pun");
+    const longPunch = readPower("checkbox_force_lng", "checkbox_block_lng");
+    const speedy = readPower("checkbox_force_spd", "checkbox_block_spd");
+    const longBuild = readPower("checkbox_force_lngb", "checkbox_block_lngb");
+    const powerups = kv.checkbox_block_pwr === "1" ? 1 : 0;
+    if (doubleJump === null || highJump === null || heatResist === null || strongPunch === null || longPunch === null || speedy === null || longBuild === null) {
+      OnTalkBubble(session, session.netId, "You can't force and block the same power!", 0, true);
       return true;
     }
+    const nextXeno = {
+      enabled: true,
+      doubleJump,
+      highJump,
+      heatResist,
+      strongPunch,
+      longPunch,
+      longBuild,
+      speedy,
+      powerups
+    };
+    world.xenonite = nextXeno;
+    ctx.dirty = true;
+    for (const p of world.peers) {
+      ctx.sendCharacterState(p);
+      OnTalkBubble(p, p.netId, "Xenonite has changed everyone's powers!", 0, true);
+      OnConsoleMessage(p, "`5Xenonite has changed everyone's powers!``");
+    }
+    broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+    return true;
+  }
+  if (dlgName === "lock_settings" || dlgName === "lock_edit") {
+    if (tile.extra?.kind !== "lock") return true;
+    const lock = tile.extra;
     const btn = kv.buttonClicked || "";
-    if (btn === "lock_convert") {
-      convertPlacedLock(ctx, session, world, x, y);
+    const isOwnerOrDev = lock.ownerUserId === session.account.userId || session.account.rank === "developer";
+    if (btn === "removeaccess") {
+      if (lock.adminIds.includes(session.account.userId)) {
+        lock.adminIds = lock.adminIds.filter((id) => id !== session.account.userId);
+        ctx.dirty = true;
+        ctx.savePersistentState();
+        OnPlayPositioned(session, "audio/dialog_cancel.wav");
+        OnTalkBubble(session, session.netId, "I've removed my access!", 0, true);
+        const lockName = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
+        broadcastConsoleMessage(world, `${session.account.name} removed their access from a ${lockName}`);
+        broadcastNameChanged(session);
+        const upd2 = makeTileUpdatePacket(x, y, tile, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+      }
       return true;
     }
-    if (btn === "lock_remove") {
-      const lockId = tile.fg;
-      tile.fg = 0;
-      tile.extra = void 0;
-      ctx.giveInventoryItem(session, lockId, 1, true);
-      if (world.ownerUserId === session.account.userId) {
-        world.ownerUserId = 0;
+    if (!isOwnerOrDev) return true;
+    if (dlgName === "lock_edit") {
+      lock.adminIds = lock.adminIds.filter((id) => kv[`acc_${id}`] !== "0");
+      if (kv.checkbox_public !== void 0) {
+        lock.settings = kv.checkbox_public === "1" ? lock.settings | 128 : lock.settings & ~128;
+      }
+      if (kv.checkbox_ignore !== void 0) {
+        lock.emptyAir = kv.checkbox_ignore === "1";
+      }
+      if (tile.fg === 4994) {
+        if (kv.checkbox_buildonly !== void 0) lock.buildOnly = kv.checkbox_buildonly === "1";
+        if (kv.checkbox_admins !== void 0) lock.limitAdmins = kv.checkbox_admins === "1";
+      }
+      const netId = Number(kv.playerNetID);
+      const target = [...world.peers].find((p) => p.netId === netId);
+      if (target && target.account.userId !== lock.ownerUserId && !lock.adminIds.includes(target.account.userId)) {
+        lock.adminIds.push(target.account.userId);
+      }
+      if (btn === "recalcLock" && (tile.fg === 202 || tile.fg === 204 || tile.fg === 206 || tile.fg === 4994)) {
+        const lockedIndices = applyAreaLock(world, x, y);
+        const lockPkt = makeSendLockPacket(lock.ownerUserId, tile.fg, x, y, lockedIndices);
+        for (const p of world.peers) p.peer.sendPacket(0, lockPkt, true);
+        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
       }
       ctx.dirty = true;
+      ctx.savePersistentState();
       const upd2 = makeTileUpdatePacket(x, y, tile, Date.now());
       for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
-      broadcastConsoleMessage(world, `\`5World \`w${world.name}\`5 is no longer locked!\`\``);
       return true;
     }
     const adminName = (kv.lock_admin || "").trim();
@@ -33236,10 +34733,839 @@ function handleTrashItemReturn(ctx, session, kv) {
   );
 }
 
+// server/action/dialog_return/vending.ts
+function getPlayerWls(session) {
+  let total = 0;
+  for (const s of session.account.inventory) {
+    if (s.itemId === 242) total += s.count;
+    if (s.itemId === 1796) total += s.count * 100;
+    if (s.itemId === 7188) total += s.count * 1e4;
+  }
+  return total;
+}
+function freeCapacityForItem(session, itemId, extraUsedSlots = 0) {
+  let cap = 0;
+  for (const s of session.account.inventory) {
+    if (s.itemId === itemId && s.count > 0 && s.count < 200) {
+      cap += 200 - s.count;
+    }
+  }
+  const usedSlots = session.account.inventory.filter((s) => s.count > 0).length + extraUsedSlots;
+  const emptySlots = Math.max(0, session.account.backpackSize - usedSlots);
+  return cap + emptySlots * 200;
+}
+function deductPlayerWls(ctx, session, costWls) {
+  if (costWls <= 0 || getPlayerWls(session) < costWls) return false;
+  const wlHave = session.account.inventory.find((s) => s.itemId === 242 && s.count > 0)?.count || 0;
+  const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
+  const bglHave = session.account.inventory.find((s) => s.itemId === 7188 && s.count > 0)?.count || 0;
+  let rem = costWls;
+  const spendWl = Math.min(wlHave, rem);
+  rem -= spendWl;
+  let spendDl = 0;
+  let changeWl = 0;
+  if (rem > 0) {
+    const needDl = Math.min(dlHave, Math.ceil(rem / 100));
+    spendDl = needDl;
+    const paidFromDl = needDl * 100;
+    if (paidFromDl >= rem) {
+      changeWl = paidFromDl - rem;
+      rem = 0;
+    } else {
+      rem -= paidFromDl;
+    }
+  }
+  let spendBgl = 0;
+  let changeDl = 0;
+  if (rem > 0) {
+    const needBgl = Math.min(bglHave, Math.ceil(rem / 1e4));
+    if (needBgl * 1e4 < rem) return false;
+    spendBgl = needBgl;
+    const leftover = needBgl * 1e4 - rem;
+    changeDl = Math.floor(leftover / 100);
+    changeWl += leftover % 100;
+    rem = 0;
+  }
+  const freedSlots = (spendWl > 0 && spendWl === wlHave ? 1 : 0) + (spendDl > 0 && spendDl === dlHave ? 1 : 0) + (spendBgl > 0 && spendBgl === bglHave ? 1 : 0);
+  if (changeDl > 0) {
+    const dlFreeAfter = (spendDl > 0 ? spendDl : 0) + freeCapacityForItem(session, 1796, -freedSlots);
+    if (dlFreeAfter < changeDl) return false;
+  }
+  if (changeWl > 0) {
+    const usedNewForDl = changeDl > 0 && dlHave === 0 ? 1 : 0;
+    const wlFreeAfter = (spendWl > 0 ? spendWl : 0) + freeCapacityForItem(session, 242, -freedSlots + usedNewForDl);
+    if (wlFreeAfter < changeWl) return false;
+  }
+  if (spendWl > 0) ctx.consumeInventoryItem(session, 242, spendWl, true);
+  if (spendDl > 0) ctx.consumeInventoryItem(session, 1796, spendDl, true);
+  if (spendBgl > 0) ctx.consumeInventoryItem(session, 7188, spendBgl, true);
+  if (changeDl > 0) ctx.giveInventoryItem(session, 1796, changeDl, true);
+  if (changeWl > 0) ctx.giveInventoryItem(session, 242, changeWl, true);
+  ctx.savePlayersNow();
+  return true;
+}
+function openVendingOwnerDialog(ctx, session, world, tile, tx, ty) {
+  session.pendingEditTile = { x: tx, y: ty };
+  const extra = tile.extra?.kind === "vending" ? tile.extra : { itemId: 0, price: 0, count: 0, wl: 0 };
+  const machineDef = ctx.itemsDb.get(tile.fg) || { name: "Vending Machine" };
+  const maxCapacity = tile.fg === 2978 ? 5199 : 9999;
+  const itemDef = extra.itemId ? ctx.itemsDb.get(extra.itemId) : null;
+  const itemName = itemDef ? stripGtColors(itemDef.name) : "";
+  let backpackCount = 0;
+  if (extra.itemId) {
+    backpackCount = session.account.inventory.find((s) => s.itemId === extra.itemId)?.count || 0;
+  }
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${stripGtColors(machineDef.name)}\`\``, tile.fg).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty);
+  if (extra.itemId === 0) {
+    dlg.addTextbox("This machine is empty.");
+    dlg.addItemPicker("stockitem", "`wPut an item in``", "Choose an item to put in the machine!");
+  } else {
+    dlg.addLabelWithIcon("small", `The machine contains a total of ${extra.count} \`2${itemName}\`\`.`, extra.itemId);
+    if (extra.price === 0) {
+      dlg.addSpacer("small");
+      dlg.addTextbox("Not currently for sale!");
+      if (backpackCount > 0 && extra.count < maxCapacity) {
+        dlg.addSmalltext(`You have ${backpackCount} ${itemName} in your backpack.`);
+        dlg.addButton("addstocks", "Add them to the machine");
+      }
+      dlg.addButton("pullstocks", "Empty the machine");
+    } else {
+      dlg.addSpacer("small");
+      dlg.addTextbox("For a cost of:");
+      dlg.addLabelWithIcon("small", `${extra.price < 0 ? 1 : extra.price} x \`8World Lock\`\``, 242);
+      dlg.addSpacer("small");
+      dlg.addTextbox("You will get:");
+      dlg.addLabelWithIcon("small", `${extra.price < 0 ? Math.abs(extra.price) : 1} x \`2${itemName}\`\``, extra.itemId);
+      dlg.addSpacer("small");
+      if (backpackCount > 0 && extra.count < maxCapacity) {
+        dlg.addSmalltext(`You have ${backpackCount} ${itemName} in your backpack.`);
+        dlg.addButton("addstocks", "Add them to the machine");
+      }
+      dlg.addButton("pullstocks", "Empty the machine");
+    }
+    if (extra.price < 0 && Math.abs(extra.price) > extra.count) {
+      dlg.addSmalltext("`4(You need to add more items or people can't purchase at this price!)``");
+    }
+    dlg.addSmalltext(`\`5(${stripGtColors(machineDef.name)} will not function when price is set to 0)\`\``);
+    dlg.addTextInput("setprice", "Price", String(Math.abs(extra.price)), 5);
+    dlg.addCheckbox("chk_peritem", "World Locks per Item", extra.price >= 0);
+    dlg.addCheckbox("chk_perlock", "Items per World Lock", extra.price < 0);
+  }
+  if (extra.wl > 0) {
+    dlg.addSmalltext(`You have earned ${extra.wl} World Locks.`);
+    dlg.addButton("withdraw", "Withdraw World Locks");
+  }
+  if (tile.fg === 2978) {
+    dlg.addSmalltext("Upgrade to a DigiVend Machine for `44,000 Gems``.");
+    dlg.addButton("upgradedigital", "Upgrade to DigiVend");
+  }
+  dlg.addSpacer("small");
+  const dlgStr = dlg.endDialog("vending", "Close", extra.itemId !== 0 ? "Update" : "");
+  OnDialogRequest(session, dlgStr);
+}
+function openVendingBuyerDialog(ctx, session, world, tile, tx, ty) {
+  session.pendingEditTile = { x: tx, y: ty };
+  const extra = tile.extra?.kind === "vending" ? tile.extra : { itemId: 0, price: 0, count: 0, wl: 0 };
+  const machineDef = ctx.itemsDb.get(tile.fg) || { name: "Vending Machine" };
+  const itemDef = extra.itemId ? ctx.itemsDb.get(extra.itemId) : null;
+  const itemName = itemDef ? stripGtColors(itemDef.name) : "";
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${stripGtColors(machineDef.name)}\`\``, tile.fg).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty);
+  if (extra.itemId === 0 || extra.price === 0) {
+    dlg.addTextbox("This machine is out of order.");
+    const dlgStr = dlg.endDialog("vending", "Close", "");
+    OnDialogRequest(session, dlgStr);
+    return;
+  }
+  dlg.addLabelWithIcon("small", `The machine contains a total of ${extra.count} \`2${itemName}\`\`.`, extra.itemId);
+  dlg.addSpacer("small");
+  dlg.addTextbox("For a cost of:");
+  dlg.addLabelWithIcon("small", `${extra.price < 0 ? 1 : extra.price} x \`8World Lock\`\``, 242);
+  dlg.addSpacer("small");
+  dlg.addTextbox("You will get:");
+  dlg.addLabelWithIcon("small", `${extra.price < 0 ? Math.abs(extra.price) : 1} x \`2${itemName}\`\``, extra.itemId);
+  dlg.addSpacer("small");
+  if (extra.price < 0 && Math.abs(extra.price) > extra.count) {
+    dlg.addTextbox("You'll need to wait for the owner to stock up to at least 1 World Lock's worth before you can buy.");
+    const dlgStr = dlg.endDialog("vending", "Close", "");
+    OnDialogRequest(session, dlgStr);
+    return;
+  }
+  const myWls = getPlayerWls(session);
+  dlg.addTextbox(`You have ${myWls} World Locks.`);
+  dlg.addTextInput("buycount", "How many would you like to buy?", "0", 3);
+  dlg.embedData("expectprice", extra.price);
+  dlg.embedData("expectitem", extra.itemId);
+  const buyerDlgStr = dlg.endDialog("vending", "Close", "Buy");
+  OnDialogRequest(session, buyerDlgStr);
+}
+function handleVendingDialogReturn(ctx, session, kv) {
+  const world = session.world;
+  if (!world) return false;
+  const tx = parseInt(kv.tilex || "0", 10);
+  const ty = parseInt(kv.tiley || "0", 10);
+  if (tx < 0 || tx >= world.width || ty < 0 || ty >= world.height) return false;
+  const tile = world.tiles[ty * world.width + tx];
+  if (!tile || tile.fg !== 2978 && tile.fg !== 9268) return false;
+  if (!tile.extra || tile.extra.kind !== "vending") {
+    tile.extra = { kind: "vending", itemId: 0, price: 0, count: 0, wl: 0 };
+  }
+  const extra = tile.extra;
+  const isOwner = canModifyWorldTile(session, world, tile, tx, ty);
+  const btn = kv.buttonClicked || "";
+  if (isOwner) {
+    if (kv.stockitem && extra.itemId === 0) {
+      const selectedId = parseInt(kv.stockitem, 10);
+      const slot = session.account.inventory.find((s) => s.itemId === selectedId);
+      if (slot && slot.count > 0 && selectedId !== 242 && selectedId !== 1796 && selectedId !== 7188) {
+        extra.itemId = selectedId;
+        extra.count = slot.count;
+        ctx.consumeInventoryItem(session, selectedId, slot.count, true);
+        ctx.dirty = true;
+        const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+        const effectPkt2 = buildTankPacket({
+          type: PACKET_ITEM_EFFECT,
+          netId: session.netId,
+          x: tx * 32 + 16,
+          y: ty * 32 + 16,
+          punchX: extra.itemId,
+          punchY: session.netId,
+          value: 100
+        });
+        for (const p of world.peers) p.peer.sendPacket(0, effectPkt2, true);
+        broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
+        openVendingOwnerDialog(ctx, session, world, tile, tx, ty);
+        return true;
+      }
+    }
+    if (btn === "addstocks") {
+      if (extra.itemId) {
+        const slot = session.account.inventory.find((s) => s.itemId === extra.itemId);
+        if (slot && slot.count > 0) {
+          const maxCapacity = tile.fg === 2978 ? 5199 : 9999;
+          const addable = Math.min(slot.count, maxCapacity - extra.count);
+          if (addable > 0) {
+            extra.count += addable;
+            ctx.consumeInventoryItem(session, extra.itemId, addable, true);
+            ctx.dirty = true;
+            const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+            for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+            const effectPkt2 = buildTankPacket({
+              type: PACKET_ITEM_EFFECT,
+              netId: session.netId,
+              x: tx * 32 + 16,
+              y: ty * 32 + 16,
+              punchX: extra.itemId,
+              punchY: session.netId,
+              value: 100
+            });
+            for (const p of world.peers) p.peer.sendPacket(0, effectPkt2, true);
+            broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
+            OnTalkBubble(session, session.netId, `Added ${addable} items to the machine.`, 0, true);
+            OnConsoleMessage(session, `Added ${addable} items to the machine.`);
+          }
+        }
+      }
+      return true;
+    }
+    if (btn === "pullstocks") {
+      if (extra.itemId && extra.count > 0) {
+        const take = Math.min(200, extra.count);
+        if (ctx.giveInventoryItem(session, extra.itemId, take, true) > 0) {
+          extra.count -= take;
+          if (extra.count <= 0) {
+            extra.itemId = 0;
+            extra.price = 0;
+          }
+          ctx.dirty = true;
+          const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+          for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+          OnTalkBubble(session, session.netId, `You picked up ${take} items.`, 0, true);
+          OnConsoleMessage(session, `You picked up ${take} items.`);
+        } else {
+          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+          OnConsoleMessage(session, "You don't have room in your backpack!");
+        }
+      }
+      return true;
+    }
+    if (btn === "withdraw") {
+      if (extra.wl > 0) {
+        const dls = Math.floor(extra.wl / 100);
+        const wls = extra.wl % 100;
+        const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
+        if (dls > 0 && freeCapacityForItem(session, 1796) < dls) {
+          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+          OnConsoleMessage(session, "You don't have room in your backpack!");
+          return true;
+        }
+        const needNewDlSlot = dls > 0 && dlHave === 0 ? 1 : 0;
+        if (wls > 0 && freeCapacityForItem(session, 242, needNewDlSlot) < wls) {
+          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+          OnConsoleMessage(session, "You don't have room in your backpack!");
+          return true;
+        }
+        const collected = extra.wl;
+        extra.wl = 0;
+        if (dls > 0) ctx.giveInventoryItem(session, 1796, dls, true);
+        if (wls > 0) ctx.giveInventoryItem(session, 242, wls, true);
+        ctx.dirty = true;
+        const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+        const msg = `You collected ${collected} World Locks.`;
+        OnTalkBubble(session, session.netId, msg, 0, true);
+        OnConsoleMessage(session, msg);
+      }
+      return true;
+    }
+    if (btn === "upgradedigital" && tile.fg === 2978) {
+      if ((session.account.gems || 0) >= 4e3) {
+        session.account.gems -= 4e3;
+        ctx.savePlayersNow();
+        OnSetBux(session);
+        tile.fg = 9268;
+        ctx.dirty = true;
+        const fxPkt = makeParticleEffectPacket(44, tx * 32 + 16, ty * 32 + 16);
+        const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+        for (const p of world.peers) {
+          p.peer.sendPacket(0, fxPkt, true);
+          p.peer.sendPacket(0, upd2, true);
+        }
+        OnTalkBubble(session, session.netId, "Machine upgraded to DigiVend!", 0, true);
+      } else {
+        OnTalkBubble(session, session.netId, "You don't have enough gems!.", 0, true);
+      }
+      return true;
+    }
+    if (kv.setprice !== void 0) {
+      if (kv.chk_peritem === "1" && kv.chk_perlock === "1") {
+        OnTalkBubble(session, session.netId, "You can't have it both ways.", 0, true);
+        OnConsoleMessage(session, "You can't have it both ways.");
+        return true;
+      }
+      const rawStr = (kv.setprice || "0").trim();
+      const priceVal = parseInt(rawStr, 10);
+      if (!Number.isFinite(priceVal) || priceVal < 0 || priceVal > 2e4 || !/^\d+$/.test(rawStr) && rawStr !== "") {
+        OnTalkBubble(session, session.netId, "Well, that's a silly price.", 0, true);
+        return true;
+      }
+      const perLock = kv.chk_perlock === "1";
+      if (perLock && priceVal > 0) {
+        if (priceVal > extra.count) {
+          OnTalkBubble(session, session.netId, "You don't have enough in there for anyone to buy at that price!", 0, true);
+          OnConsoleMessage(session, "You don't have enough in there for anyone to buy at that price!");
+          return true;
+        }
+        if (priceVal > 200) {
+          OnTalkBubble(session, session.netId, "That price is so low, nobody can carry a World Lock worth of items!", 0, true);
+          OnConsoleMessage(session, "That price is so low, nobody can carry a World Lock worth of items!");
+          return true;
+        }
+      }
+      extra.price = perLock && priceVal > 0 ? -priceVal : priceVal;
+      ctx.dirty = true;
+      const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
+      for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
+      if (extra.itemId) {
+        const effectPkt2 = buildTankPacket({
+          type: PACKET_ITEM_EFFECT,
+          netId: session.netId,
+          x: tx * 32 + 16,
+          y: ty * 32 + 16,
+          punchX: extra.itemId,
+          punchY: session.netId,
+          value: 100
+        });
+        for (const p of world.peers) p.peer.sendPacket(0, effectPkt2, true);
+      }
+      broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
+      const msg = extra.price === 0 ? `\`7[\`\`${session.account.name} disabled the Vending Machine.\`\`\`7]\`\`` : extra.price < 0 ? `\`7[\`\`${session.account.name} changed the price to \`6${Math.abs(extra.price)} per World Lock.\`\`\`7]\`\`` : `\`7[\`\`${session.account.name} changed the price to \`5${extra.price} World Locks each.\`\`\`7]\`\``;
+      broadcastConsoleMessage(world, msg);
+      return true;
+    }
+  }
+  const expectPrice = parseInt(kv.expectprice || "0", 10);
+  const expectItem = parseInt(kv.expectitem || "0", 10);
+  const buyCount = parseInt(kv.buycount || "0", 10);
+  if (expectPrice !== extra.price || expectItem !== extra.itemId) {
+    OnConsoleMessage(session, "`4Vending price or stock changed!``");
+    return true;
+  }
+  if (!Number.isFinite(buyCount) || buyCount <= 0) return true;
+  const isPerLock = extra.price < 0;
+  const itemsPerLock = Math.abs(extra.price);
+  const actualItems = isPerLock ? buyCount * itemsPerLock : buyCount;
+  const totalCostWls = isPerLock ? buyCount : buyCount * extra.price;
+  if (actualItems > extra.count) {
+    OnTalkBubble(session, session.netId, "There aren't enough available to fulfill your order!", 0, true);
+    OnConsoleMessage(session, "There aren't enough available to fulfill your order!");
+    return true;
+  }
+  if (kv.verify !== "1") {
+    const itemDef2 = ctx.itemsDb.get(extra.itemId);
+    const itemName2 = itemDef2 ? stripGtColors(itemDef2.name) : "Item";
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wPurchase Confirmation``", 1366).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty).addSpacer("small").addTextbox("`4You'll give:``").addSpacer("small").addLabelWithIcon("small", `(\`w${totalCostWls}\`\`) \`8World Locks\`\``, 242).addSpacer("small").addTextbox("`2You'll get:``").addSpacer("small").addLabelWithIcon("small", `(\`w${actualItems}\`\`) \`2${itemName2}\`\``, extra.itemId).addSpacer("small").addTextbox("Are you sure you want to make this purchase?").embedData("verify", "1").embedData("buycount", buyCount).embedData("expectprice", extra.price).embedData("expectitem", extra.itemId).endDialog("vending", "Cancel", "OK");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (getPlayerWls(session) < totalCostWls) {
+    OnTalkBubble(session, session.netId, "You can't afford that many!", 0, true);
+    OnConsoleMessage(session, "You can't afford that many!");
+    return true;
+  }
+  if (freeCapacityForItem(session, extra.itemId) < actualItems) {
+    OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+    OnConsoleMessage(session, "You don't have room in your backpack!");
+    return true;
+  }
+  if (!deductPlayerWls(ctx, session, totalCostWls)) {
+    OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+    OnConsoleMessage(session, "`4Transaction failed (check backpack space for change).``");
+    return true;
+  }
+  ctx.giveInventoryItem(session, extra.itemId, actualItems, true);
+  extra.count -= actualItems;
+  extra.wl += totalCostWls;
+  if (extra.count <= 0) {
+    extra.itemId = 0;
+    extra.price = 0;
+  }
+  ctx.dirty = true;
+  const itemDef = ctx.itemsDb.get(expectItem);
+  const itemName = itemDef ? stripGtColors(itemDef.name) : "Item";
+  broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
+  const effectPkt = buildTankPacket({
+    type: PACKET_ITEM_EFFECT,
+    netId: session.netId,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16,
+    punchX: expectItem,
+    punchY: session.netId,
+    value: 100
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, effectPkt, true);
+  const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
+  for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+  const purchaseMsg = `\`7[\`\`\`9${session.account.name} bought ${actualItems} ${itemName} for ${totalCostWls} World Locks.\`\`\`7]\`\``;
+  broadcastConsoleMessage(world, purchaseMsg);
+  return true;
+}
+
+// server/action/dialog_return/telephone_locke.ts
+var GTPS3_LOCKE_ITEMS = [
+  { itemId: 8202, priceWl: 1 },
+  { itemId: 2478, priceWl: 1 },
+  { itemId: 2724, priceWl: 1 },
+  { itemId: 10394, priceWl: 3 },
+  { itemId: 4722, priceWl: 3 },
+  { itemId: 3738, priceWl: 5 },
+  { itemId: 1210, priceWl: 10 },
+  { itemId: 2978, priceWl: 10 },
+  { itemId: 2572, priceWl: 10 },
+  { itemId: 8878, priceWl: 10 },
+  { itemId: 10836, priceWl: 10 },
+  { itemId: 10838, priceWl: 10 },
+  { itemId: 12480, priceWl: 10 },
+  { itemId: 12482, priceWl: 10 },
+  { itemId: 12484, priceWl: 10 },
+  { itemId: 3818, priceWl: 15 },
+  { itemId: 1978, priceWl: 15 },
+  { itemId: 6286, priceWl: 15 },
+  { itemId: 6140, priceWl: 15 },
+  { itemId: 3560, priceWl: 20 },
+  { itemId: 3798, priceWl: 25 },
+  { itemId: 6288, priceWl: 25 },
+  { itemId: 5138, priceWl: 25 },
+  { itemId: 4322, priceWl: 25 },
+  { itemId: 3172, priceWl: 25 },
+  { itemId: 2480, priceWl: 30 },
+  { itemId: 2476, priceWl: 50 },
+  { itemId: 3104, priceWl: 50 },
+  { itemId: 6290, priceWl: 50 },
+  { itemId: 12044, priceWl: 50 },
+  { itemId: 2754, priceWl: 70 },
+  { itemId: 3894, priceWl: 75 },
+  { itemId: 8892, priceWl: 80 },
+  { itemId: 8194, priceWl: 80 },
+  { itemId: 3616, priceWl: 100 },
+  { itemId: 4516, priceWl: 100 },
+  { itemId: 1830, priceWl: 100 },
+  { itemId: 2720, priceWl: 100 },
+  { itemId: 2452, priceWl: 100 },
+  { itemId: 1486, priceWl: 100 },
+  { itemId: 12046, priceWl: 100 },
+  { itemId: 5140, priceWl: 150 },
+  { itemId: 11156, priceWl: 150 },
+  { itemId: 8818, priceWl: 200 },
+  { itemId: 4986, priceWl: 200 },
+  { itemId: 8820, priceWl: 300 },
+  { itemId: 5022, priceWl: 300 },
+  { itemId: 5142, priceWl: 300 },
+  { itemId: 5738, priceWl: 300 },
+  { itemId: 2702, priceWl: 300 },
+  { itemId: 8822, priceWl: 335 },
+  { itemId: 9408, priceWl: 350 },
+  { itemId: 5206, priceWl: 400 },
+  { itemId: 3300, priceWl: 400 },
+  { itemId: 5322, priceWl: 400 },
+  { itemId: 10396, priceWl: 400 },
+  { itemId: 9818, priceWl: 450 },
+  { itemId: 9820, priceWl: 450 },
+  { itemId: 9822, priceWl: 450 },
+  { itemId: 9824, priceWl: 450 },
+  { itemId: 3114, priceWl: 500 },
+  { itemId: 8024, priceWl: 500 },
+  { itemId: 8026, priceWl: 500 },
+  { itemId: 7166, priceWl: 500 },
+  { itemId: 6144, priceWl: 500 },
+  { itemId: 5078, priceWl: 500 },
+  { itemId: 5084, priceWl: 500 },
+  { itemId: 5080, priceWl: 500 },
+  { itemId: 5082, priceWl: 500 },
+  { itemId: 4972, priceWl: 500 },
+  { itemId: 4970, priceWl: 500 },
+  { itemId: 5264, priceWl: 500 },
+  { itemId: 2284, priceWl: 600 },
+  { itemId: 11050, priceWl: 800 },
+  { itemId: 11664, priceWl: 1e3 },
+  { itemId: 8834, priceWl: 1e3 },
+  { itemId: 3042, priceWl: 1e3 },
+  { itemId: 4948, priceWl: 1e3 },
+  { itemId: 5260, priceWl: 1e3 },
+  { itemId: 11134, priceWl: 1e3 },
+  { itemId: 5174, priceWl: 1100 },
+  { itemId: 5160, priceWl: 1500 },
+  { itemId: 1804, priceWl: 1500 },
+  { itemId: 5194, priceWl: 1900 },
+  { itemId: 8816, priceWl: 3e3 },
+  { itemId: 4956, priceWl: 5e3 },
+  { itemId: 5156, priceWl: 6400 },
+  { itemId: 5154, priceWl: 6500 },
+  { itemId: 2450, priceWl: 1e4 },
+  { itemId: 5176, priceWl: 10300 }
+];
+function getDailyQuestForDate(date) {
+  const seed = date.getFullYear() * 1e4 + (date.getMonth() + 1) * 100 + date.getDate();
+  const pool = [
+    2,
+    3,
+    10,
+    11,
+    14,
+    15,
+    16,
+    17,
+    20,
+    22,
+    52,
+    54,
+    98,
+    112,
+    138,
+    142,
+    148,
+    164,
+    186,
+    218,
+    224,
+    252,
+    284,
+    308,
+    340,
+    362,
+    454,
+    458,
+    506,
+    526,
+    574,
+    598,
+    682,
+    778,
+    868,
+    874
+  ];
+  const idx1 = Math.abs(Math.sin(seed) * 1e4) % pool.length | 0;
+  const idx2 = (idx1 + 1 + (Math.abs(Math.cos(seed) * 1e4) % (pool.length - 1) | 0)) % pool.length;
+  const count1 = (Math.abs(Math.sin(seed * 2) * 1e4) % 50 | 0) + 10;
+  const count2 = (Math.abs(Math.cos(seed * 2) * 1e4) % 50 | 0) + 10;
+  return {
+    dayKey: seed,
+    item1: pool[idx1],
+    count1,
+    item2: pool[idx2],
+    count2
+  };
+}
+function openLockeDialog(ctx, session) {
+  const day = (/* @__PURE__ */ new Date()).getDay();
+  if (day !== 0 && day !== 1 && day !== 5 && day !== 6) {
+    OnTalkBubble(session, session.netId, "`9Locke is on a break! Check later..``", 0, true);
+    return;
+  }
+  const wl = session.account.inventory.find((s) => s.itemId === 242)?.count || 0;
+  const dl = session.account.inventory.find((s) => s.itemId === 1796)?.count || 0;
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`9GTPS Salesman``", 9828).addSpacer("small").addSmalltext("Ho there, friend! Locke's my name, and locks are my game. I Love 'em all, Diamond, Huge.. even Small! If you can part with some locks, I'll give you something special in return. Whaddya say?").addSpacer("small").addSmalltext(
+    wl + dl !== 0 ? `\`9(Hmm, smells like you are carrying ${wl !== 0 ? `${wl} World Locks` : ""}${dl !== 0 ? `${wl !== 0 ? ", and " : ""}${dl} Diamond Lock` : ""})\`\`` : "`9(Hmm, smells like you don't carry any world locks)``"
+  ).addSpacer("small");
+  for (const item of GTPS3_LOCKE_ITEMS) {
+    const def = ctx.itemsDb.get(item.itemId);
+    const name = def?.name || `Item #${item.itemId}`;
+    const priceText = item.priceWl > 200 ? `${Math.floor(item.priceWl / 100)} Diamond Lock` : `${item.priceWl} World Locks`;
+    dlg.addButton(`lock_price_${item.itemId}`, `Buy ${name} for ${priceText}`);
+  }
+  const dialogStr = dlg.addSpacer("small").addQuickExit().endDialog("locke_menu", "Close", "");
+  OnDialogRequest(session, dialogStr);
+}
+function openSalesManUntradeableDialog(ctx, session) {
+  const wl = session.account.inventory.find((s) => s.itemId === 242)?.count || 0;
+  const dl = session.account.inventory.find((s) => s.itemId === 1796)?.count || 0;
+  const bgl = session.account.inventory.find((s) => s.itemId === 7188)?.count || 0;
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`9Sales-Man Untradeable``", 9528).addSpacer("small").addSmalltext("Damn.. I hate LOCKE!! This guy takes all my diamond locks, i'm hungry so feed me more. The Untradeable Sales-Man").addSpacer("small").addSmalltext(
+    wl + dl !== 0 ? `\`9(Hmm, smells like you are carrying ${wl !== 0 ? `${wl} World Locks` : ""}${dl !== 0 ? `${wl !== 0 ? ", and " : ""}${dl} Diamond Lock` : ""})\`\`` : "`9(Hmm, smells like you don't carry any world locks)``"
+  );
+  if (bgl > 0) {
+    dlg.addSmalltext(`\`9(You are also holding additional ${bgl} Blue Gem Locks)\`\``);
+  }
+  dlg.addSpacer("small");
+  const untradeables = [
+    { itemId: 1486, priceWl: 100 },
+    { itemId: 1830, priceWl: 100 },
+    { itemId: 1966, priceWl: 500 },
+    { itemId: 6946, priceWl: 2500 },
+    { itemId: 6948, priceWl: 2500 },
+    { itemId: 5638, priceWl: 3e3 }
+  ];
+  for (const item of untradeables) {
+    const def = ctx.itemsDb.get(item.itemId);
+    const name = def?.name || `Item #${item.itemId}`;
+    const priceText = item.priceWl > 200 ? `${Math.floor(item.priceWl / 100)} Diamond Lock` : `${item.priceWl} World Locks`;
+    dlg.addButton(`lock_price_${item.itemId}`, `Buy ${name} for ${priceText}`);
+  }
+  const dialogStr = dlg.addSpacer("small").addQuickExit().endDialog("locke_menu", "Close", "");
+  OnDialogRequest(session, dialogStr);
+}
+function handleTelephoneLockeDialogReturn(ctx, session, dlgName, kv) {
+  let btn = (kv.buttonClicked || kv.phone_number || "").trim();
+  if (dlgName === "3898" || dlgName === "phone_dial" || dlgName === "phone_dialog") {
+    if (btn === "12345") {
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wCrazy Jim's Quest Emporium``", 3902).addTextbox("HEEEEYYY there Growtopian! I'm Crazy Jim, and my quests are so crazy they're KERRRRAAAAZZY!! And that is clearly very crazy, so please, be cautious around them. What can I do ya for, partner?").addButton("chc1_1", "Daily Quest").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dlg2);
+      return true;
+    }
+    if (btn === "chc1_1") {
+      const quest = getDailyQuestForDate(/* @__PURE__ */ new Date());
+      if (session.account.lastDailyQuestDay === quest.dayKey) {
+        const dlg3 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wCrazy Jim's Daily Quest``", 3902).addTextbox("You've already completed my Daily Quest for today! Call me back after midnight to hear about my next cravings.").addButton("12345", "Back").addQuickExit().endDialog("3898", "Hang Up", "");
+        OnDialogRequest(session, dlg3);
+        return true;
+      }
+      const item1Def = ctx.itemsDb.get(quest.item1);
+      const item2Def = ctx.itemsDb.get(quest.item2);
+      const item1Name = item1Def?.name || "Dirt";
+      const item2Name = item2Def?.name || "Rock";
+      const have1 = session.account.inventory.find((s) => s.itemId === quest.item1 && s.count > 0)?.count || 0;
+      const have2 = session.account.inventory.find((s) => s.itemId === quest.item2 && s.count > 0)?.count || 0;
+      const canTurnIn = have1 >= quest.count1 && have2 >= quest.count2;
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wCrazy Jim's Daily Quest``", 3902).addTextbox("I guess some people call me Crazy Jim because I'm a bit of a hoarder. But I'm very particular about what I want! And today, what I want is this:").addLabelWithIcon("small", `\`2${quest.count1} ${item1Name}\`\``, quest.item1).addSmalltext("and").addLabelWithIcon("small", `\`2${quest.count2} ${item2Name}\`\``, quest.item2).addSpacer("small").addSmalltext("You shove all that through the phone (it works, I've tried it), and I will hand you one of the `2Growtokens`` from my personal collection! But hurry, this offer is only good until midnight, and only one `2Growtoken`` per person!").addSpacer("small").addSmalltext(`\`6(You have ${have1} ${item1Name} and ${have2} ${item2Name})\`\``).addSpacer("small");
+      if (canTurnIn) {
+        dlg2.addButton("turnin", "Turn in items");
+      }
+      const dialogStr = dlg2.addButton("12345", "Back").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dialogStr);
+      return true;
+    }
+    if (btn === "turnin") {
+      const quest = getDailyQuestForDate(/* @__PURE__ */ new Date());
+      if (session.account.lastDailyQuestDay === quest.dayKey) {
+        OnConsoleMessage(session, "`4You have already completed today's Daily Quest!``");
+        return true;
+      }
+      const have1 = session.account.inventory.find((s) => s.itemId === quest.item1 && s.count > 0)?.count || 0;
+      const have2 = session.account.inventory.find((s) => s.itemId === quest.item2 && s.count > 0)?.count || 0;
+      if (have1 < quest.count1 || have2 < quest.count2) {
+        OnConsoleMessage(session, "`4You don't have enough items to complete this quest!``");
+        return true;
+      }
+      ctx.consumeInventoryItem(session, quest.item1, quest.count1, true);
+      ctx.consumeInventoryItem(session, quest.item2, quest.count2, true);
+      const isTasksDay = (/* @__PURE__ */ new Date()).getDay() === 4;
+      const gTokens = isTasksDay ? 3 : 1;
+      ctx.giveInventoryItem(session, 1486, gTokens, true);
+      session.account.lastDailyQuestDay = quest.dayKey;
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      const animPkt = buildTankPacket({
+        type: 19,
+        netId: session.netId,
+        x: (session.lastWrenchX ?? 10) * 32 + 16,
+        y: (session.lastWrenchY ?? 10) * 32 + 16,
+        punchX: 1486,
+        punchY: session.netId,
+        value: 500
+      });
+      if (session.world) {
+        for (const p of session.world.peers) p.peer.sendPacket(0, animPkt, true);
+      }
+      const item1Def = ctx.itemsDb.get(quest.item1);
+      const item2Def = ctx.itemsDb.get(quest.item2);
+      const item1Name = item1Def?.name || "Dirt";
+      const item2Name = item2Def?.name || "Rock";
+      OnConsoleMessage(
+        session,
+        `[\`6You jammed ${quest.count1} ${item1Name} and ${quest.count2} ${item2Name} into the phone, and ${gTokens} \`2Growtoken\`\` popped out!\`\`]`
+      );
+      return true;
+    }
+    if (btn === "53785") {
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wSales-Man``", 4358).addTextbox("It is I, Sales-Man, savior of the wealthy! Let me rescue you from your riches. What would you like to buy today?").addButton("chc4_1", "Surgery Items").addButton("chc3_1", "Zombie Defense Items").addButton("chc2_1", "Blue Gem Lock").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dlg2);
+      return true;
+    }
+    if (btn === "chc2_1") {
+      const dlCount = session.account.inventory.find((s) => s.itemId === 1796)?.count || 0;
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wBlue Gem Lock``", 7188).addTextbox("Excellent! I'm happy to sell you a Blue Gem Lock in exchange for 100 Diamond Lock..").addSmalltext(`\`6You have ${dlCount} Diamond Lock.\`\``);
+      if (dlCount >= 100) {
+        dlg2.addButton("chc2_2_1", "Thank you!");
+      }
+      const dialogStr = dlg2.addButton("53785", "Back").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dialogStr);
+      return true;
+    }
+    if (btn === "chc2_2_1") {
+      const dlCount = session.account.inventory.find((s) => s.itemId === 1796)?.count || 0;
+      if (dlCount < 100) {
+        OnConsoleMessage(session, "`4You don't have enough Diamond Locks!``");
+        return true;
+      }
+      ctx.consumeInventoryItem(session, 1796, 100, true);
+      ctx.giveInventoryItem(session, 7188, 1, true);
+      const animPkt = buildTankPacket({
+        type: 19,
+        netId: session.netId,
+        x: (session.lastWrenchX ?? 10) * 32 + 16,
+        y: (session.lastWrenchY ?? 10) * 32 + 16,
+        punchX: 7188,
+        punchY: session.netId,
+        value: 500
+      });
+      if (session.world) {
+        for (const p of session.world.peers) p.peer.sendPacket(0, animPkt, true);
+      }
+      OnConsoleMessage(session, "[`6You spent 100 Diamond Lock to get 1 Blue Gem Lock``]");
+      return true;
+    }
+    if (btn === "chc3_1") {
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wSales-Man: Zombie Defense``", 4358).addTextbox("Excellent! I'm happy to sell you Zombie Defense supplies in exchange for Diamond Locks.").addButton("lock_price_4450", "Buy Zombie Brain for 1 Diamond Lock").addButton("lock_price_4452", "Buy Zombie Brain Pile for 5 Diamond Lock").addButton("53785", "Back").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dlg2);
+      return true;
+    }
+    if (btn === "chc4_1") {
+      const dlg2 = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wSales-Man: Surgery``", 4358).addTextbox("Excellent! I'm happy to sell you rare and precious Surgery prizes in exchange for Diamond Locks.").addButton("lock_price_4298", "Buy Caduceus for 2 Diamond Lock").addButton("lock_price_4300", "Buy Golden Caduceus for 10 Diamond Lock").addButton("53785", "Back").addQuickExit().endDialog("3898", "Hang Up", "");
+      OnDialogRequest(session, dlg2);
+      return true;
+    }
+    if (btn === "call_locke") {
+      openLockeDialog(ctx, session);
+      return true;
+    }
+    if (btn === "call_daily") {
+      btn = "12345";
+      return handleTelephoneLockeDialogReturn(ctx, session, "3898", { buttonClicked: "12345" });
+    }
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wDisconnected``", 774).addTextbox("The number you have tried to reach is disconnected. Please check yourself before you wreck yourself.").addQuickExit().endDialog("3898", "Hang Up", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (btn.startsWith("lock_price_")) {
+    const itemId = parseInt(btn.replace("lock_price_", ""), 10);
+    const def = ctx.itemsDb.get(itemId);
+    if (!def) return true;
+    session.lastLockeItem = itemId;
+    const lockeEntry = GTPS3_LOCKE_ITEMS.find((i) => i.itemId === itemId);
+    const priceWl = lockeEntry?.priceWl || (itemId === 4450 ? 100 : itemId === 4452 ? 500 : itemId === 4298 ? 200 : itemId === 4300 ? 1e3 : 100);
+    const priceText = priceWl > 200 ? `${Math.floor(priceWl / 100)} Diamond Lock` : `${priceWl} World Locks`;
+    const wl = session.account.inventory.find((s) => s.itemId === 242)?.count || 0;
+    const dl = session.account.inventory.find((s) => s.itemId === 1796)?.count || 0;
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`9Buy ${def.name}?\`\``, itemId).addSmalltext("`4A rare and precious artifact.`4").addSmalltext(`\`1Price: ${priceText}\`\``).addSpacer("small").addTextbox(`How many ${def.name} do you want to buy, for ${priceText} each?`).addTextInput("howmuch", "", "1", 5).addSmalltext(`You have ${wl} World Locks, ${dl} Diamond Lock.`).addButton("lock_item_", "`9Purchase``").addQuickExit().endDialog("locke_purchase", "No thanks", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (btn === "lock_item_") {
+    const itemId = session.lastLockeItem;
+    if (!itemId) return true;
+    const def = ctx.itemsDb.get(itemId);
+    if (!def) return true;
+    const count = Math.max(1, Math.min(200, parseInt(kv.howmuch || "1", 10) || 1));
+    const lockeEntry = GTPS3_LOCKE_ITEMS.find((i) => i.itemId === itemId);
+    const unitPriceWl = lockeEntry?.priceWl || 100;
+    const totalPriceWl = unitPriceWl * count;
+    const wlSlot = session.account.inventory.find((s) => s.itemId === 242);
+    const dlSlot = session.account.inventory.find((s) => s.itemId === 1796);
+    const bglSlot = session.account.inventory.find((s) => s.itemId === 7188);
+    const wl = wlSlot?.count || 0;
+    const dl = dlSlot?.count || 0;
+    const bgl = bglSlot?.count || 0;
+    const totalAvailableWl = wl + dl * 100 + bgl * 1e4;
+    if (totalAvailableWl < totalPriceWl) {
+      OnConsoleMessage(session, "`4You don't have enough World Locks or Diamond Locks!``");
+      return true;
+    }
+    let remainingToDeduct = totalPriceWl;
+    if (wl >= remainingToDeduct) {
+      ctx.consumeInventoryItem(session, 242, remainingToDeduct, true);
+    } else {
+      if (wl > 0) {
+        remainingToDeduct -= wl;
+        ctx.consumeInventoryItem(session, 242, wl, true);
+      }
+      const dlNeeded = Math.ceil(remainingToDeduct / 100);
+      if (dl >= dlNeeded) {
+        ctx.consumeInventoryItem(session, 1796, dlNeeded, true);
+        const changeWl = dlNeeded * 100 - remainingToDeduct;
+        if (changeWl > 0) {
+          ctx.giveInventoryItem(session, 242, changeWl, true);
+        }
+      } else {
+        const bglNeeded = Math.ceil(remainingToDeduct / 1e4);
+        ctx.consumeInventoryItem(session, 7188, bglNeeded, true);
+        const changeWl = bglNeeded * 1e4 - remainingToDeduct;
+        const changeDl = Math.floor(changeWl / 100);
+        const remWl = changeWl % 100;
+        if (changeDl > 0) ctx.giveInventoryItem(session, 1796, changeDl, true);
+        if (remWl > 0) ctx.giveInventoryItem(session, 242, remWl, true);
+      }
+    }
+    ctx.giveInventoryItem(session, itemId, count, true);
+    if (session.world) {
+      for (const p of session.world.peers) {
+        OnConsoleMessage(p, `\`9[${session.account.name} bought ${count} ${def.name} for ${totalPriceWl} World Lock]`);
+        p.peer.sendPacket(0, buildTankPacket({ type: 17, netId: session.netId }), true);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 // server/action/dialog_return/index.ts
 function handleDialogReturn(ctx, session, kv) {
   const dlg = (kv.dialog_name || "").trim();
   if (!dlg) return;
+  if (handleTelephoneLockeDialogReturn(ctx, session, dlg, kv)) {
+    return;
+  }
+  if (dlg === "vending") {
+    handleVendingDialogReturn(ctx, session, kv);
+    return;
+  }
+  if (dlg === "statsblock") {
+    handleGrowScanDialogReturn(ctx, session, kv);
+    return;
+  }
+  if (dlg === "itemsucker_block") {
+    handleSuckerDialogReturn(ctx, session, kv);
+    return;
+  }
   if (dlg === "growid_apply") {
     handleGrowIdApplyReturn(ctx, session, kv);
     return;
@@ -33285,29 +35611,29 @@ function handleEnterGame(ctx, session) {
   const acct = session.account;
   ctx.sendInventory(session, false);
   OnSetBux(session);
+  OnEmoticonDataChanged(session);
   if (acct.isGuest) {
     SetHasGrowID(session, false, "", "");
   }
-  OnConsoleMessage(
-    session,
-    acct.isGuest ? `\`2Welcome to ${SERVER_NAME}, \`w${acct.name}\`\` (\`#Guest Account\`\`)! Press \`wESC\`\` -> \`2Get GrowID\`\` anytime to upgrade for free.` : `\`2Welcome back to ${SERVER_NAME}, \`w${acct.name}\`\`! Select a world or enter any name to play.`
-  );
-  RequestWorldSelectMenu(session, ctx.worlds);
+  OnPlayPositioned(session, "audio/door_open.wav");
+  const friendsCount = (acct.friendIds || []).length;
+  const friendsOnline = (acct.friendIds || []).filter((id) => [...ctx.sessions].some((s) => s.account.userId === id)).length;
+  const friendMsg = friendsCount === 0 ? "" : friendsOnline > 0 ? ` \`w${friendsOnline}\`\` friend is online.` : " No friends are online.";
+  OnConsoleMessage(session, `Welcome back, \`w${acct.name}\`\`\`\`.${friendMsg}`);
+  OnConsoleMessage(session, "`2Goals event``: Start working on your goals, you can be farmer, geiger hunter, take providers to receive prizes for leveling up. You will be able to claim your rewards at the end of the week!");
+  OnConsoleMessage(session, "`3Limited time event``: 3x Gems from breaking blocks, Trees time reduced by 50%, Providers time reduced by 50%!");
+  const day = (/* @__PURE__ */ new Date()).getDay();
+  if (day === 1) OnConsoleMessage(session, "`3Today is Trees Day!`` 50% higher chance to get `2extra block`` from harvesting tree.");
+  else if (day === 2) OnConsoleMessage(session, "`3Today is Breaking Day!`` 15% higher chance to get `2extra seed``.");
+  else if (day === 3) OnConsoleMessage(session, "`3Today is Geiger Day!`` Higher chance of getting a `2better Geiger prize`` & Irradiated mod will last only `210 minutes``.");
+  else if (day === 4) OnConsoleMessage(session, "`3Today is Tasks Day!`` Get extra `210`` points for completing a task.");
+  else if (day === 5) OnConsoleMessage(session, "`3Today is Gems Day!`` 50% higher chance to get `2extra`` gem drop.");
+  else if (day === 6) OnConsoleMessage(session, "`3Today is Surgery Day!`` Malpractice takes `215 minutes`` and Recovering takes `230 minutes`` & receive `2different prizes``.");
+  else if (day === 0) OnConsoleMessage(session, "`3Today is Fishing Day!`` Catch a fish and receive `2extra lb``.");
+  const recent = (acct.recentWorlds || []).filter((w) => isPlayableWorldName(w));
+  const autoWorld = recent.length > 0 ? recent[0] : "START";
+  ctx.joinWorld(session, autoWorld);
   RequestGazette(session);
-}
-
-// server/action/friends.ts
-function handleFriends(ctx, session) {
-  const online = Array.from(ctx.sessions);
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wSocial Portal``", 1366).addSmalltext(`\`2Online Players: \`w${online.length}\`\``).addSpacer("small");
-  for (const p of online.slice(0, 30)) {
-    const loc = p.world ? p.world.name : "EXIT";
-    dlg.addTextbox(
-      `\`2*\`\` \`w${p.account.name}\`\` ${p.account.isGuest ? "`#([Guest])``" : "`2([GrowID])``"} - in \`5${loc}\`\``
-    );
-  }
-  dlg.addQuickExit();
-  OnDialogRequest(session, dlg.endDialog("social_portal", "Close", ""));
 }
 
 // server/action/info.ts
@@ -33346,6 +35672,25 @@ function handleInfo(ctx, session, kv) {
 
 // server/commands/admin_commands.ts
 function handleAdminCommand(ctx, session, cmd, parts, argStr) {
+  if (cmd === "guestrank") {
+    if (!hasPermission(session.account, "debug") || session.account.isGuest) {
+      OnConsoleMessage(session, "Registered developer permission required.");
+      return true;
+    }
+    const target = ctx.findOnlineSessionByName(parts[1] || "");
+    const rank = parts[2];
+    if (!target || !target.account.isGuest || !["player", "moderator", "developer"].includes(rank)) {
+      OnConsoleMessage(session, "Usage: /guestrank <online guest> <player|moderator|developer>");
+      return true;
+    }
+    target.account.rank = rank;
+    target.account.moderator = rank !== "player";
+    ctx.sendCharacterState(target);
+    broadcastNameChanged(target);
+    OnConsoleMessage(target, `Temporary rank: ${rank}. It expires on disconnect.`);
+    OnConsoleMessage(session, `Guest ${target.account.name} temporarily set to ${rank}.`);
+    return true;
+  }
   if (["mstate", "smstate"].includes(cmd) && !hasPermission(session.account, "debug")) {
     OnConsoleMessage(session, "Developer permission required.");
     return true;
@@ -33360,61 +35705,90 @@ function handleAdminCommand(ctx, session, cmd, parts, argStr) {
     OnConsoleMessage(session, `\`2smstate set to \`w${session.smstate}\`\``);
     return true;
   }
-  if (cmd === "give" || cmd === "kick" || cmd === "pull" || cmd === "ban" || cmd === "unban") {
-    if (!hasPermission(session.account, cmd === "give" ? "grantItems" : "moderate")) {
-      OnConsoleMessage(session, "`4Moderators only!``");
+  if (["kick", "pull", "ban", "worldban", "unban", "worldunban", "uba"].includes(cmd)) {
+    const world = session.world;
+    if (!world) {
+      OnConsoleMessage(session, "Enter a world first.");
       return true;
     }
-    if (cmd === "unban") {
-      const targetKey = (parts[1] || "").toLowerCase();
-      const acct = ctx.accounts.get(targetKey);
+    if (["unban", "worldunban", "uba"].includes(cmd)) {
+      const allowed2 = world.ownerUserId === session.account.userId || hasPermission(session.account, "moderate") || world.tiles.some((t) => [242, 1796, 7188, 11550].includes(t.fg) && t.extra?.kind === "lock" && t.extra.adminIds.includes(session.account.userId));
+      if (!allowed2) {
+        OnConsoleMessage(session, "You cannot manage this world.");
+        return true;
+      }
+      const query = (parts[1] || "").toLowerCase();
+      if (!query && cmd === "uba") {
+        world.worldBans = {};
+        ctx.dirty = true;
+        ctx.savePersistentState();
+        OnConsoleMessage(session, "You've unbanned everybody from this world.");
+        return true;
+      }
+      const exact = ctx.accounts.get(query), matches = [...ctx.accounts.values()].filter((a) => a.name.toLowerCase().startsWith(query));
+      const acct = exact || (query && matches.length === 1 ? matches[0] : void 0);
       if (!acct) {
-        OnConsoleMessage(session, "`4Account not found!``");
+        OnConsoleMessage(session, "Player not found.");
         return true;
       }
-      if (!canModerate(session.account, acct)) {
-        OnConsoleMessage(session, "Cannot moderate this rank.");
+      if (world.worldBans) delete world.worldBans[String(acct.userId)];
+      ctx.dirty = true;
+      ctx.savePersistentState();
+      OnConsoleMessage(session, `${acct.name} is no longer world banned.`);
+      return true;
+    }
+    const target = ctx.findOnlineSessionByName(parts[1] || "");
+    if (!target || target.world !== world) {
+      OnConsoleMessage(session, "Player is not in this world.");
+      return true;
+    }
+    worldModerate(ctx, session, target, cmd === "pull" ? "pull" : cmd === "kick" ? "kick" : "worldban");
+    return true;
+  }
+  if (cmd === "freeze" || cmd === "unfreeze") {
+    if (!hasPermission(session.account, "moderate")) {
+      OnConsoleMessage(session, "Moderator permission required.");
+      return true;
+    }
+    const target = ctx.findOnlineSessionByName(parts[1] || "");
+    if (!target || target.world !== session.world || !canModerate(session.account, target.account)) {
+      OnConsoleMessage(session, "Player not found or protected.");
+      return true;
+    }
+    if (cmd === "freeze") {
+      if (isFrozen(target)) {
+        OnConsoleMessage(session, "Player is frozen already.");
         return true;
       }
-      acct.banned = false;
-      ctx.savePlayersNow();
-      OnConsoleMessage(session, `\`2Unbanned \`w${acct.name}\`2!\`\``);
+      target.account.playmods ??= [];
+      target.account.playmods.push({ id: "gtps3-2", expiresAt: Date.now() + 15e3 });
+      ctx.dirty = true;
+      ctx.sendCharacterState(target);
+      applySkinColorUpdate(target, false);
+      OnConsoleMessage(target, "Your body has turned to ice. You can't move! (`$Frozen!`` mod added, `$15 seconds`` left)");
+    } else {
+      for (const mod of target.account.playmods || []) if (["gtps3-2", "gtps3-3", "gtps3-49"].includes(mod.id)) mod.expiresAt = Date.now() - 1;
+      expireMods(ctx);
+    }
+    return true;
+  }
+  if (cmd === "give") {
+    if (!hasPermission(session.account, "grantItems")) {
+      OnConsoleMessage(session, "Developer permission required.");
       return true;
     }
     const target = ctx.findOnlineSessionByName(parts[1] || "");
     if (!target) {
-      OnConsoleMessage(session, "`4Player not found!``");
+      OnConsoleMessage(session, "Player not found.");
       return true;
     }
-    if (cmd === "give") {
-      const id = parseInt(parts[2] || "0", 10);
-      const qty = Math.max(1, Math.min(200, parseInt(parts[3] || "1", 10) || 1));
-      const def = ctx.itemsDb.get(id);
-      if (!def || def.name.startsWith("null_")) {
-        OnConsoleMessage(session, "`4Invalid item ID!``");
-        return true;
-      }
-      ctx.giveInventoryItem(target, id, qty, true);
-      OnConsoleMessage(session, `\`2Gave \`w${qty}x ${stripGtColors(def.name)}\`2 to \`w${target.account.name}\`2!\`\``);
-      OnConsoleMessage(target, `\`2\`w${session.account.name}\`2 gave you \`w${qty}x ${stripGtColors(def.name)}\`2!\`\``);
+    const id = parseInt(parts[2] || "0", 10), qty = Math.max(1, Math.min(200, parseInt(parts[3] || "1", 10) || 1)), def = ctx.itemsDb.get(id);
+    if (!def || def.name.startsWith("null_")) {
+      OnConsoleMessage(session, "Invalid item ID.");
       return true;
     }
-    if (!canModerate(session.account, target.account)) {
-      OnConsoleMessage(session, "Cannot moderate this rank.");
-      return true;
-    }
-    if (cmd === "kick") {
-      target.peer.sendDisconnect();
-      OnConsoleMessage(session, `\`2Kicked \`w${target.account.name}\`2!\`\``);
-    } else if (cmd === "pull" && session.world) {
-      ctx.moveToWorld(target, session.world, session.x, session.y);
-      OnConsoleMessage(session, `\`2Pulled \`w${target.account.name}\`2!\`\``);
-    } else if (cmd === "ban") {
-      target.account.banned = true;
-      ctx.savePlayersNow();
-      target.peer.sendDisconnect();
-      OnConsoleMessage(session, `\`2Banned \`w${target.account.name}\`2!\`\``);
-    }
+    const added = ctx.giveInventoryItem(target, id, qty, true);
+    OnConsoleMessage(session, `Gave ${added}x ${stripGtColors(def.name)} to ${target.account.name}.`);
     return true;
   }
   return false;
@@ -33441,6 +35815,12 @@ function handlePlayerCommand(ctx, session, cmd, parts, argStr) {
   }
   if (cmd === "find" || cmd === "item" || cmd === "search") {
     openItemFinderDialog(ctx, session, argStr);
+    return true;
+  }
+  if (cmd === "trade") {
+    const target = ctx.findOnlineSessionByName(parts[1] || "");
+    if (!target || target.world !== session.world || !session.world) OnConsoleMessage(session, "That player is not in this world.");
+    else requestTrade(ctx, session, target.netId);
     return true;
   }
   if (cmd === "growid" || cmd === "register") {
@@ -33573,7 +35953,8 @@ netID|${session.netId}`
       `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
       chatPortrait(session, ctx.itemsDb)
     );
-    OnPlayPositioned(target, "audio/beep.wav");
+    OnPlayPositioned(target, "audio/pay_time.wav");
+    if (hasPermission(target.account, "moderate")) OnConsoleMessage(session, "`4Note:`` Message a moderator only once about an issue. Moderators do not replace scammed items.");
     OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
@@ -33592,6 +35973,64 @@ netID|${session.netId}`
     OnTextOverlay(session, "`wOpening YouTube...``");
     ctx.sendCustomVariant(session, "OnSendPlayerToYoutube", targetUrl);
     OnConsoleMessage(session, `\`2Opening YouTube: \`w${targetUrl}\`\`...`);
+    return true;
+  }
+  if (cmd === "brb" || cmd === "afk") {
+    const world = session.world;
+    if (!world) return true;
+    const next = !session.brb;
+    session.brb = next;
+    broadcastIconState(world, session, next ? 2 : 0, true);
+    OnConsoleMessage(session, next ? "`2BRB mode enabled.``" : "`2BRB mode disabled.``");
+    return true;
+  }
+  if (cmd === "daily") {
+    const now = Date.now();
+    const acct = session.account;
+    const cooldown = 24 * 60 * 60 * 1e3;
+    if (acct.lastDailyReward && now - acct.lastDailyReward < cooldown) {
+      const leftHours = Math.ceil((cooldown - (now - acct.lastDailyReward)) / 36e5);
+      OnConsoleMessage(session, `\`4Crazy Jim's Daily Quest: Come back in \`w${leftHours} hours\`4!\`\``);
+      return true;
+    }
+    const rewardGems = 500;
+    acct.gems = (acct.gems || 0) + rewardGems;
+    acct.lastDailyReward = now;
+    ctx.savePlayersNow();
+    OnSetBux(session);
+    OnPlayPositioned(session, "audio/level_up.wav");
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wCrazy Jim's Daily Quest``", 18).addTextbox("`2Congratulations! You completed today's quest!``").addTextbox(`Reward: \`2+${rewardGems} Gems\`\`!`).addQuickExit().endDialog("daily_reward", "Close", "");
+    OnDialogRequest(session, dlg);
+    OnConsoleMessage(session, `\`2[Daily Quest] Received \`w+${rewardGems} Gems\`2! Come back tomorrow for more.\`\``);
+    return true;
+  }
+  if (cmd === "phone") {
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wTelephone Services``", 638).addTextbox("`wWho would you like to call?``").addButton("call_police", "`4Emergency (911)``").addButton("call_locke", "`5Locke's Traveling Wagon``").addButton("call_daily", "`2Crazy Jim's Daily Quests``").addQuickExit().endDialog("phone_dialog", "Hang Up", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (cmd === "locke") {
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wLocke's Traveling Wagon``", 1796).addTextbox("`wWelcome to Locke's Traveling Wagon! Locke offers rare goods from distant lands.``").addTextbox("`2Today's Special: `wUltra Gem Pack`` (1 Diamond Lock for 100,000 Gems)!").addButton("locke_trade", "`wTrade 1 DL for 100,000 Gems``").addQuickExit().endDialog("locke_dialog", "Close", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (cmd === "rules") {
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wHelp & Rules``", 18).addSpacer("small").addTextbox("`w`2World or Accounts`` may be deleted after long periods of inactivity if a world is not visited regularly. `2Item function and prices are subject to change`` at anytime and without warning as we are constantly trying to balance different aspects of the game.``").addSpacer("small").addTextbox("`wProtect your worlds and the items by using Doors, Locks, and Blocks wisely, `2never share your login credentials`` with anyone, and be aware of `2fake system messages and phishing websites``.``").addSpacer("small").addTextbox("`w`2Inappropriate behavior`` (profanity, racist, sexist or sexual content, abusive behavior, and bullying); any form of scam game such as Drop Game, Dirt Game, etc.; `2buying, selling, or trading GTPS accounts, items, or worlds`` for real money; `2purchase fraud``; and usage of `2third party software``, including, but not limited to, client-side manipulation, auto-clickers, speed hacks, clock manipulation, bots, macroing, and auto-farming, will be sanctioned and may result in a permanent suspension.``").addSpacer("small").addTextbox("`wTo report a world, type `2/report`` and exit the world immediately. To report a player, `2wrench and report`` them, or contact us directly. For any issues and questions you may have, please visit our discord server``").addSpacer("small").addQuickExit().endDialog("rules_dialog", "OK", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (cmd === "discord") {
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wDiscord``", 10568).addSpacer("small").addTextbox("`oVisit the Growtopia Discord page?``").addSpacer("small").addUrlButton("comment", "`wLaunch``", "https://discord.gg/gtps3", "Open Discord?", "noflags").addQuickExit().endDialog("discord_dialog", "", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (cmd === "status" || cmd === "stats") {
+    const acct = session.account;
+    const worldName = session.world?.name || "EXIT";
+    OnConsoleMessage(
+      session,
+      `\`o[Status] Name: \`w${acct.name}\`o | World: \`w${worldName}\`o | Gems: \`2${acct.gems || 0}\`o | Backpack: \`w${acct.inventory.filter((i) => i.count > 0).length}/${acct.backpackSize}\`o | Online: \`2${ctx.sessions.size}\`o players.\`\``
+    );
     return true;
   }
   return false;
@@ -33620,8 +36059,8 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
     if (!world) return true;
     const names = Array.from(world.peers).map(displayName);
     const summary = `\`wWho's in \`$${world.name}\`\`: ${names.join(", ")}\`\``;
-    for (const other of world.peers) {
-      if (other !== session) OnTalkBubble(session, other.netId, displayName(other), 1);
+    for (const other2 of world.peers) {
+      if (other2 !== session) OnTalkBubble(session, other2.netId, displayName(other2), 1);
     }
     OnConsoleMessage(session, summary);
     return true;
@@ -33712,11 +36151,11 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
   }
   if (cmd === "weather") {
     if (!world) return true;
-    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId) {
+    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId && session.account.rank !== "developer") {
       OnConsoleMessage(session, "`4Only the World Lock owner can change weather!``");
       return true;
     }
-    const wId = Math.max(0, Math.min(60, parseInt(argStr || "0", 10) || 0));
+    const wId = Math.max(0, Math.min(85, parseInt(argStr || "0", 10) || 0));
     world.weatherId = wId;
     ctx.dirty = true;
     broadcastSetCurrentWeather(world, wId);
@@ -33741,7 +36180,12 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
 // server/commands/index.ts
 function dispatchCommand(ctx, session, rawWithoutSlash) {
   const parts = rawWithoutSlash.trim().split(/\s+/);
-  const cmd = (parts[0] || "").toLowerCase();
+  const typed = (parts[0] || "").toLowerCase();
+  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "trade", "sb", "bc", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
+  const aliases = { k: "kick", p: "pull", b: "ban", ub: "unban", u: "unban" };
+  const candidates = names.filter((n) => n.startsWith(typed));
+  const cmd = names.includes(typed) ? typed : aliases[typed] || (candidates.length === 1 ? candidates[0] : typed);
+  parts[0] = cmd;
   const argStr = parts.slice(1).join(" ");
   if (!cmd) return;
   if (handleProgressionCommand(ctx, session, cmd, parts)) return;
@@ -33755,9 +36199,9 @@ function dispatchCommand(ctx, session, rawWithoutSlash) {
     return;
   }
   if (cmd === "help" || cmd === "?") {
-    const publicCommands = "/help /? /level /achievements /hidestatus /msg /tell /w /sb /bc /time /who /me /find /item /search /warp /world /news /gazette /middle /wave /dance /love /sleep /facepalm /fp /smh /yes /no /omg /idk /shrug /furious /rolleyes /foldarms /fa /stubborn /fold /dab /sassy /dance2 /march /grumpy /shy /growid /register /skin /flag /worlds /rank /mods /door /weather /convert /youtube /yt";
+    const publicCommands = "/msg /status /broadcast /sb /cb /sdb /stats /top /ignore /time /who /me /radio /vips /mods /uba /r /go /rgo /pull /kick /ban /wave /dance /love /sleep /facepalm /fp /smh /yes /no /omg /idk /shrug /trade /pb /furious /rolleyes /unaccess /report /rate /foldarms /fa /stubborn /fold /fc /gc /gwarp /roles /warp /fav /home /sethome /gethome /dab /sassy /dance2 /favrm /grumpy /shy /discord /rules";
     const staff = hasPermission(session.account, "moderate") ? " /kick /pull /ban /unban" : "";
-    const developer = hasPermission(session.account, "debug") ? " /setlevel /givexp /kits /gitem /clearinv /ghost /cheats /give" : "";
+    const developer = hasPermission(session.account, "debug") ? " /setlevel /givexp /kits /gitem /clearinv /ghost /cheats /give /guestrank" : "";
     OnConsoleMessage(session, `\`o>> Commands: ${publicCommands}${staff}${developer}\`\``);
     return;
   }
@@ -33791,6 +36235,10 @@ msg|\`6${echo}\`\`
   if (!world) return;
   const clean = sanitizeChatText(trimmed, 120);
   if (!clean) return;
+  if (session.brb || session.iconState === 1) {
+    session.brb = false;
+    broadcastIconState(world, session, 0, true);
+  }
   const infected = activeMods(session.account).some((m) => m.id === "gtps3-infected");
   const msg = infected ? `\`2${Math.random() < 0.25 ? "Brraaiinnss..." : ""}${clean}\`\`` : clean;
   broadcastTalkBubble(world, session.netId, msg, 0, false);
@@ -33869,8 +36317,12 @@ function allocateGuestDisplayName(ctx, baseName, preferredSuffix = "", currentAc
   }
   return `${baseName}_${seq}`;
 }
-function sendLogonFail(peer, message) {
-  peer.sendPacket(0, makeVariantPacket(["OnConsoleMessage", message]), true);
+function sendLogonFail(peer, message, showDiscord = false) {
+  peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|log\nmsg|" + message + "\n"), true);
+  if (showDiscord) peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|set_url
+url|${SERVER_CONFIG.discordUrl}
+label|Join Discord
+`), true);
   peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|logon_fail\n"), true);
 }
 function sendSuperMainAccept(ctx, peer) {
@@ -33937,7 +36389,7 @@ function handleLogon(ctx, peer, kv) {
     const key = rawTankId.toLowerCase();
     let acct = ctx.accounts.get(key);
     if (!acct || acct.isGuest || !verifyPassword(rawPass, acct.passwordHash)) {
-      sendLogonFail(peer, "`4Invalid GrowID or password. Register using Get a GrowID from a guest account.``");
+      sendLogonFail(peer, "`4Unable to log on: `oThat `wGrowID`` doesn't seem valid, or the password is wrong. If you don't have one, press `wCancel``, un-check `w'I have a GrowID'``, then click `wConnect``.", true);
       return;
     }
     if (!acct.passwordHash.startsWith("scrypt$")) {
@@ -34037,6 +36489,8 @@ function handleRefreshItemData(ctx, session) {
 
 // server/action/respawn.ts
 function handleRespawn(ctx, session, isSpike = false) {
+  if (session.pullImmuneUntil && Date.now() < session.pullImmuneUntil) return;
+  if (isSpike && isFrozen(session)) return;
   if (isSpike) {
     OnConsoleMessage(session, "`4You hit a spike!``");
   }
@@ -34071,6 +36525,7 @@ function handleActionText(ctx, peer, rawText) {
     return;
   }
   const action = (kv.action || "").trim();
+  if (tradeAction(ctx, session, action, kv, rawText)) return;
   switch (action) {
     case "enter_game":
       handleEnterGame(ctx, session);
@@ -34109,7 +36564,7 @@ function handleActionText(ctx, peer, rawText) {
       handleWrenchPlayer(ctx, session, kv);
       return;
     case "trade_started":
-      if (kv.netid) handleTradeStart(ctx, session, parseInt(kv.netid, 10));
+      if (kv.netid) requestTrade(ctx, session, parseInt(kv.netid, 10));
       return;
     case "store":
     case "storenavigate":
@@ -34175,7 +36630,6 @@ var WEARABLE_MESSAGES = {
   1204: ["Focused Eyes", "Your gaze sharpens.", "Your eyes relax."],
   2388: ["Hammer Time", "Hammer time!", "Hammer time is over."],
   9058: ["Cursed Blade", "A curse hums in your hand.", "The curse lifts."],
-  8924: ["Moon Charm", "Luck is on your side.", "Your luck runs out."],
   4748: ["Extra Reach", "You can build a little farther.", "You can't reach as far."]
 };
 
@@ -34187,12 +36641,12 @@ function toggleWearableItem(ctx, session, itemId) {
   const targetSlotIndex = def.actionType === 107 ? 9 : def.clothingType;
   const equipping = !slot.equipped;
   if (equipping) {
-    for (const other of session.account.inventory) {
-      if (other !== slot && other.equipped) {
-        const otherDef = ctx.itemsDb.get(other.itemId);
+    for (const other2 of session.account.inventory) {
+      if (other2 !== slot && other2.equipped) {
+        const otherDef = ctx.itemsDb.get(other2.itemId);
         if (otherDef && otherDef.isClothing && (otherDef.actionType === 107 ? 9 : otherDef.clothingType) === targetSlotIndex) {
-          other.equipped = false;
-          const old = WEARABLE_MESSAGES[other.itemId];
+          other2.equipped = false;
+          const old = WEARABLE_MESSAGES[other2.itemId];
           if (old && old[2]) OnConsoleMessage(session, `${old[2]} (\`$${old[0]}\`\` mod removed)`);
         }
       }
@@ -34326,10 +36780,110 @@ function handleItemActivateObject(ctx, session, uid) {
   OnConsoleMessage(session, `Collected \`w${taken} ${itemName}\`\`.`);
 }
 
+// server/database/recipes.ts
+var GTPS3_COMBINER_RECIPES = [
+  { ingredients: [[914, 5], [924, 4], [920, 2]], result: [926, 5] },
+  { ingredients: [[914, 6], [924, 3], [918, 4]], result: [1114, 1] },
+  { ingredients: [[914, 15], [920, 4], [918, 2]], result: [978, 4] },
+  { ingredients: [[917, 10], [924, 3], [918, 3]], result: [772, 1] },
+  { ingredients: [[917, 2], [920, 4], [918, 3]], result: [904, 1] },
+  { ingredients: [[924, 20], [920, 4], [918, 5]], result: [922, 1] },
+  { ingredients: [[914, 20], [916, 10], [922, 1]], result: [1162, 1] },
+  { ingredients: [[914, 10], [920, 2], [922, 1]], result: [1746, 5] },
+  { ingredients: [[914, 20], [918, 15], [922, 10]], result: [1542, 1] },
+  { ingredients: [[916, 8], [924, 4], [922, 1]], result: [2588, 1] },
+  { ingredients: [[916, 1], [918, 1], [922, 1]], result: [1866, 10] },
+  { ingredients: [[924, 3], [920, 3], [922, 3]], result: [908, 1] },
+  { ingredients: [[924, 4], [918, 3], [922, 1]], result: [1310, 1] },
+  { ingredients: [[920, 200], [918, 200], [922, 200]], result: [910, 1] },
+  { ingredients: [[914, 10], [922, 10], [1962, 10]], result: [4582, 1] },
+  { ingredients: [[916, 9], [924, 5], [1962, 1]], result: [4552, 1] },
+  { ingredients: [[6970, 50], [7006, 50], [6986, 50]], result: [6948, 1] },
+  // Heart of Gaia
+  { ingredients: [[7156, 20], [6986, 5], [7154, 5]], result: [7150, 1] },
+  { ingredients: [[7006, 10], [6970, 5], [6988, 5]], result: [7008, 1] },
+  { ingredients: [[6828, 2], [186, 100], [6972, 20]], result: [6934, 1] },
+  { ingredients: [[6834, 2], [186, 100], [6960, 2]], result: [6936, 1] },
+  { ingredients: [[6250, 2], [186, 100], [6978, 20]], result: [6930, 1] },
+  { ingredients: [[6940, 2], [186, 100], [6976, 2]], result: [6944, 1] },
+  { ingredients: [[6236, 1], [6962, 1], [6992, 5]], result: [6918, 1] },
+  { ingredients: [[6238, 1], [6960, 5], [7012, 1]], result: [6920, 1] },
+  { ingredients: [[6988, 100], [7010, 15], [6976, 50]], result: [6946, 1] },
+  // Unstable Tesseract
+  { ingredients: [[6244, 1], [260, 100], [6962, 2]], result: [6928, 1] },
+  { ingredients: [[6256, 1], [260, 100], [6994, 10]], result: [6932, 1] },
+  { ingredients: [[6238, 1], [260, 100], [6960, 2]], result: [6926, 1] },
+  { ingredients: [[7308, 1], [260, 100], [7012, 10]], result: [7306, 1] },
+  { ingredients: [[6926, 1], [6972, 1], [7010, 1]], result: [6922, 1] },
+  { ingredients: [[6240, 1], [6972, 1], [6992, 10]], result: [6924, 1] },
+  { ingredients: [[7158, 20], [7160, 3], [6978, 3]], result: [7152, 1] },
+  { ingredients: [[6994, 100], [6978, 100], [6964, 100]], result: [6950, 1] },
+  { ingredients: [[6980, 100], [6998, 100], [7016, 100]], result: [6952, 1] },
+  { ingredients: [[6984, 75], [7018, 75], [6968, 75]], result: [6954, 1] }
+];
+var GTPS3_FISHING_LOOT = {
+  2914: [846, 344, 8964, 3e3, 3e3, 3034, 3034, 3038, 3038, 3028, 3012],
+  3012: [3e3, 3e3, 3030, 3030, 3038, 3038, 3036, 3036, 846, 444, 8966, 344, 3028, 3022, 3014, 3e3, 3e3],
+  3014: [3030, 3030, 3026, 3026, 3038, 3038, 3e3, 3e3, 3032, 3032, 344, 444, 846, 8966, 8964, 3016],
+  3016: [846, 3026, 3026, 3038, 3038, 3032, 3032, 3036, 3036, 444, 1522, 8256, 8964, 3184, 1542, 3018],
+  3018: [5636, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 3020],
+  3020: [5636, 1542, 3022, 1520, 1522, 3028, 3038, 3038, 3026, 3026, 3030, 3036, 3036, 3030, 7744, 3034],
+  5526: [3584, 8254, 5542, 5538, 5620, 5622, 5612, 5526, 5580, 3020, 11734],
+  5528: [5636, 3584, 5574, 8968, 5552, 5548, 5618, 5624, 5602, 5528, 5614, 8252, 11052, 5616, 3020]
+};
+var GTPS3_GEIGER_REWARDS = [
+  6416,
+  3196,
+  2206,
+  1500,
+  1498,
+  2806,
+  2804,
+  8270,
+  8272,
+  8274,
+  2244,
+  2246,
+  2242,
+  3792,
+  3306,
+  4676,
+  4678,
+  4680,
+  4682,
+  4652,
+  4650,
+  4648,
+  4646,
+  11186,
+  10086
+];
+function findCombinerRecipe(drops) {
+  if (drops.length !== 3) return null;
+  const dropMap = /* @__PURE__ */ new Map();
+  for (const d of drops) {
+    dropMap.set(d.itemId, (dropMap.get(d.itemId) || 0) + d.count);
+  }
+  for (const recipe of GTPS3_COMBINER_RECIPES) {
+    let matches = true;
+    for (const [ingId, reqCount] of recipe.ingredients) {
+      const avail = dropMap.get(ingId) || 0;
+      if (avail < reqCount) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches && recipe.ingredients.length === drops.length) {
+      return recipe;
+    }
+  }
+  return null;
+}
+
 // server/gamePacket/player_moving.ts
-function handlePlayerMoving(session, rawData, tank) {
+function handlePlayerMoving(session, rawData, tank, ctx) {
   const world = session.world;
-  if (!world || session.respawnUntil && Date.now() < session.respawnUntil) return;
+  if (!world || session.respawnUntil && Date.now() < session.respawnUntil || session.pullUntil && Date.now() < session.pullUntil) return;
   const nx = tank.x ?? session.x;
   const ny = tank.y ?? session.y;
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
@@ -34337,15 +36891,61 @@ function handlePlayerMoving(session, rawData, tank) {
     OnSetPos(session, session.x, session.y);
     return;
   }
+  const oldX = session.x, oldY = session.y;
   session.x = nx;
   session.y = ny;
-  session.facingLeft = ((tank.flags ?? 0) & TANK_FLAG_FACING_LEFT) !== 0;
+  if (session.brb && (nx !== oldX || ny !== oldY)) {
+    session.brb = false;
+    broadcastIconState(world, session, 0, true);
+  }
+  const flags = tank.flags ?? 0;
+  session.facingLeft = (flags & TANK_FLAG_FACING_LEFT) !== 0;
+  const now = Date.now();
+  const diedToHazard = ctx ? processMovementHazard(ctx, session, flags, oldX, oldY, now) : false;
+  if (!diedToHazard) {
+    tickSessionHazardRegen(session, now);
+  }
+  if (ctx && session.account.inventory.some((s) => s.itemId === 2204 && s.equipped)) {
+    const hasIrradiated = (session.account.playmods || []).some((m) => m.id === "irradiated" && m.expiresAt > now);
+    if (!hasIrradiated) {
+      if (!world.geigerTarget) {
+        world.geigerTarget = {
+          x: Math.floor(Math.random() * (world.width - 4) + 2) * 32,
+          y: Math.floor(Math.random() * (world.height - 10) + 2) * 32
+        };
+      }
+      if (now - (session.lastGeigerPingAt || 0) > 1500) {
+        session.lastGeigerPingAt = now;
+        const diff = Math.hypot(session.x - world.geigerTarget.x, session.y - world.geigerTarget.y) / 32;
+        if (diff <= 1) {
+          ctx.consumeInventoryItem(session, 2204, 1, true);
+          ctx.giveInventoryItem(session, 2286, 1, true);
+          const prizeId = GTPS3_GEIGER_REWARDS[Math.floor(Math.random() * GTPS3_GEIGER_REWARDS.length)];
+          ctx.giveInventoryItem(session, prizeId, 1, true);
+          if (!session.account.playmods) session.account.playmods = [];
+          session.account.playmods.push({ id: "irradiated", expiresAt: now + 30 * 60 * 1e3 });
+          ctx.savePlayersNow();
+          world.geigerTarget = {
+            x: Math.floor(Math.random() * (world.width - 4) + 2) * 32,
+            y: Math.floor(Math.random() * (world.height - 10) + 2) * 32
+          };
+          OnPlayPositioned(session, "audio/dialog_confirm.wav");
+          const prizeDef = ctx.itemsDb.get(prizeId);
+          const prizeName = prizeDef ? prizeDef.name : "Prize";
+          OnTalkBubble(session, session.netId, `\`2Found radiation! You got \`$${prizeName}\`\`!`, 0, true);
+          OnConsoleMessage(session, "You are aglow with radiation! (`$Irradiated`` mod added, `$30 mins`` left)");
+        } else {
+          OnPlayPositioned(session, "audio/geiger_click.wav");
+        }
+      }
+    }
+  }
   if (world.peers.size > 1) {
     const relay = Buffer.from(rawData);
     relay.writeInt32LE(session.netId, 4 + 4);
-    for (const other of world.peers) {
-      if (other !== session) {
-        other.peer.sendPacket(0, relay, false);
+    for (const other2 of world.peers) {
+      if (other2 !== session) {
+        other2.peer.sendPacket(0, relay, false);
       }
     }
   }
@@ -34353,6 +36953,68 @@ function handlePlayerMoving(session, rawData, tank) {
 
 // server/gamePacket/tile_change_req.ts
 var GEM_ITEM_ID2 = 112;
+var AREA_LOCK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 4994]);
+var WORLD_LOCK_TIER_IDS = /* @__PURE__ */ new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
+var WEATHER_BG_SPECIAL_IDS = /* @__PURE__ */ new Set([3694, 4892, 5e3, 5654, 5716, 6854]);
+var WEATHER_STUFF_SPECIAL_IDS = /* @__PURE__ */ new Set([3832, 5958, 6280]);
+var GROWMOJI_ITEMS = /* @__PURE__ */ new Set([10114, 8028, 7698, 10116, 12544, 12542]);
+var HAIR_DYE_ITEMS2 = /* @__PURE__ */ new Set([3822, 3824, 3826, 3828, 3830]);
+var EYE_ITEMS2 = /* @__PURE__ */ new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
+var FISHING_RODS = /* @__PURE__ */ new Set([3040, 3010, 2912, 3008, 3100, 5740, 6254, 6256, 6932, 10262, 6258]);
+var BAIT_ITEMS = /* @__PURE__ */ new Set([2914, 3012, 3014, 3016, 3018, 3020, 5526, 5528]);
+var PROVIDER_DEFINITIONS = {
+  1008: { name: "ATM Machine", dropId: 112, dropCount: 50, sfx: "audio/coin.wav", isGems: true },
+  5196: { name: "ATM 3000", dropId: 112, dropCount: 100, sfx: "audio/coin.wav", isGems: true },
+  866: { name: "Cow", dropId: 868, dropCount: 1, sfx: "audio/moo.wav" },
+  872: { name: "Chicken", dropId: 874, dropCount: 1, sfx: "audio/cluck.wav" },
+  1044: { name: "Buffalo", dropId: 868, dropCount: 1, sfx: "audio/moo.wav" },
+  3888: { name: "Sheep", dropId: 3890, dropCount: 1, sfx: "audio/bubble.wav" },
+  1632: { name: "Coffee Maker", dropId: 1634, dropCount: 1, sfx: "audio/bubble.wav" },
+  5116: { name: "Tea Set", dropId: 5114, dropCount: 1, sfx: "audio/bubble.wav" },
+  2798: { name: "Well", dropId: 822, dropCount: 1, sfx: "audio/splash.wav" },
+  3044: { name: "Tackle Box", dropId: 2914, dropCount: 1, sfx: "audio/bubble.wav" },
+  928: { name: "Science Station", dropId: 914, dropCount: 1, sfx: "audio/bubble.wav" },
+  4584: { name: "Science Station", dropId: 914, dropCount: 1, sfx: "audio/bubble.wav" },
+  6212: { name: "Surgical Tool Bag", dropId: 1258, dropCount: 1, sfx: "audio/bubble.wav" }
+};
+function finishFishing(ctx, session, world) {
+  if (!session.fishing) return;
+  const f = session.fishing;
+  session.fishing = null;
+  const lootTable = GTPS3_FISHING_LOOT[f.baitId] || [846, 344, 3e3];
+  const caughtId = lootTable[Math.floor(Math.random() * lootTable.length)];
+  const caughtDef = ctx.itemsDb.get(caughtId);
+  const caughtName = caughtDef ? stripGtColors(caughtDef.name) : "Fish";
+  const weight = Math.floor(Math.random() * 20) + 1;
+  ctx.giveInventoryItem(session, caughtId, 1, true);
+  broadcastPositionedSfx(world, session.netId, "audio/splash.wav");
+  const msg = `You caught a \`2${weight} lb. ${caughtName}!\`\``;
+  OnTalkBubble(session, session.netId, msg, 0, true);
+  OnConsoleMessage(session, msg);
+}
+function lockedMessage(ctx, world, tile, tx, ty, mode = "place", uid = 0) {
+  const customDenial = getBuildersLockDenial(world, uid, tile, tx, ty, mode);
+  if (customDenial) return customDenial;
+  let id = tile.extra?.kind === "lock" ? tile.extra.ownerUserId : 0;
+  if (!id && world.ownerUserId) id = world.ownerUserId;
+  if (!id && (tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0 && tile.parentIndex < world.tiles.length) {
+    const pt = world.tiles[tile.parentIndex];
+    if (pt?.extra?.kind === "lock") id = pt.extra.ownerUserId;
+  }
+  if (!id) {
+    for (let y = Math.max(0, ty - 10); y <= Math.min(world.height - 1, ty + 10) && !id; y++) {
+      for (let x = Math.max(0, tx - 10); x <= Math.min(world.width - 1, tx + 10); x++) {
+        const lock = world.tiles[y * world.width + x], r = getLockRadiusForId(lock.fg);
+        if (r > 0 && lock.extra?.kind === "lock" && Math.abs(x - tx) <= r && Math.abs(y - ty) <= r) {
+          id = lock.extra.ownerUserId;
+          break;
+        }
+      }
+    }
+  }
+  const name = (ctx.findAccountByUserId(id)?.name || "someone").replace(/[^A-Za-z0-9_]/g, "");
+  return "That area is owned by `w" + name + "``";
+}
 function handleTileActivateRequest(ctx, session, tank) {
   const world = session.world;
   if (!world) return;
@@ -34372,7 +37034,7 @@ function handleTileActivateRequest(ctx, session, tank) {
     } else if (extra?.kind === "door" && extra.destination) {
       OnPlayPositioned(session, "audio/door_open.wav");
       ctx.joinWorld(session, extra.destination);
-    } else if (canModifyWorldTile(session, world, tile)) {
+    } else if (canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
       openDoorSettingsDialog(session, tx, ty);
     } else {
       OnPlayPositioned(session, "audio/punch_locked.wav");
@@ -34390,9 +37052,9 @@ function handleTileActivateRequest(ctx, session, tank) {
     OnConsoleMessage(session, "`2Checkpoint saved!``");
     return;
   }
-  if (def?.isWeather && canModifyWorldTile(session, world, tile)) {
+  if (def?.isWeather && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
     OnPlayPositioned(session, "audio/switch.wav");
-    openWeatherPickerDialog(session, tx, ty);
+    openWeatherPickerDialog(session, tx, ty, ctx);
     return;
   }
   if (tile.extra?.kind === "sign" && tile.extra.label) {
@@ -34421,27 +37083,34 @@ function handleTileChangeRequest(ctx, session, tank) {
   const now = Date.now();
   if (itemId === 32) {
     if (tile.extra?.kind === "door") {
-      if (!canModifyWorldTile(session, world, tile)) {
-        OnTalkBubble(session, session.netId, "`4That area is locked!``", 0, true);
+      if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+        OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "wrench", session.account.userId), 0, true);
         return;
       }
       openDoorSettingsDialog(session, tx, ty);
       return;
     }
     if (tile.extra?.kind === "sign") {
-      if (!canModifyWorldTile(session, world, tile)) {
-        OnTalkBubble(session, session.netId, "`4That area is locked!``", 0, true);
+      if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+        OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "wrench", session.account.userId), 0, true);
         return;
       }
       openSignEditDialog(session, tx, ty);
       return;
     }
-    if (tile.fg && tile.extra?.kind === "lock" && tile.extra.ownerUserId === session.account.userId) {
-      openLockSettingsDialog(ctx, session, tx, ty);
+    if (tile.fg && tile.extra?.kind === "lock") {
+      const uid = session.account.userId;
+      if (tile.extra.ownerUserId === uid || tile.extra.adminIds.includes(uid) || session.account.rank === "developer") {
+        openLockSettingsDialog(ctx, session, tx, ty);
+        return;
+      }
+    }
+    if (tile.fg === 2072 && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      openXenoniteDialog(ctx, session, tx, ty);
       return;
     }
-    if (tile.fg && ctx.itemsDb.get(tile.fg)?.isWeather && canModifyWorldTile(session, world, tile)) {
-      openWeatherPickerDialog(session, tx, ty);
+    if (tile.fg && ctx.itemsDb.get(tile.fg)?.isWeather && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      openWeatherPickerDialog(session, tx, ty, ctx);
       return;
     }
     if (tile.fg && tile.extra?.kind === "seed") {
@@ -34460,11 +37129,193 @@ function handleTileChangeRequest(ctx, session, tank) {
         OnDialogRequest(session, dlg);
       }
     }
+    if (tile.fg === 2978 || tile.fg === 9268) {
+      if (canModifyWorldTile(session, world, tile, tx, ty)) {
+        openVendingOwnerDialog(ctx, session, world, tile, tx, ty);
+      } else {
+        openVendingBuyerDialog(ctx, session, world, tile, tx, ty);
+      }
+      return;
+    }
+    if (tile.fg === 6016) {
+      openGrowScanDialog(session, world);
+      return;
+    }
+    if (tile.fg === 5638 || tile.fg === 6948 || tile.fg === 6946) {
+      openSuckerDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (tile.fg === 3898 || tile.bg === 3898) {
+      session.lastWrenchX = tx;
+      session.lastWrenchY = ty;
+      const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wTelephone``", 3898).addTextbox("Dial a number to call somebody in Growtopia. Phone numbers have 5 digits, like 12345 (try it - you'd be crazy not to!). Most numbers are not in service!").addTextInput("buttonClicked", "Phone #", "", 5).addQuickExit().endDialog("3898", "Hang Up", "Dial");
+      OnDialogRequest(session, dlg);
+      return;
+    }
+    if (tile.fg === 9828 || tile.bg === 9828) {
+      session.lastWrenchX = tx;
+      session.lastWrenchY = ty;
+      openLockeDialog(ctx, session);
+      return;
+    }
+    if (tile.fg === 9528 || tile.bg === 9528) {
+      session.lastWrenchX = tx;
+      session.lastWrenchY = ty;
+      openSalesManUntradeableDialog(ctx, session);
+      return;
+    }
+    if (tile.fg && PROVIDER_DEFINITIONS[tile.fg]) {
+      const prov = PROVIDER_DEFINITIONS[tile.fg];
+      const lastHarvest = tile.extra?.lastProviderClaim || 0;
+      const cooldownMs = 6e4;
+      const ready = now - lastHarvest >= cooldownMs;
+      const remSec = Math.max(0, Math.ceil((cooldownMs - (now - lastHarvest)) / 1e3));
+      const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${prov.name}\`\``, tile.fg).addTextbox(ready ? "`2Ready to harvest! Punch to collect.``" : `Status: Recharging (\`2${remSec}s\`\` left)`).addQuickExit().endDialog("provider_info", "Close", "");
+      OnDialogRequest(session, dlg);
+      return;
+    }
     return;
   }
   if (itemId === 18) {
+    if (session.fishing) {
+      finishFishing(ctx, session, world);
+      return;
+    }
+    if (tile.fg === 926 || tile.fg && ctx.itemsDb.get(tile.fg)?.name.includes("Combiner") || tile.fg && ctx.itemsDb.get(tile.fg)?.name.includes("Laboratory")) {
+      const dropsOnTile = world.objects.filter((obj) => Math.floor(obj.x / 32) === tx && Math.floor(obj.y / 32) === ty && obj.count > 0);
+      if (dropsOnTile.length < 3) {
+        OnTalkBubble(session, session.netId, "I need 3 ingredients!", 0, true);
+        return;
+      }
+      if (dropsOnTile.length > 3) {
+        OnTalkBubble(session, session.netId, "It won't mix more than 3 items at once!", 0, true);
+        return;
+      }
+      const recipe = findCombinerRecipe(dropsOnTile);
+      if (recipe) {
+        for (const [ingId, reqCount] of recipe.ingredients) {
+          const drop = dropsOnTile.find((d) => d.itemId === ingId);
+          drop.count -= reqCount;
+          if (drop.count <= 0) {
+            world.objects = world.objects.filter((o) => o.uid !== drop.uid);
+            const rmPkt = makeItemModifyObjectPacket(drop.uid, 0, 0, drop.x, drop.y, 0);
+            for (const p of world.peers) p.peer.sendPacket(0, rmPkt, true);
+          } else {
+            const modPkt = makeItemModifyObjectPacket(drop.uid, drop.itemId, drop.count, drop.x, drop.y, drop.flags);
+            for (const p of world.peers) p.peer.sendPacket(0, modPkt, true);
+          }
+        }
+        spawnOrMergeWorldDrop(world, recipe.result[0], recipe.result[1], tx * 32 + 16, ty * 32 + 16, session.netId);
+        broadcastPositionedSfx(world, session.netId, "audio/success.wav");
+        const outDef = ctx.itemsDb.get(recipe.result[0]);
+        const outName = outDef ? stripGtColors(outDef.name) : "item";
+        OnTalkBubble(session, session.netId, `\`2Combined to create ${outName}!\`\``, 0, true);
+        return;
+      } else {
+        OnTalkBubble(session, session.netId, "These items won't combine into anything.", 0, true);
+        return;
+      }
+    }
+    if (tile.fg && ctx.itemsDb.get(tile.fg)?.isWeather && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      if (!tile.lastPunchWeatherMs || now - tile.lastPunchWeatherMs >= 1500) {
+        tile.lastPunchWeatherMs = now;
+        const targetWeather = ctx.itemsDb.getWeatherIdForBlock(tile.fg);
+        const wasActive = (tile.flags & TILE_FLAG_OPEN) !== 0 || world.weatherId === targetWeather;
+        if (wasActive) {
+          tile.flags &= ~TILE_FLAG_OPEN;
+          recomputeWorldWeather(world, ctx.itemsDb);
+        } else {
+          for (let i = 0; i < world.tiles.length; i++) {
+            const ot = world.tiles[i];
+            if (ot !== tile && ot.fg !== 0 && (ot.flags & TILE_FLAG_OPEN) !== 0 && ctx.itemsDb.get(ot.fg)?.isWeather) {
+              ot.flags &= ~TILE_FLAG_OPEN;
+              const ox = i % world.width;
+              const oy = Math.floor(i / world.width);
+              const clearedUpd = makeTileUpdatePacket(ox, oy, ot, now);
+              for (const p of world.peers) p.peer.sendPacket(0, clearedUpd, true);
+            }
+          }
+          tile.flags |= TILE_FLAG_OPEN;
+          world.weatherId = targetWeather;
+        }
+        ctx.dirty = true;
+        const upd = makeTileUpdatePacket(tx, ty, tile, now);
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+        broadcastSetCurrentWeather(world, world.weatherId);
+        broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
+      }
+    }
+    if (tile.fg === 5638 && tile.extra?.kind === "sucker" && tile.extra.itemId > 0 && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      const mDef = ctx.itemsDb.get(tile.extra.itemId);
+      if (!mDef || mDef.isSeed || mDef.isLock || mDef.isBackground) {
+        OnTalkBubble(session, session.netId, "Cannot activate the MAGPLANT 5000, the current item cannot be placed.", 0, true);
+        OnConsoleMessage(session, "Cannot activate the MAGPLANT 5000, the current item cannot be placed.");
+        return;
+      }
+      if (!tile.extra.magnetron) {
+        tile.extra.magnetron = true;
+        const hasRemote = session.account.inventory.some((s) => s.itemId === 5640 && s.count > 0);
+        if (!hasRemote) {
+          if (ctx.giveInventoryItem(session, 5640, 1, true) > 0) {
+            OnTalkBubble(session, session.netId, "You received a MAGPLANT 5000 Remote.", 0, true);
+            OnConsoleMessage(session, "You received a MAGPLANT 5000 Remote.");
+          }
+        }
+        session.magplantRemote = { x: tx, y: ty, itemId: tile.extra.itemId };
+        session.peer.sendPacket(
+          0,
+          makeVariantPacket([
+            "OnPlanterActivated",
+            { type: "i32", value: tile.extra.itemId },
+            { type: "i32", value: tx },
+            { type: "i32", value: ty }
+          ]),
+          true
+        );
+      } else {
+        tile.extra.magnetron = false;
+        const offPkt = makeVariantPacket([
+          "OnPlanterActivated",
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 }
+        ]);
+        for (const p of world.peers) {
+          if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
+            p.magplantRemote = null;
+            p.peer.sendPacket(0, offPkt, true);
+          }
+        }
+      }
+      ctx.dirty = true;
+      const upd = makeTileUpdatePacket(tx, ty, tile, now);
+      for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+      broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
+      return;
+    }
+    if (tile.fg && PROVIDER_DEFINITIONS[tile.fg] && canModifyWorldTile(session, world, tile, tx, ty)) {
+      const prov = PROVIDER_DEFINITIONS[tile.fg];
+      const lastHarvest = tile.extra?.lastProviderClaim || 0;
+      const cooldownMs = 6e4;
+      if (now - lastHarvest >= cooldownMs) {
+        tile.extra = { ...tile.extra || {}, kind: "provider", lastProviderClaim: now };
+        ctx.dirty = true;
+        if (prov.isGems) {
+          session.account.gems = (session.account.gems || 0) + prov.dropCount;
+          ctx.savePlayersNow();
+          OnSetBux(session);
+          broadcastPositionedSfx(world, session.netId, prov.sfx);
+          OnTalkBubble(session, session.netId, `\`2+${prov.dropCount} Gems collected from ${prov.name}!\`\``, 0, true);
+        } else {
+          spawnOrMergeWorldDrop(world, prov.dropId, prov.dropCount, tx * 32 + 16, ty * 32 + 16, session.netId);
+          broadcastPositionedSfx(world, session.netId, prov.sfx);
+          OnTalkBubble(session, session.netId, `\`2Harvested from ${prov.name}!\`\``, 0, true);
+        }
+        return;
+      }
+    }
     infectByPunch(ctx, session, tx, ty);
-    if (tile.fg === 6) {
+    if (tile.fg === 6 && session.account.rank !== "developer") {
       OnTalkBubble(session, session.netId, "(stand over and punch to use)", 0, true);
       return;
     }
@@ -34477,14 +37328,61 @@ function handleTileChangeRequest(ctx, session, tank) {
         return false;
       }
       const bDef = ctx.itemsDb.get(bId);
-      if (!bDef || bDef.isBedrock || bId === 6 || bId === 8) {
+      if (!bDef || (bDef.isBedrock || bId === 6 || bId === 8) && session.account.rank !== "developer") {
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, "It's too strong to break.", 0, true);
         return false;
       }
-      if (!canModifyWorldTile(session, world, bt)) {
+      if (session.account.rank !== "developer" && !canModifyWorldTile(session, world, bt, bx, by, "break")) {
         OnPlayPositioned(session, "audio/punch_locked.wav");
-        OnTalkBubble(session, session.netId, "`4That area is locked!``", 0, true);
+        OnTalkBubble(session, session.netId, lockedMessage(ctx, world, bt, bx, by, "break", session.account.userId), 0, true);
+        return false;
+      }
+      if (bDef.isLock || AREA_LOCK_IDS.has(bId) || WORLD_LOCK_TIER_IDS.has(bId)) {
+        const hasExistingStack = session.account.inventory.some((s) => s.itemId === bId && s.count > 0 && s.count < 200);
+        const usedSlots = session.account.inventory.filter((s) => s.count > 0).length;
+        if (!hasExistingStack && usedSlots >= session.account.backpackSize) {
+          OnPlayPositioned(session, "audio/punch_locked.wav");
+          OnTalkBubble(session, session.netId, "`4You don't have enough room in your backpack!``", 0, true);
+          OnConsoleMessage(session, "`4You don't have enough room in your backpack!``");
+          return false;
+        }
+      }
+      if (WORLD_LOCK_TIER_IDS.has(bId)) {
+        let hasMagplant = false;
+        let hasActiveStorage = false;
+        for (const t of world.tiles) {
+          if (t.fg === 5638) {
+            hasMagplant = true;
+            break;
+          }
+          if (t.extra) {
+            if (t.extra.kind === "sucker" && t.extra.count > 0) {
+              hasActiveStorage = true;
+              break;
+            }
+            if (t.extra.kind === "vending" && (t.extra.count > 0 || t.extra.wl > 0)) {
+              hasActiveStorage = true;
+              break;
+            }
+          }
+        }
+        if (hasMagplant || hasActiveStorage) {
+          const msg = hasMagplant ? "`4Remove the MAGPLANT 5000 before breaking this lock!``" : "`4You can't break this lock while there are active storage machines in the world!``";
+          OnPlayPositioned(session, "audio/punch_locked.wav");
+          OnTalkBubble(session, session.netId, msg, 0, true);
+          OnConsoleMessage(session, msg);
+          return false;
+        }
+      }
+      if ((bId === 2978 || bId === 9268) && bt.extra?.kind === "vending" && (bt.extra.count > 0 || bt.extra.wl > 0)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Empty the machine before smashing!", 0, true);
+        return false;
+      }
+      if ((bId === 5638 || bId === 6946 || bId === 6948) && bt.extra?.kind === "sucker" && bt.extra.count > 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, `Empty this ${stripGtColors(bDef.name)} before breaking!`, 0, true);
         return false;
       }
       if (bt.fg !== 0 && bt.extra?.kind === "seed") {
@@ -34524,8 +37422,12 @@ function handleTileChangeRequest(ctx, session, tank) {
         punchY: by
       });
       for (const p of world.peers) p.peer.sendPacket(0, dmgPkt, true);
-      if ((bt.damage ?? 0) >= Math.max(1, bDef.breakHits - (hasEnhancedDigging(session.account) ? 1 : 0))) {
-        finalizeTileBreak(ctx, session, world, bx, by, bt, bDef, bId);
+      const protectedTile = bDef.isBedrock || bId === 6 || bId === 8;
+      const baseHits = protectedTile ? bDef.breakHits > 1 ? Math.max(3, bDef.breakHits) : 42 : Math.max(1, bDef.breakHits - (hasEnhancedDigging(session.account) ? 1 : 0));
+      const xenoStrong = world.xenonite?.enabled ? world.xenonite.strongPunch : 0;
+      const hits = xenoStrong === 1 ? Math.max(1, baseHits - Math.floor(baseHits / 4)) : baseHits;
+      if ((bt.damage ?? 0) >= hits) {
+        finalizeTileBreak(ctx, session, world, bx, by, bt, bDef, bId, protectedTile);
       }
       return true;
     };
@@ -34538,6 +37440,56 @@ function handleTileChangeRequest(ctx, session, tank) {
     }
     return;
   }
+  if (itemId === 5640 && session.magplantRemote) {
+    const { x: mx, y: my, itemId: rItemId } = session.magplantRemote;
+    const magTile = world.tiles[my * world.width + mx];
+    if (magTile && magTile.extra && magTile.extra.kind === "sucker" && magTile.extra.itemId === rItemId && magTile.extra.count > 0) {
+      const remoteDef = ctx.itemsDb.get(rItemId);
+      if (remoteDef && !remoteDef.isSeed && !remoteDef.isLock && !remoteDef.isBackground && !tile.fg && canModifyWorldTile(session, world, tile, tx, ty, "place")) {
+        if (remoteDef.collisionType === 1 && Math.abs(session.x - tx * 32) < 18 && Math.abs(session.y - ty * 32) < 24) return;
+        tile.fg = rItemId;
+        tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+        tile.damage = 0;
+        magTile.extra.count -= 1;
+        ctx.dirty = true;
+        const placePkt2 = makeTileChangePacket(
+          session.netId,
+          tx,
+          ty,
+          rItemId,
+          session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
+        );
+        for (const p of world.peers) p.peer.sendPacket(0, placePkt2, true);
+        const updMag = makeTileUpdatePacket(mx, my, magTile, now);
+        for (const p of world.peers) {
+          p.peer.sendPacket(0, updMag, true);
+        }
+        return;
+      }
+    }
+  }
+  if (BAIT_ITEMS.has(itemId)) {
+    const isWater = tile.fg === 822 || def && def.name.toLowerCase().includes("water");
+    if (isWater) {
+      const hasRod = session.account.inventory.some((s) => s.equipped && FISHING_RODS.has(s.itemId));
+      if (!hasRod) {
+        OnTalkBubble(session, session.netId, "You'll need a fishing rod to fish!", 0, true);
+        OnConsoleMessage(session, "You'll need a fishing rod to fish!");
+        return;
+      }
+      ctx.consumeInventoryItem(session, itemId, 1, true);
+      session.fishing = {
+        baitId: itemId,
+        tx,
+        ty,
+        startedAt: now,
+        biteAt: now + 2e3 + Math.random() * 3e3
+      };
+      broadcastPositionedSfx(world, session.netId, "audio/splash.wav");
+      OnTalkBubble(session, session.netId, "You cast your line!", 0, true);
+      return;
+    }
+  }
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
@@ -34545,12 +37497,13 @@ function handleTileChangeRequest(ctx, session, tank) {
     toggleWearableItem(ctx, session, itemId);
     return;
   }
-  if (!canModifyWorldTile(session, world, tile)) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) {
     OnPlayPositioned(session, "audio/punch_locked.wav");
-    OnTalkBubble(session, session.netId, "`4That area is locked!``", 0, true);
+    OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "place", session.account.userId), 0, true);
     return;
   }
   let needsFullTileUpdate = false;
+  let lockedIndices = [];
   if (def.isBackground) {
     if (tile.bg !== 0) return;
     tile.bg = itemId;
@@ -34647,31 +37600,158 @@ function handleTileChangeRequest(ctx, session, tank) {
     tile.extra = { kind: "seed", plantedAtMs: now - bonusMs, fruitCount: rollFruitCount(), spliced: false };
     scheduleMaturitySync(itemId, originalGrowSec * (1 - discount));
   } else {
+    if (GROWMOJI_ITEMS.has(itemId)) {
+      ctx.consumeInventoryItem(session, itemId, 1, true);
+      OnEmoticonDataChanged(session, true);
+      return;
+    }
+    if (HAIR_DYE_ITEMS2.has(itemId) || EYE_ITEMS2.has(itemId)) {
+      const kind = HAIR_DYE_ITEMS2.has(itemId) ? "hair" : itemId >= 6760 ? "lenses" : "drops";
+      const pTileX = Math.floor(playerTileX);
+      const pTileY = Math.floor(playerTileY);
+      const pTile = world.tiles[pTileY * world.width + pTileX];
+      const hasFixture = kind === "hair" ? tile.fg === 230 || tile.fg === 6158 || pTile && (pTile.fg === 230 || pTile.fg === 6158) : tile.fg === 5468 || tile.fg === 7740 || pTile && (pTile.fg === 5468 || pTile.fg === 7740);
+      if (!hasFixture) {
+        OnTalkBubble(
+          session,
+          session.netId,
+          kind === "hair" ? "You'll make a huge mess if you do that outside the Bathtub!" : "You'd better do that in front of a bathroom mirror or you'll poke your eye out!",
+          0,
+          true
+        );
+        return;
+      }
+      const dyeSpec = {
+        3822: [65535, 16, -16, -16, false],
+        3824: [16711935, -16, 16, -16, false],
+        3826: [4278190335, -16, -16, 16, false],
+        3828: [255, -16, -16, -16, false],
+        3830: [4294967295, 32, 32, 32, true],
+        5458: [65535, 16, -16, -16, false],
+        5460: [16711935, -16, 16, -16, false],
+        5462: [4278190335, -16, -16, 16, false],
+        5464: [255, -16, -16, -16, false],
+        5466: [4294967295, 32, 32, 32, true],
+        6760: [65535, 32, -16, -16, false],
+        6762: [16711935, -16, 32, -16, false],
+        6764: [4278190335, -16, -16, 32, false],
+        6766: [255, -32, -32, -32, false],
+        6768: [4294967295, 32, 32, 32, true]
+      };
+      const spec = dyeSpec[itemId];
+      if (!spec) return;
+      const [targetColorRaw, baseDr, baseDg, baseDb, isCleaner] = spec;
+      const targetColor = targetColorRaw >>> 0;
+      const curRaw = kind === "hair" ? session.account.hairColor : kind === "drops" ? session.account.eyeColor : session.account.pupilColor;
+      const cur = (curRaw && curRaw !== 0 ? curRaw : 4294967295) >>> 0;
+      if (cur === targetColor) {
+        const alreadyMsg = kind === "hair" ? isCleaner ? "Your hair is already clean!" : "Your hair is already that color!" : kind === "drops" ? isCleaner ? "Your eyes are already clean!" : "Your eyes are already that color!" : isCleaner ? "Your lenses are already clean!" : "Your pupils are already that color!";
+        OnTalkBubble(session, session.netId, alreadyMsg, 0, true);
+        return;
+      }
+      let dr = baseDr;
+      let dg = baseDg;
+      let db = baseDb;
+      if (kind === "lenses" && !isCleaner && cur === 4294967295) {
+        dr *= 9;
+        dg *= 9;
+        db *= 9;
+      }
+      const a = cur & 255 || 255;
+      const r = Math.max(0, Math.min(255, (cur >>> 8 & 255) + dr));
+      const g = Math.max(0, Math.min(255, (cur >>> 16 & 255) + dg));
+      const b = Math.max(0, Math.min(255, (cur >>> 24 & 255) + db));
+      const nextColor = (b << 24 | g << 16 | r << 8 | a) >>> 0;
+      ctx.consumeInventoryItem(session, itemId, 1, true);
+      if (kind === "hair") {
+        session.account.hairColor = nextColor;
+        broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
+        const actPkt = makeVariantPacket(["OnAction", "/shower"], session.netId);
+        for (const p of world.peers) p.peer.sendPacket(0, actPkt, true);
+        OnTalkBubble(session, session.netId, isCleaner ? "Your hair got cleaner!" : "You dyed your hair!", 0, true);
+      } else if (kind === "drops") {
+        session.account.eyeColor = nextColor;
+        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+        OnTalkBubble(session, session.netId, isCleaner ? "Your eyes got cleaner!" : "You used eye drops!", 0, true);
+      } else {
+        session.account.pupilColor = nextColor === 4294967295 && isCleaner ? 0 : nextColor;
+        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+        OnTalkBubble(
+          session,
+          session.netId,
+          isCleaner ? "Your lenses got cleaner!" : "You put in some contact lenses!",
+          0,
+          true
+        );
+      }
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      ctx.sendCharacterState(session);
+      broadcastSetClothing(world, session, ctx.itemsDb, true);
+      return;
+    }
     if (tile.fg !== 0) return;
     if (def.collisionType === 1) {
       const px = tx * 32;
       const py = ty * 32;
       if (Math.abs(session.x - px) < 18 && Math.abs(session.y - py) < 24) return;
     }
+    const prevFlags = tile.flags;
+    const isLockItem = def.isLock || AREA_LOCK_IDS.has(itemId) || WORLD_LOCK_TIER_IDS.has(itemId);
+    if (itemId === 2072 && (world.xenonite || world.tiles.some((t) => t.fg === 2072))) {
+      OnPlayPositioned(session, "audio/punch_locked.wav");
+      OnTalkBubble(session, session.netId, "`4Only one Xenonite Crystal per world!``", 0, true);
+      return;
+    }
+    if (isLockItem) {
+      if (WORLD_LOCK_TIER_IDS.has(itemId)) {
+        if (world.ownerUserId !== 0) {
+          OnPlayPositioned(session, "audio/punch_locked.wav");
+          OnTalkBubble(session, session.netId, "`4Only one World Lock per world!``", 0, true);
+          return;
+        }
+        const hasOtherOwnerAreaLock = world.tiles.some(
+          (t) => AREA_LOCK_IDS.has(t.fg) && t.extra?.kind === "lock" && t.extra.ownerUserId !== 0 && t.extra.ownerUserId !== session.account.userId
+        );
+        if (hasOtherOwnerAreaLock) {
+          OnPlayPositioned(session, "audio/punch_locked.wav");
+          OnTalkBubble(
+            session,
+            session.netId,
+            "Your World Lock can't be placed in this world unless everyone else's locks are removed.",
+            0,
+            true
+          );
+          return;
+        }
+      } else if (AREA_LOCK_IDS.has(itemId) && (prevFlags & TILE_FLAG_LOCKED) !== 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "You can't place a lock over an area that's already locked!", 0, true);
+        return;
+      }
+    }
     tile.fg = itemId;
     tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
     tile.damage = 0;
     let extra;
-    if (def.isLock) {
-      const isWorldLockTier = itemId === 242 || itemId === 1796 || itemId === 7188 || itemId === 11550;
-      if (isWorldLockTier && world.ownerUserId !== 0) {
-        tile.fg = 0;
-        OnPlayPositioned(session, "audio/punch_locked.wav");
-        OnTalkBubble(session, session.netId, "`4Only one World Lock per world!``", 0, true);
-        return;
-      }
+    if (isLockItem) {
+      const isWorldLockTier = WORLD_LOCK_TIER_IDS.has(itemId);
       extra = { kind: "lock", settings: 0, ownerUserId: session.account.userId, adminIds: [] };
+      tile.extra = extra;
       needsFullTileUpdate = true;
       if (isWorldLockTier) {
         world.ownerUserId = session.account.userId;
         const placedMessage = `\`5[\`w${world.name}\`5 has been World Locked by \`2${session.account.name}\`5!]\`\``;
         broadcastConsoleMessage(world, placedMessage);
         broadcastTalkBubble(world, session.netId, placedMessage);
+        for (const player of world.peers) broadcastNameChanged(player);
+        const defaultWeather = getDefaultLockWeather(world);
+        if (defaultWeather !== 0) {
+          const nextWeather = recomputeWorldWeather(world, ctx.itemsDb);
+          broadcastSetCurrentWeather(world, nextWeather);
+        }
+      } else if (AREA_LOCK_IDS.has(itemId)) {
+        lockedIndices = applyAreaLock(world, tx, ty);
       }
       broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
     } else if (def.isDoor) {
@@ -34680,18 +37760,52 @@ function handleTileChangeRequest(ctx, session, tank) {
     } else if (def.isSign) {
       extra = { kind: "sign", label: "Edit me with Wrench!" };
       needsFullTileUpdate = true;
+    } else if (itemId === 2978 || itemId === 9268) {
+      extra = { kind: "vending", itemId: 0, price: 0, count: 0, wl: 0 };
+      needsFullTileUpdate = true;
+    } else if (itemId === 5638 || itemId === 6948 || itemId === 6946) {
+      extra = { kind: "sucker", itemId: 0, count: 0, enabled: true, magnetron: false };
+      needsFullTileUpdate = true;
+    } else if (PROVIDER_DEFINITIONS[itemId]) {
+      extra = { kind: "provider", plantedAtMs: now };
+      needsFullTileUpdate = true;
+    } else if (itemId === 2072) {
+      world.xenonite = {
+        enabled: true,
+        doubleJump: 0,
+        highJump: 0,
+        heatResist: 0,
+        strongPunch: 0,
+        longPunch: 0,
+        longBuild: 0,
+        speedy: 0,
+        powerups: 0
+      };
+      extra = { kind: "xenonite", powers: [0, 0, 0, 0] };
+      needsFullTileUpdate = true;
+      for (const p of world.peers) ctx.sendCharacterState(p);
+    } else if (itemId === 6016) {
+      extra = { kind: "growscan", mode: 0 };
+      needsFullTileUpdate = true;
+    } else if (itemId === 10058) {
+      extra = { kind: "weatherInf", cycleSec: 0, weatherIds: [] };
+      needsFullTileUpdate = true;
+    } else if (WEATHER_BG_SPECIAL_IDS.has(itemId)) {
+      extra = itemId === 3694 ? { kind: "weatherBg", itemId: 0, r: 0, g: 0, b: 0 } : { kind: "weatherBg", itemId: 14 };
+      needsFullTileUpdate = true;
+    } else if (WEATHER_STUFF_SPECIAL_IDS.has(itemId)) {
+      extra = { kind: "weatherStuff", itemId: itemId === 5958 ? 2 : 0, gravity: 50, spin: false, invert: false };
+      needsFullTileUpdate = true;
     }
     tile.extra = extra;
-    if (def.isWeather) {
-      const nextWeather = recomputeWorldWeather(world, ctx.itemsDb);
-      broadcastSetCurrentWeather(world, nextWeather);
-    }
   }
   ctx.dirty = true;
   ctx.consumeInventoryItem(session, itemId, 1, false);
   if (!def.isSeed) recordProgress(ctx, session, "blocks_placed");
-  if (def.isLock) recordProgress(ctx, session, "locks_used");
-  if ([226, 242, 1796, 7188, 11550].includes(itemId)) recordProgress(ctx, session, "world_locks_used");
+  if (def.isLock || AREA_LOCK_IDS.has(itemId) || WORLD_LOCK_TIER_IDS.has(itemId)) {
+    recordProgress(ctx, session, "locks_used");
+  }
+  if (itemId === 226 || WORLD_LOCK_TIER_IDS.has(itemId)) recordProgress(ctx, session, "world_locks_used");
   const placePkt = makeTileChangePacket(
     session.netId,
     tx,
@@ -34704,14 +37818,34 @@ function handleTileChangeRequest(ctx, session, tank) {
     const upd = makeTileUpdatePacket(tx, ty, tile, now);
     for (const p of world.peers) p.peer.sendPacket(0, upd, true);
   }
+  if (AREA_LOCK_IDS.has(itemId) && tile.extra?.kind === "lock") {
+    const lockPkt = makeSendLockPacket(session.account.userId, itemId, tx, ty, lockedIndices);
+    for (const p of world.peers) p.peer.sendPacket(0, lockPkt, true);
+    for (const idx of lockedIndices) {
+      const lx = idx % world.width;
+      const ly = Math.floor(idx / world.width);
+      const lPkt = makeTileUpdatePacket(lx, ly, world.tiles[idx], now);
+      for (const p of world.peers) p.peer.sendPacket(0, lPkt, true);
+    }
+  }
 }
 function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
   const te = tile.extra;
-  const fruitCnt = Math.max(1, Math.min(4, te?.fruitCount ?? 1));
+  let fruitCnt = Math.max(1, Math.min(4, te?.fruitCount ?? 1));
   const seedItemId = tile.fg;
   const blockId = seedItemId > 0 ? seedItemId - 1 : 0;
   const blockDef = blockId > 0 ? ctx.itemsDb.get(blockId) : void 0;
   const rarity = Math.max(1, blockDef?.rarity ?? def.rarity ?? 1);
+  const feetSlot = session.account.inventory.find((s) => s.equipped && (s.itemId === 1830 || s.itemId === 1966));
+  const backSlot = session.account.inventory.find((s) => s.equipped && s.itemId === 1746);
+  const fuelSlot = session.account.inventory.find((s) => s.itemId === 1746 && s.count > 0);
+  if (feetSlot && backSlot && fuelSlot && rarity < 100) {
+    if (Math.random() < 0.1) {
+      ctx.consumeInventoryItem(session, 1746, 1, true);
+      fruitCnt *= 2;
+      broadcastPositionedSfx(world, session.netId, "audio/success.wav");
+    }
+  }
   tile.fg = 0;
   tile.extra = void 0;
   tile.flags = 0;
@@ -34742,8 +37876,30 @@ function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
     spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, gemCount, tx * 32 + 10, ty * 32 + 8, -1);
   }
 }
-function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId) {
-  const brokenWasWorldLock = tile.extra?.kind === "lock" && (targetId === 242 || targetId === 1796 || targetId === 7188 || targetId === 11550);
+function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, suppressDrops = false) {
+  const brokenWasWorldLock = tile.extra?.kind === "lock" && WORLD_LOCK_TIER_IDS.has(targetId);
+  let unlockedIndices = [];
+  if (AREA_LOCK_IDS.has(targetId)) {
+    unlockedIndices = clearAreaLock(world, tx, ty);
+  }
+  if (targetId === 5638) {
+    const clearPkt = makeVariantPacket([
+      "OnPlanterActivated",
+      { type: "i32", value: 0 },
+      { type: "i32", value: 0 },
+      { type: "i32", value: 0 }
+    ]);
+    for (const p of world.peers) {
+      if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
+        p.magplantRemote = void 0;
+        p.peer.sendPacket(0, clearPkt, true);
+      }
+    }
+  }
+  if (targetId === 2072) {
+    world.xenonite = void 0;
+    for (const p of world.peers) ctx.sendCharacterState(p);
+  }
   if (tile.fg !== 0) {
     tile.fg = 0;
     tile.extra = void 0;
@@ -34754,13 +37910,32 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId) {
   tile.damage = 0;
   if (brokenWasWorldLock) {
     world.ownerUserId = 0;
+    for (const player of world.peers) broadcastNameChanged(player);
     broadcastConsoleMessage(world, `\`5World \`w${world.name}\`5 is no longer World Locked!\`\``);
   }
-  if (def.isWeather) {
+  if (def.isWeather || WEATHER_BY_ITEM_ID[targetId] !== void 0 || brokenWasWorldLock) {
     const nextWeather = recomputeWorldWeather(world, ctx.itemsDb);
     broadcastSetCurrentWeather(world, nextWeather);
   }
   ctx.dirty = true;
+  if (unlockedIndices.length > 0) {
+    const nowBreak = Date.now();
+    for (const idx of unlockedIndices) {
+      const ux = idx % world.width;
+      const uy = Math.floor(idx / world.width);
+      const uPkt = makeTileUpdatePacket(ux, uy, world.tiles[idx], nowBreak);
+      for (const p of world.peers) p.peer.sendPacket(0, uPkt, true);
+    }
+  }
+  if (suppressDrops) {
+    const broken = makeTileChangePacket(session.netId, tx, ty, 18);
+    const update = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) {
+      p.peer.sendPacket(0, broken, true);
+      p.peer.sendPacket(0, update, true);
+    }
+    return;
+  }
   if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
   if (!def.isSeed && activeMods(session.account).some((m) => m.extraBreakGemChance && Math.random() < m.extraBreakGemChance)) {
     spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, 1, tx * 32 + 12, ty * 32 + 10, -1);
@@ -34813,7 +37988,7 @@ function handleGamePacket(ctx, session, rawData, tank) {
       );
       return;
     case PACKET_STATE:
-      handlePlayerMoving(session, rawData, tank);
+      handlePlayerMoving(session, rawData, tank, ctx);
       return;
     case PACKET_TILE_CHANGE_REQUEST:
       handleTileChangeRequest(ctx, session, tank);
@@ -34827,6 +38002,22 @@ function handleGamePacket(ctx, session, rawData, tank) {
     case PACKET_ITEM_ACTIVATE_OBJECT_REQUEST:
       handleItemActivateObject(ctx, session, tank.value ?? 0);
       return;
+    case PACKET_SET_ICON_STATE: {
+      const world = session.world;
+      if (!world) return;
+      const state = tank.flags ?? tank.value ?? 0;
+      if (state === 0 && session.brb) return;
+      if (state !== 0 && state !== 2) session.brb = false;
+      session.iconState = state;
+      const relay = Buffer.from(rawData);
+      if (relay.length >= 12) relay.writeInt32LE(session.netId, 8);
+      session.lastIconStatePacket = state !== 0 ? Buffer.from(relay) : void 0;
+      for (const other2 of world.peers) {
+        if (other2 === session) continue;
+        other2.peer.sendPacket(0, relay, true);
+      }
+      return;
+    }
   }
 }
 
@@ -34894,13 +38085,17 @@ function onPeerDisconnect(ctx, peer) {
   peer.userData = null;
   ctx.leaveCurrentWorld(session, false);
   ctx.sessions.delete(session);
+  if (session.account.isGuest) {
+    session.account.rank = "player";
+    session.account.moderator = false;
+  }
   ctx.savePersistentState();
 }
 
 // server/client/data-package.ts
 var import_node_fs5 = __toESM(require("node:fs"));
 var import_node_path5 = __toESM(require("node:path"));
-var import_node_crypto2 = __toESM(require("node:crypto"));
+var import_node_crypto3 = __toESM(require("node:crypto"));
 var import_node_stream = require("node:stream");
 var import_promises = require("node:stream/promises");
 var DATA_SIZE = 341708818;
@@ -34934,9 +38129,9 @@ function createDataPackage(rootDir) {
     const key = manifestText + states.join("|");
     if (cached?.key === key) return cached.promise;
     const promise = (async () => {
-      const whole = import_node_crypto2.default.createHash("sha256");
+      const whole = import_node_crypto3.default.createHash("sha256");
       for (const p of parts) {
-        const hash = import_node_crypto2.default.createHash("sha256");
+        const hash = import_node_crypto3.default.createHash("sha256");
         for await (const chunk of import_node_fs5.default.createReadStream(p.file)) {
           whole.update(chunk);
           hash.update(chunk);
@@ -35003,9 +38198,73 @@ function createDataPackage(rootDir) {
   return { prepare, install };
 }
 
-// server/client/item-appearance.ts
-var import_node_crypto3 = __toESM(require("node:crypto"));
+// server/client/hide-ticker-setting.ts
 function read(b, p) {
+  let n = 0, s = 0;
+  while (p < b.length && s < 35) {
+    const x = b[p++];
+    n |= (x & 127) << s;
+    if (!(x & 128)) return [n >>> 0, p];
+    s += 7;
+  }
+  throw Error("Invalid WASM length");
+}
+function leb(n) {
+  const out = [];
+  do {
+    const x = n & 127;
+    n >>>= 7;
+    out.push(x | (n ? 128 : 0));
+  } while (n);
+  return Buffer.from(out);
+}
+function hideTickerSetting(input) {
+  const parts = [input.subarray(0, 8)];
+  let p = 8, found = 0;
+  const signature = Buffer.from("4190052005200041c8096a200041bc096a200b200c41b085181a410120002802d40f20002a02d80f410010302102", "hex");
+  while (p < input.length) {
+    const id = input[p++], [size, start] = read(input, p);
+    p = start + size;
+    if (p > input.length) throw Error("Truncated WASM");
+    let data = input.subarray(start, p);
+    if (id === 10) {
+      const [n, end] = read(data, 0);
+      const bodies = [data.subarray(0, end)];
+      let q = end;
+      for (let i = 0; i < n; i++) {
+        const [length, bodyStart] = read(data, q);
+        q = bodyStart + length;
+        let body = data.subarray(bodyStart, q);
+        const at = body.indexOf(signature);
+        if (at >= 0) {
+          if (body.indexOf(signature, at + 1) >= 0) throw Error("Duplicate ticker widget");
+          found++;
+          const cleanupStart = body.indexOf(Buffer.from("20002c00c7094100480440", "hex"), at);
+          const cleanupEnd = body.indexOf(Buffer.from("411810b602", "hex"), cleanupStart);
+          const finish = body.indexOf(Buffer.from("200041306a20024100410110b704", "hex"), cleanupEnd);
+          if (cleanupStart < 0 || cleanupEnd < 0 || finish < 0 || finish - at > 900) throw Error("Ticker construction tail changed");
+          body = Buffer.concat([body.subarray(0, at), body.subarray(cleanupStart, cleanupEnd), body.subarray(finish + 14)]);
+          const advance = Buffer.from("2000200c200d20002a023c9220002a02349392220c3802dc0f", "hex");
+          const y = body.indexOf(advance, at);
+          if (y < 0 || y - at > 150) throw Error("Ticker row advancement changed");
+          body = Buffer.concat([body.subarray(0, y), Buffer.from("2000200c3802dc0f", "hex"), body.subarray(y + advance.length)]);
+        }
+        bodies.push(leb(body.length), body);
+      }
+      if (q !== data.length) throw Error("Unexpected WASM code data");
+      data = Buffer.concat(bodies);
+    }
+    parts.push(Buffer.from([id]), leb(data.length), data);
+  }
+  if (found !== 1) throw Error("Ticker setting not found");
+  const output = Buffer.concat(parts);
+  if (!WebAssembly.validate(output)) throw Error("Ticker setting patch invalid");
+  return output;
+}
+
+// server/client/item-appearance.ts
+var import_node_crypto4 = __toESM(require("node:crypto"));
+function read2(b, p) {
   let n = 0, s = 0;
   while (p < b.length && s < 35) {
     const v = b[p++];
@@ -35015,7 +38274,7 @@ function read(b, p) {
   }
   throw Error("Invalid WASM length");
 }
-function leb(n) {
+function leb2(n) {
   const a = [];
   do {
     const v = n & 127;
@@ -35028,23 +38287,23 @@ function patchItemAppearance(input) {
   const parts = [input.subarray(0, 8)];
   let p = 8, patched = false, neckPatched = false;
   while (p < input.length) {
-    const id = input[p++], [len, start] = read(input, p);
+    const id = input[p++], [len, start] = read2(input, p);
     p = start + len;
     let section = input.subarray(start, p);
     if (id === 6) {
-      const [count, end] = read(section, 0);
+      const [count, end] = read2(section, 0);
       if (count !== 12) throw Error("Unexpected client globals");
-      section = Buffer.concat([leb(count + 1), section.subarray(end), Buffer.from("7f0141000b", "hex")]);
+      section = Buffer.concat([leb2(count + 1), section.subarray(end), Buffer.from("7f0141000b", "hex")]);
     }
     if (id === 10) {
-      const [count, header] = read(section, 0), bodies = [section.subarray(0, header)];
+      const [count, header] = read2(section, 0), bodies = [section.subarray(0, header)];
       let q = header;
       for (let i = 0; i < count; i++) {
-        const [size, a] = read(section, q);
+        const [size, a] = read2(section, q);
         q = a + size;
         let body = section.subarray(a, q);
         if (i + 308 === 781) {
-          if (import_node_crypto3.default.createHash("sha256").update(body).digest("hex") !== "1375c6252da382d3b485c4f47c7e1a6aadadb9a6f936fb932c85993b0f1b03c1") throw Error("Face renderer signature changed");
+          if (import_node_crypto4.default.createHash("sha256").update(body).digest("hex") !== "1375c6252da382d3b485c4f47c7e1a6aadadb9a6f936fb932c85993b0f1b03c1") throw Error("Face renderer signature changed");
           const anchor = Buffer.from("200b2d0024220641176b", "hex");
           const op = body.indexOf(anchor);
           if (op < 0 || body.indexOf(anchor, op + 1) >= 0) throw Error("Item kind lookup signature changed");
@@ -35068,7 +38327,7 @@ function patchItemAppearance(input) {
           patched = true;
         }
         if (i + 308 === 1940) {
-          if (import_node_crypto3.default.createHash("sha256").update(body).digest("hex") !== "fd614dcda2e71282a2dce521abb59d94ebc4bf44f5945eb97754d69e2afc8bd6") throw Error("Neck renderer signature changed");
+          if (import_node_crypto4.default.createHash("sha256").update(body).digest("hex") !== "fd614dcda2e71282a2dce521abb59d94ebc4bf44f5945eb97754d69e2afc8bd6") throw Error("Neck renderer signature changed");
           const table = Buffer.from("220641046b0e040001010001", "hex");
           const tableAt = body.indexOf(table);
           if (tableAt < 0 || body.indexOf(table, tableAt + 1) >= 0) throw Error("Neck animation dispatch signature changed");
@@ -35081,11 +38340,11 @@ function patchItemAppearance(input) {
           body = Buffer.concat([body.subarray(0, at), offset, body.subarray(at)]);
           neckPatched = true;
         }
-        bodies.push(leb(body.length), body);
+        bodies.push(leb2(body.length), body);
       }
       section = Buffer.concat(bodies);
     }
-    parts.push(Buffer.from([id]), leb(section.length), section);
+    parts.push(Buffer.from([id]), leb2(section.length), section);
   }
   if (!patched || !neckPatched) throw Error("Appearance renderer not found");
   const result = Buffer.concat(parts);
@@ -35095,7 +38354,7 @@ function patchItemAppearance(input) {
 
 // server/client/portrait-exports.ts
 var PORTRAIT_EXPORTS = { portraitDraw: 588, portraitResources: 835, portraitApply: 1514, portraitDestroy: 549 };
-function leb2(n) {
+function leb3(n) {
   const out = [];
   do {
     const b = n & 127;
@@ -35104,7 +38363,7 @@ function leb2(n) {
   } while (n);
   return Buffer.from(out);
 }
-function read2(b, p) {
+function read3(b, p) {
   let n = 0, s = 0;
   while (p < b.length && s < 35) {
     const x = b[p++];
@@ -35118,17 +38377,17 @@ function extendChatPortraitExports(input) {
   const parts = [input.subarray(0, 8)];
   let p = 8, found = false;
   while (p < input.length) {
-    const id = input[p++], [size, start] = read2(input, p);
+    const id = input[p++], [size, start] = read3(input, p);
     p = start + size;
     if (p > input.length) throw new Error("Truncated WASM section");
     let body = input.subarray(start, p);
     if (id === 7) {
       found = true;
-      const [count, end] = read2(body, 0);
-      const extra = Object.entries(PORTRAIT_EXPORTS).map(([name, index]) => Buffer.concat([leb2(Buffer.byteLength(name)), Buffer.from(name), Buffer.from([0]), leb2(index)]));
-      body = Buffer.concat([leb2(count + extra.length), body.subarray(end), ...extra]);
+      const [count, end] = read3(body, 0);
+      const extra = Object.entries(PORTRAIT_EXPORTS).map(([name, index]) => Buffer.concat([leb3(Buffer.byteLength(name)), Buffer.from(name), Buffer.from([0]), leb3(index)]));
+      body = Buffer.concat([leb3(count + extra.length), body.subarray(end), ...extra]);
     }
-    parts.push(Buffer.from([id]), leb2(body.length), body);
+    parts.push(Buffer.from([id]), leb3(body.length), body);
   }
   if (!found) throw new Error("Missing WASM exports");
   const result = Buffer.concat(parts);
@@ -35137,10 +38396,10 @@ function extendChatPortraitExports(input) {
 }
 
 // server/client/patch-client.ts
-var import_node_crypto4 = __toESM(require("node:crypto"));
+var import_node_crypto5 = __toESM(require("node:crypto"));
 var CLIENT_SHA256 = "9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
 function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName = "MagnoliaPS") {
-  if (import_node_crypto4.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
+  if (import_node_crypto5.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
   const output = Buffer.from(input);
   if (hideWarning) {
     const signature = Buffer.from("418e9202410010950e", "hex"), at2 = output.indexOf(signature);
@@ -35156,6 +38415,14 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
   if (at < 0 || output.indexOf(original, at + 1) !== -1 || label.length > original.length || !/^[\x20-\x7e]+$/.test(autofillLabel)) throw new Error("Unsupported Autofill label or client signature");
   output.fill(32, at, at + original.length);
   label.copy(output, at);
+  const tickerRead = Buffer.from("41b085182d0000", "hex");
+  let tickerOffset = 0, tickerCount = 0;
+  while ((tickerOffset = output.indexOf(tickerRead, tickerOffset)) !== -1) {
+    output.set([26, 65, 1], tickerOffset + 4);
+    tickerOffset += tickerRead.length;
+    tickerCount++;
+  }
+  if (tickerCount !== 3) throw new Error("Native ticker signature changed");
   const identity = [
     ["creativeps.eu", "magnolia.test"],
     ["Creative Growtopia", serverName.slice(0, 18).padEnd(18, " ")],
@@ -35177,13 +38444,37 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     }
     if (!count) throw new Error(`Native branding signature not found: ${from}`);
   }
+  const punchAutoAimPatches = [
+    [
+      "200220252023430000003f9443000000429222248c202420031b92380200",
+      "200220252023430000003f9492430000004222248c202420031b92380200"
+    ],
+    [
+      "200220252023430000003f9443000080429222248c202420031b92380200",
+      "200220252023430000003f9492430000804222248c202420031b92380200"
+    ],
+    [
+      "41d78b084100109b05",
+      "010101010101010101"
+    ]
+  ];
+  for (const [fromHex, toHex] of punchAutoAimPatches) {
+    const oldBytes = Buffer.from(fromHex, "hex");
+    const newBytes = Buffer.from(toHex, "hex");
+    const offset = output.indexOf(oldBytes);
+    if (offset === -1) throw new Error(`Punch auto-aim signature not found: ${fromHex}`);
+    if (output.indexOf(oldBytes, offset + oldBytes.length) !== -1) {
+      throw new Error(`Multiple matches for punch auto-aim signature: ${fromHex}`);
+    }
+    newBytes.copy(output, offset);
+  }
   if (!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
-  return extendChatPortraitExports(patchItemAppearance(output));
+  return extendChatPortraitExports(patchItemAppearance(hideTickerSetting(output)));
 }
 
 // server/https/routes.ts
 var import_node_fs6 = __toESM(require("node:fs"));
-var import_node_crypto5 = __toESM(require("node:crypto"));
+var import_node_crypto6 = __toESM(require("node:crypto"));
 var import_node_path6 = __toESM(require("node:path"));
 var import_express = __toESM(require_express2());
 function resolveSafeSubpath(baseDir, relPosixPath) {
@@ -35217,7 +38508,10 @@ function createHttpApp(ctx, rootDir, port) {
   });
   app.get("/server-config.js", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    res.type("application/javascript").send("globalThis.SERVER_CONFIG=" + JSON.stringify(SERVER_CONFIG).replace(/</g, "\\u003c") + ";");
+    const itemsHash = ctx.itemsDb.itemsDatHash >>> 0;
+    res.type("application/javascript").send(
+      "globalThis.SERVER_CONFIG=" + JSON.stringify(SERVER_CONFIG).replace(/</g, "\\u003c") + ";globalThis.SERVER_ITEMS_HASH=" + itemsHash + ";"
+    );
   });
   app.get("/THIRD_PARTY_NOTICES.md", (_req, res) => res.sendFile(import_node_path6.default.join(rootDir, "THIRD_PARTY_NOTICES.md")));
   const dataPackage = createDataPackage(rootDir);
@@ -35229,7 +38523,7 @@ function createHttpApp(ctx, rootDir, port) {
     const loader = import_node_path6.default.join(publicDir, "MagnoliaClient-1.50.js");
     if (!import_node_fs6.default.existsSync(loader)) issues.push("File public/MagnoliaClient-1.50.js tidak ada. Ekstrak seluruh patch ke root repository.");
     if (!import_node_fs6.default.existsSync(wasm)) issues.push("File data/client/upstream.wasm tidak ada.");
-    else if (import_node_crypto5.default.createHash("sha256").update(import_node_fs6.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
+    else if (import_node_crypto6.default.createHash("sha256").update(import_node_fs6.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
     try {
       await dataPackage.prepare();
     } catch (error) {
@@ -35883,9 +39177,19 @@ async function main() {
       const buf = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
       if (!isBinary) {
         const wasBackground = peer.activity.background;
-        if (peer.activity.presence(buf) && wasBackground && !peer.activity.background) {
+        if (peer.activity.presence(buf)) {
           const session = peer.userData;
-          if (session?.world) OnSetPos(session, session.x, session.y);
+          if (session?.world) {
+            if (!wasBackground && peer.activity.background) {
+              session.brb = true;
+              broadcastIconState(session.world, session, 2, true);
+            } else if (wasBackground && !peer.activity.background) {
+              if (session.brb) {
+                session.brb = false;
+                broadcastIconState(session.world, session, 0, true);
+              }
+            }
+          }
         }
         return;
       }

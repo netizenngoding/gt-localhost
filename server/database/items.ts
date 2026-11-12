@@ -47,33 +47,46 @@ export function protonHash(buf: Buffer): number {
 
 const SECRET_KEY = "PBG892FXX982ABC*";
 
-// Exact Growtopia client weather IDs corresponding to Weather Machine items
-const WEATHER_BY_ITEM_ID: Record<number, number> = {
-  932: 0,    // Weather Machine - Sunny
-  934: 2,    // Weather Machine - Night
-  946: 3,    // Weather Machine - Arid
-  984: 4,    // Weather Machine - Rainy City
-  1210: 8,   // Weather Machine - Spooky
-  1364: 11,  // Weather Machine - Snowy
-  1490: 15,  // Weather Machine - Nothingness
-  1750: 17,  // Weather Machine - Warp Speed
-  2046: 18,  // Weather Machine - Comet
-  2284: 20,  // Weather Machine - Party
-  2744: 22,  // Weather Machine - Pineapples
-  3252: 28,  // Weather Machine - Snowy Night
-  3446: 29,  // Weather Machine - Spring
-  3534: 30,  // Weather Machine - Howling Sky
-  3694: 31,  // Weather Machine - Heatwave
-  3832: 34,  // Weather Machine - Stuff
-  4242: 36,  // Weather Machine - Pagoda
-  4486: 37,  // Weather Machine - Monochrome
-  4776: 38,  // Weather Machine - Treasure
-  5000: 42,  // Weather Machine - Digital Rain
-  5112: 44,  // Weather Machine - Frozen Cliffs
-  5654: 47,  // Weather Machine - Starry Night
-  5716: 48,  // Weather Machine -Mars
-  6854: 51,  // Weather Machine - Undersea
-  10058: 41, // Infinity Weather Machine
+// Exact Growtopia client weather IDs corresponding to Weather Machine items (matches GTPS3 World.h + WASM #960)
+export const WEATHER_BY_ITEM_ID: Record<number, number> = {
+  932: 4,     // Weather Machine - Sunny
+  934: 2,     // Weather Machine - Night
+  946: 3,     // Weather Machine - Arid
+  984: 5,     // Weather Machine - Rainy City
+  1210: 8,    // Weather Machine - Spooky
+  1490: 10,   // Weather Machine - Nothingness
+  1364: 11,   // Weather Machine - Snowy
+  1750: 15,   // Weather Machine - Warp Speed
+  2046: 17,   // Weather Machine - Comet
+  2284: 18,   // Weather Machine - Party
+  2744: 19,   // Weather Machine - Pineapples
+  3252: 20,   // Weather Machine - Snowy Night
+  3446: 21,   // Weather Machine - Spring
+  3534: 22,   // Weather Machine - Howling Sky
+  3694: 28,   // Weather Machine - Heatwave
+  3832: 29,   // Weather Machine - Stuff
+  4242: 30,   // Weather Machine - Pagoda
+  4486: 31,   // Weather Machine - Apocalypse
+  4776: 32,   // Weather Machine - Jungle
+  4892: 33,   // Weather Machine - Balloon Warz
+  5000: 34,   // Weather Machine - Background
+  5112: 35,   // Weather Machine - Autumn
+  5654: 36,   // Weather Machine - Valentine's
+  5716: 37,   // Weather Machine - St. Paddy's Day
+  5958: 38,   // Epoch Machine
+  6854: 42,   // Weather Machine - Digital Rain
+  7644: 44,   // Weather Machine - Frozen Cliffs
+  8896: 47,   // Weather Machine - Meteor Shower
+  8836: 48,   // Weather Machine - Stargazing
+  10058: 41,  // Infinity Weather Machine
+  10286: 51,  // Weather Machine - Celebrity Hills
+  11880: 59,  // Weather Machine - Plaza
+  12054: 60,  // Weather Machine - Nebula
+  12056: 61,  // Weather Machine - Protostar Landing
+  12408: 64,  // Weather Machine - Dark Mountains
+  12844: 65,  // Weather Machine - Mt. Growmore
+  13004: 66,  // Weather Machine - Crack in Reality
+  13070: 68,  // Weather Machine - Nian's Mountains
 };
 
 export class ItemDatabase {
@@ -188,7 +201,7 @@ export class ItemDatabase {
       const isBouncy = actionType === 7 || actionType === 24 || actionType === 108;
       const isCheckpoint = actionType === 27;
       const isPlatform = actionType === 14 || collisionType === 2;
-      const isBedrock = id === 8 || id === 6 || ((flags & 0x0400) !== 0 && breakHitsRaw === 0);
+      const isBedrock = id === 8 || id === 6 || ((flags & 0x0400) !== 0 && id !== 12258);
 
       const def: ItemDef = {
         id,
@@ -253,8 +266,8 @@ export class ItemDatabase {
     }
 
     if (pos !== itemsDatBuf.length) throw new Error("Unexpected items.dat trailing data");
-    this.rawItemsDat = Buffer.concat(recordChunks);
-    this.itemsDatHash = protonHash(this.rawItemsDat);
+    this.rawItemsDat = itemsDatBuf;
+    this.itemsDatHash = protonHash(itemsDatBuf);
 
     // Populate canonical Growtopia seed splicing recipes resolved by exact item name
     // (items.dat v18 zeroes client-side ing1/ing2 to prevent recipe scraping).
@@ -486,19 +499,19 @@ export class ItemDatabase {
     const def = this.items.get(itemId);
     if (!def) return 0;
     const nm = def.name.toLowerCase();
-    if (nm.includes("night") && nm.includes("snow")) return 28;
+    if (nm.includes("night") && nm.includes("snow")) return 20;
     if (nm.includes("night")) return 2;
     if (nm.includes("arid") || nm.includes("desert")) return 3;
-    if (nm.includes("rain")) return 4;
+    if (nm.includes("rain")) return 5;
     if (nm.includes("spooky") || nm.includes("halloween")) return 8;
+    if (nm.includes("nothing") || nm.includes("void")) return 10;
     if (nm.includes("snow") || nm.includes("winter")) return 11;
-    if (nm.includes("nothing") || nm.includes("void")) return 15;
-    if (nm.includes("warp") || nm.includes("space")) return 17;
-    if (nm.includes("comet") || nm.includes("meteor")) return 18;
-    if (nm.includes("party")) return 20;
-    if (nm.includes("pineapple")) return 22;
-    if (nm.includes("spring") || nm.includes("blossom")) return 29;
-    if (nm.includes("stuff")) return 34;
+    if (nm.includes("warp") || nm.includes("space")) return 15;
+    if (nm.includes("comet") || nm.includes("meteor")) return 17;
+    if (nm.includes("party")) return 18;
+    if (nm.includes("pineapple")) return 19;
+    if (nm.includes("spring") || nm.includes("blossom")) return 21;
+    if (nm.includes("stuff")) return 29;
     if (nm.includes("infinity")) return 41;
     return 4;
   }

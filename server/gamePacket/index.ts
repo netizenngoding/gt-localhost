@@ -4,6 +4,7 @@ import {
   PACKET_ITEM_ACTIVATE_REQUEST,
   PACKET_PING_REPLY,
   PACKET_PING_REQUEST,
+  PACKET_SET_ICON_STATE,
   PACKET_STATE,
   PACKET_TILE_ACTIVATE_REQUEST,
   PACKET_TILE_CHANGE_REQUEST,
@@ -40,7 +41,7 @@ export function handleGamePacket(
       return;
 
     case PACKET_STATE:
-      handlePlayerMoving(session, rawData, tank);
+      handlePlayerMoving(session, rawData, tank, ctx);
       return;
 
     case PACKET_TILE_CHANGE_REQUEST:
@@ -58,5 +59,21 @@ export function handleGamePacket(
     case PACKET_ITEM_ACTIVATE_OBJECT_REQUEST:
       handleItemActivateObject(ctx, session, tank.value ?? 0);
       return;
+    case PACKET_SET_ICON_STATE: {
+      const world = session.world;
+      if (!world) return;
+      const state = tank.flags ?? tank.value ?? 0;
+      if (state === 0 && session.brb) return;
+      if (state !== 0 && state !== 2) session.brb = false;
+      session.iconState = state;
+      const relay = Buffer.from(rawData);
+      if (relay.length >= 12) relay.writeInt32LE(session.netId, 8);
+      session.lastIconStatePacket = state !== 0 ? Buffer.from(relay) : undefined;
+      for (const other of world.peers) {
+        if (other === session) continue;
+        other.peer.sendPacket(0, relay, true);
+      }
+      return;
+    }
   }
 }

@@ -3,7 +3,7 @@
 (function (global) {
   'use strict';
   // Public commands only. Staff-only commands must not be suggested to guests.
-  const catalog=[['help','Daftar perintah'],['level','Level dan XP'],['achievements','Pencapaian'],['hidestatus','Tampilkan/sembunyikan status'],['find','Cari item'],['growid','Daftar akun'],['warp','Pindah world'],['worlds','Daftar world'],['who','Pemain di world'],['me','Kirim aksi'],['middle','Emote'],['msg','Pesan pemain'],['sb','Siaran'],['time','Waktu'],['skin','Warna kulit'],['flag','Bendera'],['rank','Rank'],['mods','Staff online'],['news','Gazette'],['door','Pintu'],['weather','Cuaca'],['convert','Konversi'],['wave','Melambaikan tangan'],['dance','Menari'],['love','Cinta'],['sleep','Tidur'],['facepalm','Facepalm'],['smh','Geleng kepala'],['yes','Ya'],['no','Tidak'],['omg','Terkejut'],['shrug','Angkat bahu'],['fold','Lipat tangan'],['dab','Dab'],['sassy','Gaya'],['dance2','Menari'],['march','Berbaris'],['grumpy','Kesal'],['shy','Malu']];
+  const catalog=[['help','Daftar perintah'],['level','Level dan XP'],['achievements','Pencapaian'],['hidestatus','Tampilkan/sembunyikan status'],['find','Cari item'],['growid','Daftar akun'],['warp','Pindah world'],['worlds','Daftar world'],['who','Pemain di world'],['me','Kirim aksi'],['middle','Emote'],['msg','Pesan pemain'],['trade','Tukar item'],['sb','Siaran'],['time','Waktu'],['skin','Warna kulit'],['flag','Bendera'],['rank','Rank'],['mods','Staff online'],['news','Gazette'],['door','Pintu'],['weather','Cuaca'],['convert','Konversi'],['wave','Melambaikan tangan'],['dance','Menari'],['love','Cinta'],['sleep','Tidur'],['facepalm','Facepalm'],['smh','Geleng kepala'],['yes','Ya'],['no','Tidak'],['omg','Terkejut'],['shrug','Angkat bahu'],['fold','Lipat tangan'],['dab','Dab'],['sassy','Gaya'],['dance2','Menari'],['march','Berbaris'],['grumpy','Kesal'],['shy','Malu']];
   const pref='magnolia_native_autofill_v1';
   function enabled(){try{return global.localStorage.getItem(pref)!=='0'}catch(_){return true}}
   function setEnabled(value){try{global.localStorage.setItem(pref,value?'1':'0')}catch(_){}if(!value)clear()}
@@ -26,7 +26,7 @@
     const h=global.GameSDK.screenSize.height, step=Math.max(20,h*0.031), y0=parent.size.height+4;
     const width=Math.min(275,global.GameSDK.screenSize.width*.48), visible=choices.slice(windowStart,windowStart+3);
     const panel=parent.addOverlayBg({name:'mag_native_panel',file:'interface/autofill_panel.rttex',x:5,y:y0,width:width,height:step*(visible.length+1)+5});rows.push(panel);
-    const title=parent.addLabel({name:'mag_native_autofill_title',text:'`wAutofill   `oTab: pilih',x:14,y:y0+4,linesPerScreenY:48});rows.push(title);
+    const title=parent.addLabel({name:'mag_native_autofill_title',text:'`wAutofill',x:14,y:y0+4,linesPerScreenY:48});rows.push(title);
     highlightBase=y0+step; highlightStep=step;
     highlight=parent.addOverlayBg({name:'mag_native_selection',file:'interface/autofill_selected.rttex',x:9,y:highlightBase+step*(selection-windowStart),width:width-8,height:step});rows.push(highlight);
     visible.forEach((c,i)=>{

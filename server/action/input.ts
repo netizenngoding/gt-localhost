@@ -2,7 +2,7 @@ import { makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
 import { displayName } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { broadcastConsoleMessage, broadcastTalkBubble, chatPortrait } from "../onVariant";
+import { broadcastConsoleMessage, broadcastIconState, broadcastTalkBubble, chatPortrait } from "../onVariant";
 import { sanitizeChatText } from "../tools/string";
 import { dispatchCommand } from "../commands";
 import { activeMods } from "../playmods/model";
@@ -40,6 +40,10 @@ export function handleInput(
 
   const clean = sanitizeChatText(trimmed, 120);
   if (!clean) return;
+  if (session.brb || session.iconState === 1) {
+    session.brb = false;
+    broadcastIconState(world, session, 0, true);
+  }
   // GTPS3 Source.cpp: 1/4 chance of a zombie prefix and green chat.
   const infected=activeMods(session.account).some(m=>m.id==='gtps3-infected');
   const msg=infected ? `\`2${Math.random()<0.25?'Brraaiinnss...':''}${clean}\`\`` : clean;

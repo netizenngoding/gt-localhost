@@ -36,6 +36,78 @@
       },"vi");
       module.HEAPU8[369789]=0; module.HEAPU8[393905]=0;
       module.HEAPU8[393900]=0;
+      if(config.enableDeveloperMenu===false) {
+        module.HEAPU8[386924]=0;
+        if(module.wasmTable && typeof module.wasmTable.get==="function") {
+          const devKey={fn:null};
+          devKey.fn=module.hookWasmTable(1110,(a,b,c)=>{
+            const r=devKey.fn(a,b,c);
+            module.HEAPU8[386924]=0;
+            return r;
+          },"iiii");
+          const pauseSel={fn:null};
+          pauseSel.fn=module.hookWasmTable(2035,vlist=>{
+            const r=pauseSel.fn(vlist);
+            module.HEAPU8[386924]=0;
+            return r;
+          },"vi");
+          const devDraw={fn:null};
+          devDraw.fn=module.hookWasmTable(1525,self=>{
+            module.HEAPU8[386924]=0;
+            return devDraw.fn(self);
+          },"vi");
+          const setupPopup={fn:null};
+          setupPopup.fn=module.hookWasmTable(2038,(entPtr,a1,a2,a3,a4,a5,a6)=>{
+            let devToHide=null;
+            try {
+              const sdk=global.GameSDK;
+              if(sdk && entPtr && sdk.entity(entPtr).name==="PauseMenuSub") {
+                const sentinel=entPtr+52;
+                let node=module.HEAPU32[(entPtr+56)>>2],guard=0;
+                const children=[];
+                while(node && node!==sentinel && guard++<64) {
+                  const childPtr=module.HEAPU32[(node+8)>>2];
+                  if(childPtr && module.HEAPU8[childPtr+128]===0) children.push(sdk.entity(childPtr));
+                  node=module.HEAPU32[(node+4)>>2];
+                }
+                const dev=children.find(c=>c.name==="DevMenu");
+                if(dev) {
+                  const devY=dev.y;
+                  const opt=children.find(c=>c.name==="Options");
+                  const step=(opt && devY>opt.y)?(devY-opt.y):(Math.floor((module.HEAP32[392496>>2]||768)*45)/320);
+                  for(const c of children) {
+                    if(c.ptr===dev.ptr) continue;
+                    if(c.y<devY) c._applyPosNow(c.x,Math.round(c.y+step*0.5));
+                    else if(c.y>devY) c._applyPosNow(c.x,Math.round(c.y-step*0.5));
+                  }
+                  const ref=opt||children[0];
+                  if(ref) dev._applyPosNow(ref.x,ref.y);
+                  dev.size={width:0,height:0};
+                  devToHide=dev;
+                }
+              }
+            } catch(_e) {}
+            const res=setupPopup.fn(entPtr,a1,a2,a3,a4,a5,a6);
+            if(devToHide) {
+              try {
+                devToHide._applyAlphaNow(0);
+                devToHide._applyVisibleNow(false);
+                devToHide.destroy();
+              } catch(_e) {}
+            }
+            try {
+              if(devToHide) {
+                const kids=global.GameSDK.entity(entPtr).children.filter(c=>c.ptr!==devToHide.ptr);
+                const texts=kids.filter(c=>c.text),rects=kids.filter(c=>!c.text);
+                const fw=rects.reduce((m,c)=>Math.max(m,c.size.width),0);
+                const d=Math.round(fw*0.0325);
+                if(d>0&&d<120) for(const c of texts) c._applyPosNow(c.x+d,c.y);
+              }
+            } catch(_e) {}
+            return res;
+          },"iiiififi");
+        }
+      }
       if(config.skipIntro) {
         // Native bootstrap: take the normal no-promo-dialog branch, not an auto-accept click.
         const bootstrap={fn:null};
@@ -47,8 +119,126 @@
         original.fn=module.hookWasmTable(2366,(parent,arg)=>{
           module.HEAPU8[393968]=1;
           this.introBypassCalls=(this.introBypassCalls||0)+1;
-          return original.fn(parent,arg);
+          const res=original.fn(parent,arg);
+          if(module.wasmTable && typeof module.wasmTable.get==="function") {
+            module.wasmTable.get(2377)(0);
+            module.wasmTable.get(2363)(0);
+          }
+          return res;
         },"vii");
+      }
+      if(config.minecraftHealthBar!==false && module.wasmTable && typeof module.wasmTable.get==="function") {
+        const getLocalAvatar=()=>{
+          const app=module.HEAPU32[393364>>2];
+          const logic=app?module.HEAPU32[(app+1800)>>2]:0;
+          return logic?module.HEAPU32[(logic+184)>>2]:0;
+        };
+        let deadSince=0,lastHp=100,barBox=null,lastAvX=null,lastAvY=null;
+        const drawRect={fn:null};
+        const renderHearts=(box,hpFloat)=>{
+          const a=Math.round(((box.alpha&255)||255)*(box.fade===undefined?1:box.fade))||1;
+          const rgba=(r,g,b)=>(((b&255)<<24)|((g&255)<<16)|((r&255)<<8)|a)>>>0;
+          const cBlack=rgba(0,0,0),cEmpty=rgba(43,43,43),cRed=rgba(255,19,19),cWhite=rgba(255,255,255);
+          const halfHearts=Math.max(0,Math.min(20,Math.ceil(hpFloat/5)));
+          const p=box.innerW>=180?3:2;
+          const totalW=(10*9+9*1)*p;
+          const startX=Math.round(box.x+(box.w-totalW)*0.5);
+          const startY=Math.round(box.y+(box.innerW>=180?10:6));
+          const lowShake=hpFloat<=20?Math.floor(Date.now()/90):0;
+          for(let i=0;i<10;i++) {
+            const hx=startX+i*10*p;
+            const hy=startY+(hpFloat<=20?(((lowShake+i*3)&1)*p):0);
+            const r=(x1,y1,x2,y2,c)=>drawRect.fn(hx+x1*p,hy+y1*p,(x2-x1)*p,(y2-y1)*p,c);
+            r(1,0,4,1,cBlack);r(5,0,8,1,cBlack);
+            r(0,1,9,4,cBlack);r(1,4,8,5,cBlack);
+            r(2,5,7,6,cBlack);r(3,6,6,7,cBlack);
+            r(4,7,5,8,cBlack);
+            const full=halfHearts>=(i+1)*2,half=!full&&halfHearts===i*2+1;
+            if(full) {
+              r(1,1,4,2,cRed);r(5,1,8,2,cRed);
+              r(1,2,8,4,cRed);r(2,4,7,5,cRed);
+              r(3,5,6,6,cRed);r(4,6,5,7,cRed);
+              r(1,2,2,3,cWhite);
+            } else if(half) {
+              r(5,1,8,2,cEmpty);r(5,2,8,4,cEmpty);
+              r(5,4,7,5,cEmpty);r(5,5,6,6,cEmpty);
+              r(1,1,4,2,cRed);r(1,2,5,4,cRed);
+              r(2,4,5,5,cRed);r(3,5,5,6,cRed);
+              r(4,6,5,7,cRed);r(1,2,2,3,cWhite);
+            } else {
+              r(1,1,4,2,cEmpty);r(5,1,8,2,cEmpty);
+              r(1,2,8,4,cEmpty);r(2,4,7,5,cEmpty);
+              r(3,5,6,6,cEmpty);r(4,6,5,7,cEmpty);
+            }
+          }
+        };
+        drawRect.fn=module.hookWasmTable(1338,(x,y,w,h,color)=>{
+          if (y < 45 && (Math.abs(h-6)<3 || Math.abs(h-12)<3)) {
+            const ring = document.getElementById("loader-ring");
+            if (ring) {
+              ring.style.display = "flex";
+              ring.classList.add("is-spinning");
+              setTimeout(() => { if (ring) ring.style.display = "none"; }, 1500);
+            }
+            return;
+          }
+          const isSmallBg=Math.abs(w-102)<0.5&&Math.abs(h-6)<0.5;
+          const isLargeBg=Math.abs(w-204)<0.5&&Math.abs(h-12)<0.5;
+          if((isSmallBg||isLargeBg)&&(color>>>8)===0) {
+            const av=getLocalAvatar();
+            if(av) {
+              const ax=module.HEAPF32[av>>2],ay=module.HEAPF32[(av+4)>>2];
+              const jumped=lastAvX!==null&&Math.hypot(ax-lastAvX,ay-lastAvY)>96;
+              lastAvX=ax;lastAvY=ay;
+              const anim=module.HEAPU32[(av+200)>>2];
+              const dead=false;if(jumped&&module.HEAP32[(av+356)>>2]<100){module.HEAP32[(av+356)>>2]=100;module.HEAPF32[(av+360)>>2]=100;module.HEAPF32[(av+364)>>2]=0;deadSince=0;}if(module.HEAP32[(av+356)>>2]>=100&&module.HEAPF32[(av+360)>>2]<100)module.HEAPF32[(av+360)>>2]=100;
+              if(dead||jumped) {
+                barBox={skipNext:true,x,y,w,h,border:isLargeBg?2:1,innerW:isLargeBg?200:100,innerH:isLargeBg?8:4,alpha:color&255};
+                return;
+              }
+            }
+            barBox={
+              skipNext:false,
+              x,y,w,h,
+              border:isLargeBg?2:1,
+              innerW:isLargeBg?200:100,
+              innerH:isLargeBg?8:4,
+              alpha:color&255
+            };
+            return;
+          }
+          if(
+            barBox!==null &&
+            Math.abs(x-(barBox.x+barBox.border))<1.5 &&
+            Math.abs(y-(barBox.y+barBox.border))<1.5 &&
+            Math.abs(h-barBox.innerH)<1.5
+          ) {
+            const box=barBox;
+            barBox=null;
+            if(box.skipNext) return;
+            const hp=Math.max(0,Math.min(100,(w/box.innerW)*100));
+            if(hp<=0.5) {
+              const now=Date.now();
+              if(!deadSince) deadSince=now;
+              const t=now-deadSince;
+              if(t>2400) {
+                const av2=getLocalAvatar();
+                if(av2) { module.HEAP32[(av2+356)>>2]=100;module.HEAPF32[(av2+360)>>2]=100;module.HEAPF32[(av2+364)>>2]=0; }
+                deadSince=0;
+                return;
+              }
+              if(t>500) return;
+              box.fade=1-t/500;
+              renderHearts(box,lastHp);
+              return;
+            }
+            deadSince=0;lastHp=hp;
+            renderHearts(box,hp);
+            return;
+          }
+          barBox=null;
+          return drawRect.fn(x,y,w,h,color);
+        },"vffffi");
       }
     },
     attachUi(sdk) {
@@ -131,6 +321,16 @@
         Module.HEAPU8[369789]=0;Module.HEAPU8[393905]=0;Module.HEAPU8[393900]=0;
       });
       sdk.onMenu("VoiceMenu",menu=>menu.destroy());
+      sdk.onMenu("PauseMenu",menu=>{
+        if(config.enableDeveloperMenu===false) {
+          const dev=menu.find("DevMenu");
+          if(dev && dev.exists) {
+            dev._applyAlphaNow(0);
+            dev._applyVisibleNow(false);
+            dev.destroy();
+          }
+        }
+      });
       for(const menu of ["MainMenu","GenericDialog","LoginMenu","AboutMenu","OptionsMenu","OnlineMenu","FlagMenu"]) sdk.onMenu(menu,()=>{
         for(const row of sdk.listEntities(menu)) {
           const entity=sdk.entity(row.ptr),text=entity.text;

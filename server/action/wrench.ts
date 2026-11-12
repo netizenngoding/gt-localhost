@@ -1,3 +1,4 @@
+import { canWorldAct } from './world-moderation';
 import { activeMods } from '../playmods/model';
 import { progression } from "../progression/service";
 import { ACHIEVEMENTS } from "../progression/catalog";
@@ -37,6 +38,7 @@ export function handleWrenchPlayer(
       .customButton('my_worlds','gui_wrench_my_worlds')
       .customButton('alist','gui_wrench_achievements')
       .raw(`add_custom_label|(${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`)
+      .customButton('emojis','gui_wrench_growmojis')
       .customBreak().addSpacer('small').customSpacing(0,0);
     const mods=activeMods(acct);
     const equipmentEffects: Array<{title:string; icon:number}> = [];
@@ -63,74 +65,13 @@ export function handleWrenchPlayer(
     return;
   }
 
-  // Wrenching another player in the world
-  const dlg = new DialogBuilder()
-    .setDefaultColor("`o")
-    .addLabelWithIcon("big", displayName(target), 32)
-    .addSmalltext(`\`9User ID: \`w${target.account.userId}\`9 | Gems: \`2${target.account.gems}\`\``)
-    .addSpacer("small")
-    .addButtonWithIcon(`trade_start_${target.netId}`, "`2Trade Item``", 1422);
-
-  if (canModerate(session.account, target.account)) {
-    dlg
-      .addButtonWithIcon(`mod_pull_${target.netId}`, "Pull to Me", 32)
-      .addButtonWithIcon(`mod_kick_${target.netId}`, "`4Kick``", 32, "staticRedFrame")
-      .addButtonWithIcon(`mod_ban_${target.netId}`, "`4Ban``", 32, "staticRedFrame");
-  }
-  dlg.addQuickExit();
-  OnDialogRequest(session, dlg.endDialog("target_wrench", "Close", ""));
+  // Dialog layout and button names follow the C++ player popup.
+  const dlg = new DialogBuilder().embedData("netID", target.netId).setDefaultColor("`o")
+    .addLabelWithIcon("big", `${displayName(target)} \`0(\`\`\`2${progression(target.account).level}\`\`\`0)\`\``,18)
+    .addSpacer("small").addButton("trade", "`wTrade``");
+  if(canWorldAct(session,target,world)) { dlg.addButton("kick","`4Kick``").addButton("pull","`5Pull``"); if(!hasPermission(target.account,"moderate"))dlg.addButton("worldban","`4World Ban``"); }
+  if(!(session.account.friendIds||[]).includes(target.account.userId)) dlg.addButton("friend_add","`wAdd as friend``");
+  dlg.addQuickExit();OnDialogRequest(session,dlg.endDialog("popup","","Continue"));
 }
 
-export function openTradeOfferDialog(ctx: ServerContext, session: PlayerSession): void {
-  const dlg = new DialogBuilder()
-    .setDefaultColor("`o")
-    .addLabelWithIcon("big", "`wTrade Offer``", 1422)
-    .addTextbox("`9Select an item from your inventory to offer:``")
-    .addSpacer("small");
-
-  let listed = 0;
-  for (const slot of session.account.inventory) {
-    if (slot.count <= 0 || slot.itemId === 18 || slot.itemId === 32) continue;
-    const def = ctx.itemsDb.get(slot.itemId);
-    if (!def || def.name.startsWith("null_")) continue;
-    const clean = def.name.replace(/`.|``/g, "").replace(/\|/g, "");
-    dlg.addButtonWithIcon(`trade_offer_${slot.itemId}`, `\`w1x ${clean}\`\``, slot.itemId, "staticBlueFrame", slot.count);
-    listed++;
-    if (listed >= 48) break;
-  }
-  if (listed === 0) {
-    dlg.addTextbox("`4Your inventory has no tradeable items!``");
-  }
-  OnDialogRequest(session, dlg.endDialog("trade_offer", "Close", ""));
-}
-
-export function handleTradeStart(
-  ctx: ServerContext,
-  session: PlayerSession,
-  targetNetId: number
-): void {
-  const world = session.world;
-  if (!world) return;
-  const target = Array.from(world.peers).find((p) => p.netId === targetNetId);
-  if (!target || target === session) {
-    OnConsoleMessage(session, "`4Player not found!``");
-    return;
-  }
-  if (session.pendingTradeOffer || target.pendingTradeOffer) {
-    OnConsoleMessage(session, "`4One of you is already in a trade!``");
-    return;
-  }
-  session.pendingTradeOffer = {
-    role: "offering",
-    fromNetId: session.netId,
-    toNetId: target.netId,
-    itemId: 0,
-  };
-  target.pendingTradeOffer = {
-    role: "awaiting",
-    fromNetId: session.netId,
-    toNetId: target.netId,
-    itemId: 0,
-  };
-  openTradeOfferDialog(ctx, session);
-}
+export { requestTrade as handleTradeStart } from "./trade";

@@ -45,7 +45,14 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
 
   app.get("/server-config.js", (_req,res)=>{
     res.setHeader("Cache-Control","no-store");
-    res.type("application/javascript").send("globalThis.SERVER_CONFIG="+JSON.stringify(SERVER_CONFIG).replace(/</g,"\\u003c")+";");
+    const itemsHash = ctx.itemsDb.itemsDatHash >>> 0;
+    res.type("application/javascript").send(
+      "globalThis.SERVER_CONFIG=" +
+      JSON.stringify(SERVER_CONFIG).replace(/</g,"\\u003c") +
+      ";globalThis.SERVER_ITEMS_HASH=" +
+      itemsHash +
+      ";"
+    );
   });
   app.get("/THIRD_PARTY_NOTICES.md",(_req,res)=>res.sendFile(path.join(rootDir,"THIRD_PARTY_NOTICES.md")));
   const dataPackage = createDataPackage(rootDir);

@@ -1,4 +1,4 @@
-import { OnSetPos } from "./onVariant";
+import { broadcastIconState } from "./onVariant";
 import type { PlayerSession } from "./database/peer";
 import { SERVER_NAME } from "./config/branding";
 import http from "node:http";
@@ -68,9 +68,17 @@ async function main(): Promise<void> {
         : Buffer.from(data as ArrayBuffer);
       if (!isBinary) {
         const wasBackground=peer.activity.background;
-        if(peer.activity.presence(buf)&&wasBackground&&!peer.activity.background){
+        if(peer.activity.presence(buf)){
           const session=peer.userData as PlayerSession|null;
-          if(session?.world)OnSetPos(session,session.x,session.y);
+          if(session?.world){
+            if(!wasBackground&&peer.activity.background){
+              session.brb=true;
+              broadcastIconState(session.world,session,2,true);
+            }else if(wasBackground&&!peer.activity.background){
+              if(session.brb){session.brb=false;broadcastIconState(session.world,session,0,true);}
+              // No OnSetPos on tab return: prevents mid-air snap-back while client gravity finishes landing.
+            }
+          }
         }
         return;
       }

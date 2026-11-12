@@ -1,3 +1,4 @@
+import {isFrozen,overlapsHazard,tickSessionHazardRegen} from '../action/hazards';
 import type { ServerContext } from '../database/context';
 import type { PlayerSession } from '../database/peer';
 import { canModifyWorldTile, spawnOrMergeWorldDrop } from '../database/world';
@@ -29,10 +30,16 @@ export function gtps3PlaymodTime(seconds:number):string {
  if(!hour&&!minute&&!second)return 'Removing now ';
  return (hour>0?`${hour} hours`:'')+(minute>0?`${hour>0?', ':''}${minute} mins`:'')+(second>0?`${minute>0?', ':''}${second} secs `:' ');
 }
-export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:number,ty:number):boolean {
+// Hair dyes and eye items handled by tile_change_req in bathtub/mirror
+const HAIR_DYE_ITEMS = new Set([3822, 3824, 3826, 3828, 3830]);
+const EYE_ITEMS = new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
+
+ export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:number,ty:number):boolean {
  const def=ctx.itemsDb.get(id);if(def?.actionType!==8)return false;
+ if(HAIR_DYE_ITEMS.has(id)||EYE_ITEMS.has(id))return false;
  const world=s.world;
  if(!world || !Number.isInteger(tx) || !Number.isInteger(ty) || tx<0 || ty<0 || tx>=world.width || ty>=world.height)return true;
+ if(world.xenonite?.enabled && world.xenonite.powerups===1){bubble(s,"`4Powerups are blocked in this world by the Xenonite Crystal!``");return true;}
  const mod=MODS.find(m=>m.item===id),food=SIMPLE_FOODS.find(m=>m.item===id);
  // GTPS3 ae49cffa, SERVER/World.h case 228/1062/1778/5764/10672.
  // Access is checked before mutating or consuming, unlike buggy server forks.
@@ -40,7 +47,7 @@ export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:num
  if (Object.prototype.hasOwnProperty.call(spraySeconds,id)) {
   const tile=world.tiles[ty*world.width+tx], tree=ctx.itemsDb.get(tile.fg), now=Date.now();
   if(!tree?.isSeed || tile.extra?.kind!=='seed'){bubble(s,"Use this on a growing tree to speed it's growth.");return true;}
-  if(!canModifyWorldTile(s,world,tile)) return true;
+  if(!canModifyWorldTile(s,world,tile,tx,ty,'place')) return true;
   const growMs=Math.max(1,tree.growTime || 15)*1000;
   if(now-tile.extra.plantedAtMs>=growMs){bubble(s,"This tree has already bloomed, don't waste your spray on it!");return true;}
   if(!ctx.consumeInventoryItem(s,id,1,true,false)) return true;
@@ -100,7 +107,7 @@ export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:num
   const tile=world.tiles[ty*world.width+tx];
   if(!s.account.inventory.some(slot=>slot.itemId===id && slot.count>0))return true;
   if(tile.fg!==10){bubble(s,'`4This potion is clearly labeled for use only on rocks.``');return true;}
-  if(!canModifyWorldTile(s,world,tile))return true;
+  if(!canModifyWorldTile(s,world,tile,tx,ty,'place'))return true;
   if(!ctx.consumeInventoryItem(s,id,1,true,false))return true;
   tile.fg=392;tile.extra=undefined;tile.damage=0;ctx.dirty=true;
   const particle=makeVariantPacket(['OnParticleEffect',{type:'i32',value:44},{type:'vec2',x:tx*32+16,y:ty*32+16}]);
@@ -134,15 +141,19 @@ export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:num
   if(id===764 && activeMods(target.account).some(m=>m.id==='gtps3-antidote')){
    ctx.sendCharacterState(target);applySkinColorUpdate(target,false);
   } else {
-  // Food buffs replace one another; equivalent Lucky sources do not stack.
+  // Food buffs and Floating balloons replace/refresh their group; equivalent Lucky sources do not stack.
   // Legacy non-grouped effects retain the existing no-refresh behaviour.
+  const wasActive = target.account.playmods.some(m=>m.id===mod.id);
   if(mod.group){
    const equivalentIds=new Set(MODS.filter(d=>d.group===mod.group).map(d=>d.id));
    target.account.playmods=target.account.playmods.filter(m=>!equivalentIds.has(m.id));
   }
-  if(!target.account.playmods.some(m=>m.id===mod.id)){
+  if(mod.group==='floating' || !target.account.playmods.some(m=>m.id===mod.id)){
    target.account.playmods.push({id:mod.id,expiresAt:now+mod.seconds*1000});
-   OnConsoleMessage(target,`${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+   if(!wasActive){
+    OnConsoleMessage(target,`${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+   }
+   ctx.dirty=true;
    ctx.sendCharacterState(target);applySkinColorUpdate(target,false);
   } else if(id===782) {
    ctx.sendCharacterState(target);applySkinColorUpdate(target,false);
@@ -191,10 +202,14 @@ function expireSessionMods(ctx:ServerContext,s:PlayerSession,now:number):void {
   }
  }
  ctx.sendCharacterState(s);applySkinColorUpdate(s,false);
+ if(expired.some(m=>MODS.find(d=>d.id===m.id && (d.flags & (1<<11))!==0)) && !isFrozen(s) && (!s.pullImmuneUntil || Date.now()>=s.pullImmuneUntil) && overlapsHazard(ctx,s))ctx.respawnPlayer(s,false);
 }
 export function expireMods(ctx:ServerContext):void {
  const now=Date.now();
- for(const s of ctx.sessions)expireSessionMods(ctx,s,now);
+ for(const s of ctx.sessions){
+  expireSessionMods(ctx,s,now);
+  tickSessionHazardRegen(s,now);
+ }
 }
 
 /** GTPS3 Source.cpp punch infection, with bounded two-axis target selection. */

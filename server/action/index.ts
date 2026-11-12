@@ -1,3 +1,4 @@
+import { tradeAction } from './trade';
 import { setSkin } from "../progression/skin";
 import type { ENetServerPeer } from "../network/enet";
 import type { ServerContext } from "../database/context";
@@ -39,6 +40,8 @@ export function handleActionText(
   }
 
   const action = (kv.action || "").trim();
+
+  if (tradeAction(ctx, session, action, kv, rawText)) return;
 
   switch (action) {
     case "enter_game":

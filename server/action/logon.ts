@@ -1,3 +1,4 @@
+import { SERVER_CONFIG } from "../config/branding";
 import { protocolFlags } from "../ranks";
 import type { ENetServerPeer } from "../network/enet";
 import {
@@ -80,8 +81,9 @@ function allocateGuestDisplayName(
   return `${baseName}_${seq}`;
 }
 
-function sendLogonFail(peer: ENetServerPeer, message: string): void {
-  peer.sendPacket(0, makeVariantPacket(["OnConsoleMessage", message]), true);
+function sendLogonFail(peer: ENetServerPeer, message: string, showDiscord = false): void {
+  peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|log\nmsg|" + message + "\n"), true);
+  if(showDiscord) peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|set_url\nurl|${SERVER_CONFIG.discordUrl}\nlabel|Join Discord\n`), true);
   peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|logon_fail\n"), true);
 }
 
@@ -162,7 +164,7 @@ export function handleLogon(
     let acct = ctx.accounts.get(key);
 
     if (!acct || acct.isGuest || !verifyPassword(rawPass, acct.passwordHash)) {
-      sendLogonFail(peer, "`4Invalid GrowID or password. Register using Get a GrowID from a guest account.``");
+      sendLogonFail(peer, "`4Unable to log on: `oThat `wGrowID`` doesn't seem valid, or the password is wrong. If you don't have one, press `wCancel``, un-check `w'I have a GrowID'``, then click `wConnect``.", true);
       return;
     }
     if (!acct.passwordHash.startsWith("scrypt$")) {

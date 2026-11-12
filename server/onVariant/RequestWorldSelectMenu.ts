@@ -23,46 +23,20 @@ export function RequestWorldSelectMenu(
   session: PlayerSession,
   worlds: Map<string, WorldInstance>
 ): void {
-  const featured = ["START", "FARM", "PARKOUR", "TRADE"];
   const lines: string[] = [
     "default|START",
     "add_filter|",
-    "add_heading|Top Worlds<ROW2>|",
+    "add_heading|Recently Visited Worlds<CR>|",
   ];
-  const colors = [3529161471, 2147418367, 3417414143, 2864971775];
-  featured.forEach((name, idx) => {
-    const w = worlds.get(name);
-    const cnt = w ? w.peers.size : 0;
-    lines.push(`add_floater|${name}|${cnt}|0.55|${colors[idx % colors.length]}`);
-  });
 
-  for (const [name, w] of worlds.entries()) {
-    if (isPlayableWorldName(name) && !featured.includes(name) && w.peers.size > 0) {
-      lines.push(`add_floater|${name}|${w.peers.size}|0.50|2147418367`);
-    }
-  }
-
-  // My Worlds (worlds World-Locked by this player, modeled on Gurotopia RequestWorldSelectMenu.hpp)
-  const myLockedWorlds: WorldInstance[] = [];
-  for (const w of worlds.values()) {
-    if (isPlayableWorldName(w.name) && w.ownerUserId === session.account.userId) {
-      myLockedWorlds.push(w);
-    }
-  }
-  if (myLockedWorlds.length > 0) {
-    lines.push("add_heading|My Worlds<CR>|");
-    for (const mw of myLockedWorlds.slice(0, 8)) {
-      lines.push(`add_floater|${mw.name}|${mw.peers.size}|0.48|2147418367`);
-    }
-  }
-
-  // Recently Visited Worlds (modeled on Gurotopia RequestWorldSelectMenu.hpp)
-  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n) && !featured.includes(n));
-  if (recent.length > 0) {
-    lines.push("add_heading|Recently Visited Worlds<CR>|");
-    for (const rName of recent.slice(0, 6)) {
+  const recent = (session.account.recentWorlds || []).filter((n) => isPlayableWorldName(n));
+  if (recent.length === 0) {
+    const startWorld = worlds.get("START");
+    lines.push(`add_floater|START|${startWorld ? startWorld.peers.size : 0}|0.55|2147418367`);
+  } else {
+    for (const rName of recent.slice(0, 10)) {
       const rw = worlds.get(rName);
-      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.46|3417414143`);
+      lines.push(`add_floater|${rName}|${rw ? rw.peers.size : 0}|0.50|2147418367`);
     }
   }
 

@@ -125,11 +125,11 @@ export function handleWorldCommand(
 
   if (cmd === "weather") {
     if (!world) return true;
-    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId) {
+    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId && session.account.rank !== "developer") {
       OnConsoleMessage(session, "`4Only the World Lock owner can change weather!``");
       return true;
     }
-    const wId = Math.max(0, Math.min(60, parseInt(argStr || "0", 10) || 0));
+    const wId = Math.max(0, Math.min(85, parseInt(argStr || "0", 10) || 0));
     world.weatherId = wId;
     ctx.dirty = true;
     broadcastSetCurrentWeather(world, wId);

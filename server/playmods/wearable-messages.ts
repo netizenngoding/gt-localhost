@@ -17,6 +17,5 @@ export const WEARABLE_MESSAGES: Readonly<Record<number,readonly [string,string,s
   1204: ["Focused Eyes", "Your gaze sharpens.", "Your eyes relax."],
   2388: ["Hammer Time", "Hammer time!", "Hammer time is over."],
   9058: ["Cursed Blade", "A curse hums in your hand.", "The curse lifts."],
-  8924: ["Moon Charm", "Luck is on your side.", "Your luck runs out."],
   4748: ["Extra Reach", "You can build a little farther.", "You can't reach as far."],
 };

@@ -1,9 +1,11 @@
+import { OnPlayPositioned } from "../onVariant/OnPlayPositioned";
+import { cancelTrade } from '../action/trade';
 import { effectiveSkin } from "../playmods/model";
 import { expireMods } from "../playmods/service";
 import { recordProgress } from "../progression/service";
 import { buildCharacterStateForSession } from "./peer";
 import { staffInteractionReach } from "../ranks/interaction";
-import { displayName } from "../ranks";
+import { displayName, hasPermission } from "../ranks";
 import { RankService } from "../ranks/service";
 import { worldDestination, isPlayableWorldName } from "./world-policy";
 import { RequestWorldSelectMenu } from "../onVariant/RequestWorldSelectMenu";
@@ -196,10 +198,12 @@ export class ServerContext {
   public findSessionByNameGlobal(name: string): PlayerSession | undefined {
     const q = name.trim().toLowerCase();
     if (!q) return undefined;
-    for (const s of this.sessions) {
-      if (s.account.name.toLowerCase() === q) return s;
-    }
-    return undefined;
+    const sessions = [...this.sessions];
+    const exact = sessions.find(s => s.account.name.toLowerCase() === q);
+    if (exact) return exact;
+    // Only a unique prefix may resolve: never guess between similarly named players.
+    const matches = sessions.filter(s => s.account.name.toLowerCase().startsWith(q));
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   public findOnlineSessionByName(name: string): PlayerSession | undefined {
@@ -344,6 +348,9 @@ export class ServerContext {
         makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
         true
       );
+      if (other.lastIconStatePacket) {
+        session.peer.sendPacket(0, other.lastIconStatePacket, true);
+      }
       OnSpawn(other, session, false);
       // The caller broadcasts the joiner's outfit once after all spawns are sent.
     }
@@ -402,9 +409,13 @@ export class ServerContext {
       session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true); return;
     }
     const world = this.getOrCreateWorld(destination.name);
+    if (!hasPermission(session.account,"moderate") && (world.worldBans?.[String(session.account.userId)] || 0) > Date.now()) {
+      OnConsoleMessage(session, `You are temporarily banned from ${world.name}.`);
+      session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true); return;
+    }
     this.leaveCurrentWorld(session, false);
     const spawn = this.findMainDoorPixel(world);
-    this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_shut.wav", true);
+    this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_open.wav", true);
   }
 
   public moveToWorld(session: PlayerSession, world: WorldInstance, x: number, y: number): void {
@@ -422,6 +433,9 @@ export class ServerContext {
     announceEntry: boolean
   ): void {
     session.world = world;
+    session.hp = 100;
+    session.lastHazardHitAt = 0;
+    session.lastHazardRegenAt = 0;
     session.respawnUntil = 0;
     session.respawnGeneration = (session.respawnGeneration || 0) + 1;
     session.x = x;
@@ -469,12 +483,40 @@ export class ServerContext {
         session,
         `World \`w${world.name}\`\` entered. There are \`w${world.peers.size - 1}\`\` other people here, \`w${this.sessions.size}\`\` online.${lockNote}`
       );
+      for (const peer of world.peers) {
+        if (peer !== session) {
+          OnConsoleMessage(
+            peer,
+            `\`o<\`w${session.account.name}\`\` entered, \`w${world.peers.size - 1}\`\` others here>\`\``
+          );
+        }
+      }
     }
   }
 
   public leaveCurrentWorld(session: PlayerSession, notifySelf: boolean): void {
+    cancelTrade(session, "Trade cancelled: player left the world.");
     const world = session.world;
     if (!world) return;
+    OnPlayPositioned(session, "audio/door_shut.wav");
+    for (const other of world.peers) if(other!==session) OnPlayPositioned(other,"audio/door_shut.wav");
+    session.pullGeneration=(session.pullGeneration||0)+1; session.pullUntil=0; session.pullImmuneUntil=0;
+    session.brb = false;
+    session.iconState = 0;
+    session.lastIconStatePacket = undefined;
+    if (session.magplantRemote) {
+      session.magplantRemote = null;
+      session.peer.sendPacket(
+        0,
+        makeVariantPacket([
+          "OnPlanterActivated",
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 },
+          { type: "i32", value: 0 },
+        ]),
+        true
+      );
+    }
     world.peers.delete(session);
     session.world = null;
     broadcastOnRemove(world, session);
@@ -500,6 +542,9 @@ export class ServerContext {
     }
     const netId = session.netId;
     session.x = spawn.x; session.y = spawn.y;
+    session.hp = 100;
+    session.lastHazardHitAt = 0;
+    session.lastHazardRegenAt = 0;
     session.respawnUntil = Date.now() + 2020;
     // Follow the client's death lifecycle: freeze, death, delayed position, unfreeze.
     if (!isSpike) {
@@ -513,7 +558,11 @@ export class ServerContext {
     setTimeout(() => {
       if (!valid()) return;
       const position = makeVariantPacket(["OnSetPos", {type:"vec2", x:spawn.x, y:spawn.y}], netId);
-      for (const p of world.peers) p.peer.sendPacket(0, position, true);
+      const pearl = makeVariantPacket(["OnSetPearl", {type:"i32", value:100}], netId);
+      for (const p of world.peers) {
+        p.peer.sendPacket(0, position, true);
+        p.peer.sendPacket(0, pearl, true);
+      }
       broadcastPositionedSfx(world, netId, "audio/teleport.wav");
     }, 2000).unref();
     setTimeout(() => {

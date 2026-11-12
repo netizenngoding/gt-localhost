@@ -9,6 +9,7 @@
     "start": "node server/server_runtime.cjs"
   },
   "dependencies": {
+    "@huggingface/hub": "^2.17.11",
     "express": "^4.21.2",
     "ws": "^8.18.0"
   },

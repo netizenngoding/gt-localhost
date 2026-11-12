@@ -21,7 +21,6 @@ export const STARTER_KIT: Array<[number, number]> = [
   [242, 5],   // World Lock
   [1796, 2],  // Diamond Lock
   [7188, 1],  // Blue Gem Lock
-  [634, 1],   //Parasol / Wings fallback if present
   [48, 1],    // Jeans / Shirt
   [98, 1],    // Pickaxe
   [5480, 1],  // Rayman's Fist
@@ -68,11 +67,17 @@ export interface PlayerAccount {
   unavailableInventory?: InventorySlot[];
   recentWorlds: string[];
   billboard: BillboardState;
+  friendIds?: number[];
+  lastDailyReward?: number;
   personalNote?: string;
   lastKitClaim?: number;
   spawnWorld?: string;
   spawnX?: number;
   spawnY?: number;
+  hairColor?: number;
+  eyeColor?: number;
+  pupilColor?: number;
+  lastDailyQuestDay?: number;
 }
 
 export interface PendingTradeOffer {
@@ -87,8 +92,16 @@ export interface PlayerSession {
   enteredGame?: boolean;
   chatTimestamps?: number[];
   lastInfectPunchAt?: number;
+  hp?: number;
+  lastHazardHitAt?: number;
+  lastHazardRegenAt?: number;
   respawnUntil?: number;
   respawnGeneration?: number;
+  pullGeneration?: number;
+  pullUntil?: number;
+  pullImmuneUntil?: number;
+  lastFindItemIds?: number[];
+  findSelectedItemIds?: number[];
   account: PlayerAccount;
   netId: number;
   world: WorldInstance | null;
@@ -97,6 +110,9 @@ export interface PlayerSession {
   facingLeft: boolean;
   mstate: number;
   smstate: number;
+  iconState?: number;
+  brb?: boolean;
+  lastIconStatePacket?: Buffer;
   cheats: {
     noclip: boolean;
     speed: boolean;
@@ -105,6 +121,12 @@ export interface PlayerSession {
   pendingEditTile: { x: number; y: number } | null;
   pendingTradeOffer: PendingTradeOffer | null;
   lastItemSearchQuery: string;
+  fishing?: { baitId: number; tx: number; ty: number; startedAt: number; biteAt: number } | null;
+  lastGeigerPingAt?: number;
+  magplantRemote?: { x: number; y: number; itemId: number } | null;
+  lastLockeItem?: number;
+  lastWrenchX?: number;
+  lastWrenchY?: number;
 }
 
 export type TenClothingSlots = [
@@ -163,9 +185,15 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
           .map(s => ({ itemId: s.itemId, count: Math.min(200, s.count), equipped: !!s.equipped }))
       : [],
     recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
+    friendIds: Array.isArray(raw.friendIds) ? [...new Set(raw.friendIds.filter(id => Number.isSafeInteger(id) && id > 0 && id !== raw.userId))].slice(0,200) : [],
     personalNote: typeof raw.personalNote==='string' ? raw.personalNote.replace(/[|\r\n\0]/g,' ').slice(0,128) : '',
     billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
     lastKitClaim: raw.lastKitClaim,
+    lastDailyReward: typeof raw.lastDailyReward === "number" ? raw.lastDailyReward : undefined,
+    lastDailyQuestDay: typeof raw.lastDailyQuestDay === "number" ? raw.lastDailyQuestDay : undefined,
+    hairColor: typeof raw.hairColor === "number" ? raw.hairColor >>> 0 : undefined,
+    eyeColor: typeof raw.eyeColor === "number" ? raw.eyeColor >>> 0 : undefined,
+    pupilColor: typeof raw.pupilColor === "number" ? raw.pupilColor >>> 0 : undefined,
     spawnWorld: raw.spawnWorld,
     spawnX: raw.spawnX,
     spawnY: raw.spawnY,
@@ -229,13 +257,6 @@ export function buildCharacterStateForSession(
       });
       if (slot) { punchEffect = GTPS3_PUNCH_EFFECTS[slot.itemId]; break; }
     }
-    // Preserve the existing slow-fall approximation; its exact jump-held
-    // behavior has not yet been reconstructed from the original server.
-    for (const inv of session.account.inventory) {
-      if (!inv.equipped || inv.count <= 0) continue;
-      const def=itemsDb.get(inv.itemId);
-      if (def?.isClothing && /parasol|umbrella/i.test(def.name) && (def.clothingType===5 || def.clothingType===6)) gravity=250.0;
-    }
 
     for (const mod of activeMods(session.account)) {
       stateFlags |= mod.flags;
@@ -244,6 +265,38 @@ export function buildCharacterStateForSession(
     }
     // GTPS3 World.h update_clothes, Infected movement speed.
     if (activeMods(session.account).some(m=>m.id==='gtps3-infected')) moveSpeed=(moveSpeed===420||moveSpeed===310||moveSpeed===325)?190:150;
+
+    // Balloons, Parasols, and slow fall equipment (GTPS3 World.h:88, 143)
+    const balloonIds = new Set([
+      338, 1112, 1114, 1116, 1118, 1120, 1122, 1124, 1126, 1128, 1130, 1772, 2816, 3216, 3218, 3840
+    ]);
+    const hasBalloon = session.account.inventory.some(
+      (v) => v.equipped && v.count > 0 && (
+        balloonIds.has(v.itemId) ||
+        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("balloon") ?? false) ||
+        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("parasol") ?? false) ||
+        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("umbrella") ?? false)
+      )
+    );
+    if (hasBalloon) {
+      gravity = 250.0;
+      stateFlags |= 1 << 10;
+    }
+
+    const xeno = session.world?.xenonite?.enabled ? session.world.xenonite : undefined;
+    if (xeno) {
+      if (xeno.doubleJump === 1) stateFlags |= CHAR_STATE_DOUBLE_JUMP;
+      else if (xeno.doubleJump === 2) stateFlags &= ~CHAR_STATE_DOUBLE_JUMP;
+      if (xeno.highJump === 1) gravity = Math.min(gravity, 700.0);
+      else if (xeno.highJump === 2) gravity = Math.max(gravity, 1000.0);
+      if (xeno.speedy === 1) moveSpeed = Math.max(moveSpeed, 310.0);
+      else if (xeno.speedy === 2) moveSpeed = 250.0;
+      if (xeno.longBuild === 1) buildRangeTiles = Math.max(buildRangeTiles, 4);
+      else if (xeno.longBuild === 2) buildRangeTiles = 2;
+      if (xeno.longPunch === 1) punchRangeTiles = Math.max(punchRangeTiles, 4);
+      else if (xeno.longPunch === 2) punchRangeTiles = 2;
+    }
+
     if (c.noclip) stateFlags |= 1 << 0;
     if (c.speed) moveSpeed = 420.0;
     if (c.fly) {
@@ -267,5 +320,8 @@ export function buildCharacterStateForSession(
     stateFlags,
     moveSpeed,
     gravity,
+    hairColor: session.account.hairColor ?? 0xFFFFFFFF,
+    eyeDrop: session.account.eyeColor ?? 0xFFFFFFFF,
+    eyeLenses: session.account.pupilColor ?? 0,
   };
 }

@@ -5,6 +5,7 @@ import { worldModerate } from '../action/world-moderation';
 import { hasPermission, canModerate } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
+import { makeVariantPacket } from "../proton/packet";
 import { OnConsoleMessage, broadcastNameChanged } from "../onVariant";
 import { stripGtColors } from "../tools/string";
 
@@ -82,6 +83,36 @@ export function handleAdminCommand(
     const id=parseInt(parts[2]||'0',10), qty=Math.max(1,Math.min(200,parseInt(parts[3]||'1',10)||1)), def=ctx.itemsDb.get(id);
     if(!def||def.name.startsWith('null_')){OnConsoleMessage(session,"Invalid item ID.");return true;}
     const added=ctx.giveInventoryItem(target,id,qty,true);OnConsoleMessage(session,`Gave ${added}x ${stripGtColors(def.name)} to ${target.account.name}.`);return true;
+  }
+
+  if (cmd === "nick") {
+    if (!hasPermission(session.account, "moderate")) { OnConsoleMessage(session, "Moderator permission required."); return true; }
+    const newNick = argStr.replace(/[|\r\n\0]/g, "").trim();
+    if (!newNick || newNick.toLowerCase() === session.account.name.toLowerCase()) {
+      session.account.nickname = undefined;
+      OnConsoleMessage(session, `Your name changed back to ${session.account.name}`);
+    } else {
+      session.account.nickname = newNick.slice(0, 24);
+      OnConsoleMessage(session, `Your name changed to ${session.account.nickname}`);
+    }
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    broadcastNameChanged(session);
+    return true;
+  }
+
+  if (cmd === "invis") {
+    if (!hasPermission(session.account, "moderate")) { OnConsoleMessage(session, "Moderator permission required."); return true; }
+    const nextInvis = !session.invis;
+    session.invis = nextInvis;
+    OnConsoleMessage(session, nextInvis ? "`oYou are now ninja, invisible at all." : "`oYou are once again visible to mortals.");
+    const pkt = makeVariantPacket(["OnInvis", { type: "i32", value: nextInvis ? 1 : 0 }], session.netId);
+    if (session.world) {
+      for (const p of session.world.peers) p.peer.sendPacket(0, pkt, true);
+    } else {
+      session.peer.sendPacket(0, pkt, true);
+    }
+    return true;
   }
 
   return false;

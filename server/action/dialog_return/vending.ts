@@ -6,7 +6,7 @@
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
 import type { WorldInstance } from "../../database/world";
-import { canModifyWorldTile } from "../../database/world";
+import { canManageVending, logCctvEvent } from "../../database/world";
 import {
   buildTankPacket,
   makeParticleEffectPacket,
@@ -265,7 +265,7 @@ export function handleVendingDialogReturn(
     tile.extra = { kind: "vending", itemId: 0, price: 0, count: 0, wl: 0 };
   }
   const extra = tile.extra;
-  const isOwner = canModifyWorldTile(session, world, tile, tx, ty);
+  const isOwner = canManageVending(session, world, tile);
   const btn = kv.buttonClicked || "";
 
   // 1. Owner Actions
@@ -273,11 +273,32 @@ export function handleVendingDialogReturn(
     // Put item in machine from picker
     if (kv.stockitem && extra.itemId === 0) {
       const selectedId = parseInt(kv.stockitem, 10);
+      const selectedDef = ctx.itemsDb.get(selectedId);
       const slot = session.account.inventory.find((s) => s.itemId === selectedId);
-      if (slot && slot.count > 0 && selectedId !== 242 && selectedId !== 1796 && selectedId !== 7188) {
+      if (slot && slot.count > 0) {
+        if (
+          !selectedDef ||
+          selectedDef.isLock ||
+          selectedId === 242 ||
+          selectedId === 1796 ||
+          selectedId === 7188 ||
+          selectedId === 1424 ||
+          selectedId === 5816 ||
+          selectedDef.actionType === 64 ||
+          (selectedDef.flags & 0x0080) !== 0
+        ) {
+          const rejectMsg = (selectedDef?.isLock || selectedId === 1424 || selectedId === 5816)
+            ? "No no no."
+            : `Can't put that in a ${stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Vending Machine")}.`;
+          OnTalkBubble(session, session.netId, rejectMsg, 0, true);
+          OnConsoleMessage(session, rejectMsg);
+          return true;
+        }
+        const maxCapacity = tile.fg === 2978 ? 5199 : 9999;
+        const putCount = Math.min(slot.count, maxCapacity);
         extra.itemId = selectedId;
-        extra.count = slot.count;
-        ctx.consumeInventoryItem(session, selectedId, slot.count, true);
+        extra.count = putCount;
+        ctx.consumeInventoryItem(session, selectedId, putCount, true);
         ctx.dirty = true;
         const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
         for (const p of world.peers) p.peer.sendPacket(0, upd, true);
@@ -329,11 +350,15 @@ export function handleVendingDialogReturn(
       return true;
     }
 
-    // Pull stocks (empty machine)
+    // Pull stocks (empty machine, partial stack aware per GTPS3 World.h:13370)
     if (btn === "pullstocks") {
       if (extra.itemId && extra.count > 0) {
-        const take = Math.min(200, extra.count);
-        if (ctx.giveInventoryItem(session, extra.itemId, take, true) > 0) {
+        const invSlot = session.account.inventory.find((s) => s.itemId === extra.itemId && s.count > 0);
+        const haveInInv = invSlot?.count || 0;
+        const canFitInSlot = invSlot ? Math.max(0, 200 - haveInInv) : (freeCapacityForItem(session, extra.itemId) >= 1 || session.account.inventory.length < session.account.backpackSize ? 200 : 0);
+        const take = Math.min(canFitInSlot, extra.count);
+        if (take > 0 && ctx.giveInventoryItem(session, extra.itemId, take, true) > 0) {
+          const itemName = stripGtColors(ctx.itemsDb.get(extra.itemId)?.name || "Items");
           extra.count -= take;
           if (extra.count <= 0) {
             extra.itemId = 0;
@@ -342,8 +367,9 @@ export function handleVendingDialogReturn(
           ctx.dirty = true;
           const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
           for (const p of world.peers) p.peer.sendPacket(0, upd, true);
-          OnTalkBubble(session, session.netId, `You picked up ${take} items.`, 0, true);
-          OnConsoleMessage(session, `You picked up ${take} items.`);
+          const msg = `You took ${take} ${itemName} from the machine.`;
+          OnTalkBubble(session, session.netId, msg, 0, true);
+          OnConsoleMessage(session, msg);
         } else {
           OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
           OnConsoleMessage(session, "You don't have room in your backpack!");
@@ -352,31 +378,53 @@ export function handleVendingDialogReturn(
       return true;
     }
 
-    // Withdraw World Locks (verify backpack room BEFORE withdrawing!)
+    // Withdraw World Locks (WL-first, otherwise DLs + remainder WLs per GTPS3 World.h:13420)
     if (btn === "withdraw") {
       if (extra.wl > 0) {
-        const dls = Math.floor(extra.wl / 100);
-        const wls = extra.wl % 100;
-        const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
-        if (dls > 0 && freeCapacityForItem(session, 1796) < dls) {
-          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
-          OnConsoleMessage(session, "You don't have room in your backpack!");
-          return true;
+        const wlSlot = session.account.inventory.find((s) => s.itemId === 242 && s.count > 0);
+        const wlSpace = freeCapacityForItem(session, 242);
+        let collected = 0;
+        let msg = "";
+
+        if (extra.wl < 100 && wlSpace >= extra.wl) {
+          collected = extra.wl;
+          extra.wl = 0;
+          ctx.giveInventoryItem(session, 242, collected, true);
+          msg = `You collected ${collected} World Locks.`;
+        } else if (extra.wl < 100 && wlSpace > 0 && wlSlot) {
+          collected = Math.min(extra.wl, wlSpace);
+          extra.wl -= collected;
+          ctx.giveInventoryItem(session, 242, collected, true);
+          msg = `You collected ${collected} World Locks.`;
+        } else {
+          const dls = Math.floor(extra.wl / 100);
+          const wls = extra.wl % 100;
+          const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
+          if (dls > 0 && freeCapacityForItem(session, 1796) < dls) {
+            OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+            OnConsoleMessage(session, "You don't have room in your backpack!");
+            return true;
+          }
+          const needNewDlSlot = dls > 0 && dlHave === 0 ? 1 : 0;
+          if (wls > 0 && freeCapacityForItem(session, 242, needNewDlSlot) < wls) {
+            OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+            OnConsoleMessage(session, "You don't have room in your backpack!");
+            return true;
+          }
+          collected = extra.wl;
+          extra.wl = 0;
+          if (dls > 0) ctx.giveInventoryItem(session, 1796, dls, true);
+          if (wls > 0) ctx.giveInventoryItem(session, 242, wls, true);
+          msg = dls > 0 && wls > 0
+            ? `You collected ${dls} Diamond Locks and ${wls} World Locks.`
+            : dls > 0
+            ? `You collected ${dls} Diamond Locks.`
+            : `You collected ${wls} World Locks.`;
         }
-        const needNewDlSlot = dls > 0 && dlHave === 0 ? 1 : 0;
-        if (wls > 0 && freeCapacityForItem(session, 242, needNewDlSlot) < wls) {
-          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
-          OnConsoleMessage(session, "You don't have room in your backpack!");
-          return true;
-        }
-        const collected = extra.wl;
-        extra.wl = 0;
-        if (dls > 0) ctx.giveInventoryItem(session, 1796, dls, true);
-        if (wls > 0) ctx.giveInventoryItem(session, 242, wls, true);
+
         ctx.dirty = true;
         const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
         for (const p of world.peers) p.peer.sendPacket(0, upd, true);
-        const msg = `You collected ${collected} World Locks.`;
         OnTalkBubble(session, session.netId, msg, 0, true);
         OnConsoleMessage(session, msg);
       }
@@ -434,24 +482,16 @@ export function handleVendingDialogReturn(
       ctx.dirty = true;
       const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
       for (const p of world.peers) p.peer.sendPacket(0, upd, true);
-      if (extra.itemId) {
-        const effectPkt = buildTankPacket({
-          type: PACKET_ITEM_EFFECT,
-          netId: session.netId,
-          x: tx * 32 + 16,
-          y: ty * 32 + 16,
-          punchX: extra.itemId,
-          punchY: session.netId,
-          value: 100,
-        });
-        for (const p of world.peers) p.peer.sendPacket(0, effectPkt, true);
-      }
-      broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
+      const particle = makeParticleEffectPacket(44, tx * 32 + 16, ty * 32 + 16);
+      for (const p of world.peers) p.peer.sendPacket(0, particle, true);
+      broadcastPositionedSfx(world, session.netId, "audio/terraform.wav");
+      const itemName = stripGtColors(ctx.itemsDb.get(extra.itemId)?.name || "Item");
       const msg = extra.price === 0
         ? `\`7[\`\`${session.account.name} disabled the Vending Machine.\`\`\`7]\`\``
         : extra.price < 0
-        ? `\`7[\`\`${session.account.name} changed the price to \`6${Math.abs(extra.price)} per World Lock.\`\`\`7]\`\``
-        : `\`7[\`\`${session.account.name} changed the price to \`5${extra.price} World Locks each.\`\`\`7]\`\``;
+        ? `\`7[\`\`${session.account.name} changed the price of \`2${itemName}\`\` to \`6${Math.abs(extra.price)} per World Lock.\`\`\`7]\`\``
+        : `\`7[\`\`${session.account.name} changed the price of \`2${itemName}\`\` to \`5${extra.price} World Locks each.\`\`\`7]\`\``;
+      OnTalkBubble(session, session.netId, msg, 0, false);
       broadcastConsoleMessage(world, msg);
       return true;
     }
@@ -466,14 +506,28 @@ export function handleVendingDialogReturn(
     OnConsoleMessage(session, "`4Vending price or stock changed!``");
     return true;
   }
-  if (!Number.isFinite(buyCount) || buyCount <= 0) return true;
+  if (Math.abs(tx * 32 - session.x) > 24 || Math.abs(ty * 32 - session.y) > 24) {
+    OnTalkBubble(session, session.netId, "Get closer!", 0, false);
+    return true;
+  }
+  if (!Number.isFinite(buyCount)) return true;
+  if (buyCount < 0) {
+    OnTalkBubble(session, session.netId, "NEGATIVE, DOES NOT COMPUTE", 0, false);
+    return true;
+  }
+  if (buyCount === 0) return true;
 
   const isPerLock = extra.price < 0;
   const itemsPerLock = Math.abs(extra.price);
-  const actualItems = isPerLock ? buyCount * itemsPerLock : buyCount;
-  const totalCostWls = isPerLock ? buyCount : buyCount * extra.price;
+  if (isPerLock && buyCount < itemsPerLock) {
+    OnTalkBubble(session, session.netId, "You have to buy at least 1 World Lock's worth.", 0, true);
+    OnConsoleMessage(session, "You have to buy at least 1 World Lock's worth.");
+    return true;
+  }
+  const totalCostWls = isPerLock ? Math.floor(buyCount / itemsPerLock) : buyCount * extra.price;
+  const actualItems = isPerLock ? totalCostWls * itemsPerLock : buyCount;
 
-  if (actualItems > extra.count) {
+  if (actualItems <= 0 || actualItems > extra.count) {
     OnTalkBubble(session, session.netId, "There aren't enough available to fulfill your order!", 0, true);
     OnConsoleMessage(session, "There aren't enough available to fulfill your order!");
     return true;
@@ -555,5 +609,6 @@ export function handleVendingDialogReturn(
 
   const purchaseMsg = `\`7[\`\`\`9${session.account.name} bought ${actualItems} ${itemName} for ${totalCostWls} World Locks.\`\`\`7]\`\``;
   broadcastConsoleMessage(world, purchaseMsg);
+  logCctvEvent(world, session, "bought", `${actualItems} ${itemName} for ${totalCostWls} World Locks`);
   return true;
 }

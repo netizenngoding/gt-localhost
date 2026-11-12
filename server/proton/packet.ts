@@ -485,6 +485,13 @@ export function makeModifyInventoryPacket(itemId: number, addedCount = 0, remove
 // World Map & Tile Serialization (Verified against Func #4101 & Func #2458)
 // ============================================================================
 
+export interface DonationEntry {
+  itemId: number;
+  count: number;
+  name: string;
+  text: string;
+}
+
 export type TileExtra =
   | { kind: "door"; label: string; destination: string; id?: string; locked?: boolean }
   | { kind: "sign"; label: string }
@@ -496,7 +503,17 @@ export type TileExtra =
   | { kind: "weatherStuff"; itemId: number; gravity?: number; spin?: boolean; invert?: boolean }
   | { kind: "weatherInf"; cycleSec?: number; weatherIds?: number[] }
   | { kind: "growscan"; mode?: number }
-  | { kind: "xenonite"; powers?: [number, number, number, number] };
+  | { kind: "xenonite"; powers?: [number, number, number, number] }
+  | { kind: "display"; itemId: number }
+  | { kind: "displayShelf"; s1: number; s2: number; s3: number; s4: number }
+  | { kind: "donation"; donates: DonationEntry[] }
+  | { kind: "mailbox" }
+  | { kind: "bulletin" }
+  | { kind: "storage"; password?: string; recoveryAnswer?: string }
+  | { kind: "mannequin"; label?: string; skinColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number }
+  | { kind: "crystal"; crystals: Record<number, number> }
+  | { kind: "autoAction"; fuel: number; targetItemId: number; enabled: boolean }
+  | { kind: "camera" };
 
 export interface SeedExtra {
   kind: "seed";
@@ -531,12 +548,18 @@ const PROVIDER_FALLBACK_IDS = new Set([
 const WEATHER_BG_FALLBACK_IDS = new Set([3694, 4892, 5000, 5654, 5716, 6854]);
 const WEATHER_STUFF_FALLBACK_IDS = new Set([3832, 5958, 6280]);
 const LOCK_FALLBACK_IDS = new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 11550, 12654]);
+const DONATION_MAILBOX_IDS = new Set([656, 1006, 1452, 10784]);
+const BULLETIN_STORAGE_IDS = new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
+const DISPLAY_SHELF_IDS = new Set([3794, 10190, 10552]);
+const MANNEQUIN_IDS = new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+const CRYSTAL_BLOCK_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
 
 export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
   // Note: do NOT strip TILE_FLAG_EXTRA_VISUAL (0x0040) unconditionally because 0x0040 is also
   // TILE_FLAG_OPEN (doors, checkpoints, active weather machines). Strip only for vending/sucker below.
   let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED | TILE_FLAG_HAS_WLS);
   let extraBuf: Buffer | null = null;
+  let omitExtraFlag = false;
 
   if (tile.extra) {
     if (tile.extra.kind === "door") {
@@ -626,13 +649,57 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf.writeUInt32LE(ids.length >>> 0, 5);
       for (let i = 0; i < ids.length; i++) extraBuf.writeUInt32LE(ids[i] >>> 0, 9 + i * 4);
     } else if (tile.extra.kind === "xenonite") {
-      const p = tile.extra.powers || [0, 0, 0, 0];
-      extraBuf = Buffer.allocUnsafe(9);
-      extraBuf[0] = 18;
-      extraBuf.writeUInt16LE(p[0] & 0xffff, 1);
-      extraBuf.writeUInt16LE(p[1] & 0xffff, 3);
-      extraBuf.writeUInt16LE(p[2] & 0xffff, 5);
-      extraBuf.writeUInt16LE(p[3] & 0xffff, 7);
+      // upstream.wasm (#2458) reads 1 byte for Xenonite (fg 2072) even when TILE_FLAG_HAS_EXTRA is clear.
+      omitExtraFlag = true;
+      extraBuf = Buffer.from([0]);
+    } else if (tile.extra.kind === "display") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 23;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+    } else if (tile.extra.kind === "displayShelf") {
+      extraBuf = Buffer.allocUnsafe(17);
+      extraBuf[0] = 43;
+      extraBuf.writeUInt32LE(tile.extra.s1 >>> 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.s2 >>> 0, 5);
+      extraBuf.writeUInt32LE(tile.extra.s3 >>> 0, 9);
+      extraBuf.writeUInt32LE(tile.extra.s4 >>> 0, 13);
+    } else if (tile.extra.kind === "donation" || tile.extra.kind === "mailbox") {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 12;
+      if (tile.extra.kind === "donation" && tile.extra.donates.length > 0) {
+        flags |= TILE_FLAG_EXTRA_VISUAL;
+      }
+    } else if (tile.extra.kind === "bulletin" || tile.extra.kind === "storage") {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 6;
+    } else if (tile.extra.kind === "crystal") {
+      extraBuf = Buffer.from([20, 0, 0]);
+    } else if (tile.extra.kind === "mannequin") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.alloc(26 + lb.length);
+      extraBuf[0] = 14;
+      extraBuf.writeUInt16LE(lb.length, 1);
+      lb.copy(extraBuf, 3);
+      extraBuf[3 + lb.length] = 0;
+      extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 4 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.hair & 0xffff, 8 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.shirt & 0xffff, 10 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.pants & 0xffff, 12 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.feet & 0xffff, 14 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.face & 0xffff, 16 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.hand & 0xffff, 18 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.back & 0xffff, 20 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.mask & 0xffff, 22 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.neck & 0xffff, 24 + lb.length);
+    } else if (tile.extra.kind === "autoAction") {
+      extraBuf = Buffer.alloc(13);
+      extraBuf[0] = tile.fg === 6950 ? 70 : 69;
+      extraBuf.writeUInt32LE(tile.extra.fuel > 0 ? 1 : 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.fuel >>> 0, 5);
+      extraBuf.writeUInt32LE(tile.extra.targetItemId >>> 0, 9);
+      if (tile.extra.enabled) flags |= TILE_FLAG_EXTRA_VISUAL;
+    } else if (tile.extra.kind === "camera") {
+      extraBuf = null;
     }
   }
 
@@ -648,6 +715,26 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf[0] = 62;
       const cap = tile.fg === 5638 ? 5000 : 1500;
       extraBuf.writeUInt32LE(cap, 11);
+    } else if (tile.fg === 6950 || tile.fg === 6952) {
+      extraBuf = Buffer.alloc(13);
+      extraBuf[0] = tile.fg === 6950 ? 70 : 69;
+    } else if (tile.fg === 2946) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 23;
+    } else if (DISPLAY_SHELF_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(17);
+      extraBuf[0] = 43;
+    } else if (DONATION_MAILBOX_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 12;
+    } else if (BULLETIN_STORAGE_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 6;
+    } else if (MANNEQUIN_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(26);
+      extraBuf[0] = 14;
+    } else if (CRYSTAL_BLOCK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.from([20, 0, 0]);
     } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(5);
       extraBuf[0] = 40;
@@ -663,8 +750,9 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf = Buffer.alloc(9);
       extraBuf[0] = 77;
     } else if (tile.fg === 2072) {
-      extraBuf = Buffer.alloc(9);
-      extraBuf[0] = 18;
+      // upstream.wasm (#2458) reads 1 byte for Xenonite (fg 2072) even when TILE_FLAG_HAS_EXTRA is clear.
+      omitExtraFlag = true;
+      extraBuf = Buffer.from([0]);
     } else if (PROVIDER_FALLBACK_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(5);
       extraBuf[0] = 9;
@@ -682,7 +770,7 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
   }
 
   // Only set TILE_FLAG_HAS_EXTRA if extraBuf is actually present!
-  if (extraBuf) {
+  if (extraBuf && !omitExtraFlag) {
     flags |= TILE_FLAG_HAS_EXTRA;
   }
 

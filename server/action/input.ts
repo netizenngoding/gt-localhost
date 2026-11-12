@@ -1,8 +1,9 @@
+import { getWorldLockTile } from "../database/world";
 import { makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
-import { displayName } from "../ranks";
+import { displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { broadcastConsoleMessage, broadcastIconState, broadcastTalkBubble, chatPortrait } from "../onVariant";
+import { broadcastConsoleMessage, broadcastIconState, broadcastTalkBubble, chatPortrait, OnTalkBubble } from "../onVariant";
 import { sanitizeChatText } from "../tools/string";
 import { dispatchCommand } from "../commands";
 import { activeMods } from "../playmods/model";
@@ -30,13 +31,22 @@ export function handleInput(
     // C++ reference echoes a command only to its author using action|log.
     // Strip protocol/control and formatting delimiters to prevent log spoofing.
     const echo = sanitizeChatText(trimmed, 120).replace(/[\x00-\x1f\x7f`]/g, "");
-    session.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|log\nmsg|\`6${echo}\`\`\n`), true);
+    session.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|log\nmsg|${/^\/(msg|r)(\s|$)/i.test(trimmed) ? "CT:[MSG]_ " : ""}\`6${echo}\`\`\n`), true);
     dispatchCommand(ctx, session, trimmed.slice(1));
     return;
   }
 
   const world = session.world;
   if (!world) return;
+
+  if (world.royalSilence && world.ownerUserId !== session.account.userId && !hasPermission(session.account, "moderate")) {
+    const wl = getWorldLockTile(world);
+    const isAdmin = wl?.extra?.kind === "lock" && wl.extra.adminIds.includes(session.account.userId);
+    if (!isAdmin) {
+      OnTalkBubble(session, session.netId, "`4The Royal Owner has silenced peasants in this world!``", 0, true);
+      return;
+    }
+  }
 
   const clean = sanitizeChatText(trimmed, 120);
   if (!clean) return;

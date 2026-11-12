@@ -1,3 +1,6 @@
+import { clearAreaLock } from "../../database/world";
+import { makeParticleEffectPacket, makeTileUpdatePacket } from "../../proton/packet";
+import { broadcastBillboardChange, broadcastNameChanged, broadcastPositionedSfx, OnBillboardChange, OnPlayPositioned } from "../../onVariant";
 import { worldModerate } from '../world-moderation';
 import { addTradeItem, confirmTrade } from '../trade';
 import { friendRequest, friendDialogReturn } from '../friends';
@@ -43,6 +46,60 @@ export function showGrowmojisDialog(session: PlayerSession): void {
     .addQuickExit()
     .endDialog("growmoji_dialog", "", "Back");
   OnDialogRequest(session, dialogStr);
+}
+
+export function openBillboardDialog(ctx: ServerContext, session: PlayerSession): void {
+  const b = session.account.billboard || { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true };
+  const itemDef = b.itemId ? ctx.itemsDb.get(b.itemId) : undefined;
+  const lines = [
+    "set_default_color|`o",
+    "add_label_with_icon|big|`wTrade Billboard``|left|8282|",
+    "add_spacer|small|",
+  ];
+  if (itemDef) {
+    lines.push(`add_label_with_icon|small|\`w${stripGtColors(itemDef.name)}\`\`|left|${b.itemId}|`);
+  }
+  lines.push(
+    "add_item_picker|billboard_item|`wSelect Billboard Item``|Choose an item to put on your billboard!|",
+    "add_spacer|small|",
+    `add_checkbox|billboard_toggle|\`$Show Billboard\`\`|${b.show ? 1 : 0}`,
+    `add_checkbox|billboard_buying_toggle|\`$Is Buying\`\`|${b.buying ? 1 : 0}`,
+    `add_text_input|setprice|Price of item:|${b.priceWl || 1}|5|`,
+    `add_checkbox|chk_peritem|World Locks per Item|${b.perItem ? 1 : 0}`,
+    `add_checkbox|chk_perlock|Items per World Lock|${b.perItem ? 0 : 1}`,
+    "add_spacer|small|",
+    "end_dialog|billboard_edit|Close|Update|"
+  );
+  OnDialogRequest(session, lines.join("\n"));
+}
+
+export function openBackpackMenu(ctx: ServerContext, session: PlayerSession): void {
+  const lvl = session.account.backpackLevel || 1;
+  const maxStored = lvl * 10;
+  const stored = session.account.storedItems || [];
+  const upgradeCost = 1000 * (lvl * lvl + 25) * 2;
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wBackpack - Level ${lvl}\`\`|left|8430|`,
+    `add_textbox|\`w${stored.length}/${maxStored}\`\` items stored.|left|`,
+  ];
+  if (stored.length > 0) {
+    lines.push("add_spacer|small|", "text_scaling_string|aaaaaaaaaaaaaaa|");
+    stored.forEach((s, idx) => {
+      const iName = stripGtColors(ctx.itemsDb.get(s.itemId)?.name || "Item");
+      lines.push(`add_button_with_icon|bp_${idx}|${iName}|frame|${s.itemId}|${s.count}|`);
+    });
+    lines.push("add_button_with_icon||END_LIST|noflags|0||");
+  }
+  lines.push("add_spacer|small|");
+  if (maxStored < 200) {
+    lines.push(`add_button|backpack_upgrade|\`2Upgrade for ${upgradeCost.toLocaleString()} gems\`\`|noflags|0|0|`);
+  }
+  if (stored.length < maxStored) {
+    lines.push("add_item_picker|itemid|`wDeposit Item``|Choose an item to store|");
+  }
+  lines.push("end_dialog|backpack_menu|Exit||", "add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
 }
 
 export function openCheatsMenu(session: PlayerSession): void {
@@ -237,7 +294,146 @@ export function handlePlayerDialogsReturn(
       for(const w of ctx.worlds.values())if(w.ownerUserId===session.account.userId)dlg.addButton(`visit_${w.name}`,w.name);
       OnDialogRequest(session,dlg.addQuickExit().endDialog('my_worlds','Close',''));
     }
+    if(btn==='billboard_edit'){openBillboardDialog(ctx,session);return true;}
+    if(btn==='backpack_menu'){openBackpackMenu(ctx,session);return true;}
     if(btn==='acct_growid')showGrowIdApplyModal(session);
+    return true;
+  }
+
+  if (dlgName === "billboard_edit") {
+    const b = (session.account.billboard = session.account.billboard || { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true });
+    if (kv.billboard_item) {
+      const bid = Number.parseInt(kv.billboard_item, 10);
+      const def = ctx.itemsDb.get(bid);
+      if (bid > 0 && def && (def.flags & 0x0010) === 0 && !def.isLock) {
+        b.itemId = bid;
+      } else {
+        OnConsoleMessage(session, "Item can not be untradeable.");
+        OnTalkBubble(session, session.netId, "Item can not be untradeable.", 0, true);
+      }
+    }
+    if (kv.billboard_toggle !== undefined) b.show = kv.billboard_toggle === "1";
+    if (kv.billboard_buying_toggle !== undefined) b.buying = kv.billboard_buying_toggle === "1";
+    if (kv.setprice !== undefined) {
+      const p = Number.parseInt(kv.setprice, 10);
+      if (Number.isFinite(p) && p > 0 && p <= 99999) b.priceWl = p;
+    }
+    if (kv.chk_peritem !== undefined || kv.chk_perlock !== undefined) {
+      b.perItem = kv.chk_perlock !== "1";
+    }
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    if (session.world) broadcastBillboardChange(session.world, session);
+    else OnBillboardChange(session, session);
+    return true;
+  }
+
+  if (dlgName === "backpack_menu") {
+    const lvl = session.account.backpackLevel || 1;
+    const stored = (session.account.storedItems = session.account.storedItems || []);
+    if (btn === "backpack_upgrade") {
+      if (lvl * 10 >= 200) {
+        OnTalkBubble(session, session.netId, "You have reached max slots!", 0, false);
+        return true;
+      }
+      const cost = 1000 * (lvl * lvl + 25) * 2;
+      if (session.account.gems < cost) {
+        OnTalkBubble(session, session.netId, "You don't have enough gems!", 0, false);
+        return true;
+      }
+      session.account.gems -= cost;
+      session.account.backpackLevel = lvl + 1;
+      OnSetBux(session);
+      OnPlayPositioned(session, "audio/piano_nice.wav");
+      OnTalkBubble(session, session.netId, "Congratulations! You have upgraded your Backpack!", 0, false);
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      openBackpackMenu(ctx, session);
+      return true;
+    }
+    if (kv.itemid) {
+      const iid = Number.parseInt(kv.itemid, 10);
+      const slot = session.account.inventory.find((s) => s.itemId === iid && s.count > 0);
+      const def = ctx.itemsDb.get(iid);
+      if (!slot || !def) return true;
+      if ((def.flags & 0x0010) !== 0 || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
+        OnTalkBubble(session, session.netId, "You can't store this item!", 0, false);
+        return true;
+      }
+      if (stored.length >= lvl * 10) {
+        OnTalkBubble(session, session.netId, "Backpack storage is full!", 0, false);
+        return true;
+      }
+      const amt = slot.count;
+      if (ctx.consumeInventoryItem(session, iid, amt, true)) {
+        stored.push({ itemId: iid, count: amt });
+        ctx.dirty = true;
+        ctx.savePlayersNow();
+        openBackpackMenu(ctx, session);
+      }
+      return true;
+    }
+    if (btn.startsWith("bp_")) {
+      const idx = Number.parseInt(btn.slice(3), 10);
+      const entry = stored[idx];
+      if (!entry) return true;
+      if (ctx.giveInventoryItem(session, entry.itemId, entry.count, true) === entry.count) {
+        const iName = stripGtColors(ctx.itemsDb.get(entry.itemId)?.name || "Item");
+        stored.splice(idx, 1);
+        OnConsoleMessage(session, `You picked up ${entry.count} ${iName}.`);
+        OnTalkBubble(session, session.netId, `You picked up ${entry.count} ${iName}.`, 0, false);
+        ctx.dirty = true;
+        ctx.savePlayersNow();
+        openBackpackMenu(ctx, session);
+      } else {
+        OnTalkBubble(session, session.netId, "You don't have enough inventory space!", 0, false);
+      }
+      return true;
+    }
+    return true;
+  }
+
+  if (dlgName === "unaccess") {
+    const world = session.world;
+    if (!world || (btn !== "Yes" && btn !== "OK" && btn !== "")) return true;
+    const uid = session.account.userId;
+    let removed = 0;
+    for (let i = 0; i < world.tiles.length; i++) {
+      const t = world.tiles[i];
+      if (t.extra?.kind === "lock" && t.extra.ownerUserId !== uid && t.extra.adminIds.includes(uid)) {
+        t.extra.adminIds = t.extra.adminIds.filter((id) => id !== uid);
+        removed++;
+        const upd = makeTileUpdatePacket(i % world.width, Math.floor(i / world.width), t, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+      }
+    }
+    if (removed > 0) {
+      ctx.dirty = true;
+      broadcastNameChanged(session);
+      OnTalkBubble(session, session.netId, "I've removed my access!", 0, true);
+      broadcastConsoleMessage(world, `${session.account.name} removed their access from all locks in ${world.name}.`);
+    } else {
+      OnConsoleMessage(session, "You don't have admin access on any locks in this world.");
+    }
+    return true;
+  }
+
+  if (dlgName === "top") {
+    const list = [...ctx.worlds.values()].sort((a, b) => b.peers.size - a.peers.size).slice(0, 15);
+    if (btn.startsWith("warp_to_")) {
+      ctx.joinWorld(session, btn.slice(8));
+      return true;
+    }
+    const lines = [
+      "set_default_color|`o",
+      "add_label_with_icon|big|`oTop Worlds``|left|394|",
+      "add_spacer|small|",
+    ];
+    list.forEach((w, idx) => {
+      lines.push(`add_button|warp_to_${w.name}|#${idx + 1}: \`w${w.name}\`\` (${w.peers.size} online)|noflags|0|0|`);
+    });
+    lines.push("end_dialog|top|Close||");
+    OnDialogRequest(session, lines.join("\n"));
     return true;
   }
 

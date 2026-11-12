@@ -1,5 +1,6 @@
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
+import { handleSdbDialogReturn } from "../../commands/broadcast";
 import { handleDropItemReturn } from "./drop_item";
 import { handleFindItemDialogReturn } from "./find_item";
 import { handleGrowIdApplyReturn } from "./growid_apply";
@@ -10,6 +11,7 @@ import { handleTileEditDialogReturn } from "./tile_edit";
 import { handleTrashItemReturn } from "./trash_item";
 import { handleVendingDialogReturn } from "./vending";
 import { handleTelephoneLockeDialogReturn } from "./telephone_locke";
+import { handleWorldBlockDialogReturn } from "./world_blocks";
 
 export function handleDialogReturn(
   ctx: ServerContext,
@@ -18,6 +20,10 @@ export function handleDialogReturn(
 ): void {
   const dlg = (kv.dialog_name || "").trim();
   if (!dlg) return;
+
+  if (handleSdbDialogReturn(ctx, session, dlg, kv)) {
+    return;
+  }
 
   if (handleTelephoneLockeDialogReturn(ctx, session, dlg, kv)) {
     return;
@@ -55,6 +61,10 @@ export function handleDialogReturn(
 
   if (dlg === "item_finder") {
     handleFindItemDialogReturn(ctx, session, kv);
+    return;
+  }
+
+  if (handleWorldBlockDialogReturn(ctx, session, dlg, kv)) {
     return;
   }
 

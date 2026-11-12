@@ -2,7 +2,7 @@ import { OnPlayPositioned } from "../onVariant/OnPlayPositioned";
 import { cancelTrade } from '../action/trade';
 import { effectiveSkin } from "../playmods/model";
 import { expireMods } from "../playmods/service";
-import { recordProgress } from "../progression/service";
+import { progression, recordProgress } from "../progression/service";
 import { buildCharacterStateForSession } from "./peer";
 import { staffInteractionReach } from "../ranks/interaction";
 import { displayName, hasPermission } from "../ranks";
@@ -25,6 +25,8 @@ import {
   broadcastSetClothing,
   broadcastSetPos,
   buildSetClothingPacket,
+  OnBillboardChange,
+  broadcastBillboardChange,
   OnConsoleMessage,
   OnTalkBubble,
   OnSetBux,
@@ -39,6 +41,7 @@ import {
 import {
   generateFreshWorld,
   hydrateWorldFromDisk,
+  logCctvEvent,
   serializeWorldForDisk,
   type PersistedWorld,
   type WorldInstance,
@@ -66,7 +69,9 @@ export class ServerContext {
     this.ranks = new RankService(rootDir);
     this.itemsDb = itemsDb;
     this.rootDir = rootDir;
-    this.dataStoreDir = path.join(rootDir, "data_store");
+    this.dataStoreDir = process.env.DATA_STORE_DIR
+      ? path.resolve(process.env.DATA_STORE_DIR)
+      : path.join(rootDir, "data_store");
     this.playersFile = path.join(this.dataStoreDir, "players.json");
     this.worldsFile = path.join(this.dataStoreDir, "worlds.json");
 
@@ -150,14 +155,21 @@ export class ServerContext {
     }
   }
 
+  private atomicWriteJson(targetFile: string, payload: unknown): void {
+    const tmp = `${targetFile}.tmp-${process.pid}`;
+    const fd = fs.openSync(tmp, "w", 0o600);
+    try { fs.writeFileSync(fd, JSON.stringify(payload)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    try {
+      if (fs.existsSync(targetFile)) fs.copyFileSync(targetFile, targetFile + ".bak");
+    } catch {
+      // Transient .bak file lock on Windows must not abort primary state persistence.
+    }
+    fs.renameSync(tmp, targetFile);
+  }
+
   public savePlayersNow(): void {
     try {
-      const playersArr = Array.from(this.accounts.values());
-      const tmp = `${this.playersFile}.tmp-${process.pid}`;
-      const fd = fs.openSync(tmp, "w", 0o600);
-      try { fs.writeFileSync(fd, JSON.stringify(playersArr)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-      if (fs.existsSync(this.playersFile)) fs.copyFileSync(this.playersFile, this.playersFile + ".bak");
-      fs.renameSync(tmp, this.playersFile);
+      this.atomicWriteJson(this.playersFile, Array.from(this.accounts.values()));
     } catch (err) {
       this.dirty = true;
       throw new Error("Player save failed; mutation was not acknowledged", { cause: err });
@@ -167,12 +179,10 @@ export class ServerContext {
   public savePersistentState(): void {
     this.savePlayersNow();
     try {
-      const worldsArr = Array.from(this.worlds.values()).map((w) => serializeWorldForDisk(w));
-      const tmpW = `${this.worldsFile}.tmp-${process.pid}`;
-      const fd = fs.openSync(tmpW, "w", 0o600);
-      try { fs.writeFileSync(fd, JSON.stringify(worldsArr)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-      if (fs.existsSync(this.worldsFile)) fs.copyFileSync(this.worldsFile, this.worldsFile + ".bak");
-      fs.renameSync(tmpW, this.worldsFile);
+      this.atomicWriteJson(
+        this.worldsFile,
+        Array.from(this.worlds.values()).map((w) => serializeWorldForDisk(w))
+      );
       this.dirty = false;
     } catch (err) {
       console.warn("[ServerContext] Failed saving worlds.json:", err);
@@ -413,6 +423,16 @@ export class ServerContext {
       OnConsoleMessage(session, `You are temporarily banned from ${world.name}.`);
       session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true); return;
     }
+    const minLevel = world.entryLevel ?? 1;
+    if (
+      minLevel > 1 &&
+      world.ownerUserId !== session.account.userId &&
+      !hasPermission(session.account, "moderate") &&
+      progression(session.account).level < minLevel
+    ) {
+      OnConsoleMessage(session, `\`4You need to be at least Level ${minLevel} to enter ${world.name}!\`\``);
+      session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true); return;
+    }
     this.leaveCurrentWorld(session, false);
     const spawn = this.findMainDoorPixel(world);
     this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_open.wav", true);
@@ -471,6 +491,15 @@ export class ServerContext {
     this.schedulePostSpawnSkinSync(session, world, session.netId);
     OnSetBux(session);
     this.sendCharacterState(session);
+    if (session.account.billboard?.show && session.account.billboard.itemId) {
+      broadcastBillboardChange(world, session);
+    }
+    for (const p of world.peers) {
+      if (p !== session && p.account.billboard?.show && p.account.billboard.itemId) {
+        OnBillboardChange(session, p);
+      }
+    }
+    logCctvEvent(world, session, "entered");
     broadcastPositionedSfx(world, session.netId, entrySfx);
     for (const peer of world.peers) recordProgress(this, peer, undefined, 0);
 
@@ -498,6 +527,7 @@ export class ServerContext {
     cancelTrade(session, "Trade cancelled: player left the world.");
     const world = session.world;
     if (!world) return;
+    logCctvEvent(world, session, "left");
     OnPlayPositioned(session, "audio/door_shut.wav");
     for (const other of world.peers) if(other!==session) OnPlayPositioned(other,"audio/door_shut.wav");
     session.pullGeneration=(session.pullGeneration||0)+1; session.pullUntil=0; session.pullImmuneUntil=0;

@@ -24,6 +24,47 @@ export interface XenoniteState {
   powerups: number;
 }
 
+export interface WorldBulletinEntry {
+  x: number;
+  y: number;
+  name: string;
+  text: string;
+}
+
+export interface WorldBulletinSetting {
+  x: number;
+  y: number;
+  publicCanAdd: boolean;
+  hideNames: boolean;
+}
+
+export interface WorldStorageEntry {
+  x: number;
+  y: number;
+  itemId: number;
+  count: number;
+}
+
+export interface WorldCctvSetting {
+  x: number;
+  y: number;
+  showTaking: boolean;
+  showDropping: boolean;
+  showEnter: boolean;
+  showExit: boolean;
+  hideOwner: boolean;
+  hideAdmins: boolean;
+  hideNoAccess: boolean;
+  showVend: boolean;
+}
+
+export interface WorldCctvLog {
+  x: number;
+  y: number;
+  log: string;
+  icon: number;
+}
+
 export interface WorldInstance {
   name: string;
   width: number;
@@ -35,6 +76,20 @@ export interface WorldInstance {
   ownerUserId: number;
   worldBans?: Record<string,number>;
   xenonite?: XenoniteState;
+  allowAdminVending?: boolean;
+  disableMusicBlocks?: boolean;
+  makeMusicInvisible?: boolean;
+  musicBpm?: number;
+  entryLevel?: number;
+  royalSilence?: boolean;
+  royalRainbows?: boolean;
+  bulletin?: WorldBulletinEntry[];
+  bulletinSettings?: WorldBulletinSetting[];
+  storageItems?: WorldStorageEntry[];
+  cctvSettings?: WorldCctvSetting[];
+  cctvLogs?: WorldCctvLog[];
+  worldTimerEndMs?: number;
+  worldCategory?: string;
   spawnX: number;
   spawnY: number;
   peers: Set<PlayerSession>;
@@ -52,6 +107,20 @@ export interface PersistedWorld {
   ownerUserId: number;
   worldBans?: Record<string,number>;
   xenonite?: XenoniteState;
+  allowAdminVending?: boolean;
+  disableMusicBlocks?: boolean;
+  makeMusicInvisible?: boolean;
+  musicBpm?: number;
+  entryLevel?: number;
+  royalSilence?: boolean;
+  royalRainbows?: boolean;
+  bulletin?: WorldBulletinEntry[];
+  bulletinSettings?: WorldBulletinSetting[];
+  storageItems?: WorldStorageEntry[];
+  cctvSettings?: WorldCctvSetting[];
+  cctvLogs?: WorldCctvLog[];
+  worldTimerEndMs?: number;
+  worldCategory?: string;
   spawnX: number;
   spawnY: number;
 }
@@ -167,6 +236,20 @@ export function serializeWorldForDisk(w: WorldInstance): PersistedWorld {
     ownerUserId: w.ownerUserId,
     worldBans: w.worldBans || {},
     xenonite: w.xenonite,
+    allowAdminVending: !!w.allowAdminVending,
+    disableMusicBlocks: !!w.disableMusicBlocks,
+    makeMusicInvisible: !!w.makeMusicInvisible,
+    musicBpm: w.musicBpm ?? 100,
+    entryLevel: w.entryLevel ?? 1,
+    royalSilence: !!w.royalSilence,
+    royalRainbows: !!w.royalRainbows,
+    bulletin: w.bulletin || [],
+    bulletinSettings: w.bulletinSettings || [],
+    storageItems: w.storageItems || [],
+    cctvSettings: w.cctvSettings || [],
+    cctvLogs: w.cctvLogs || [],
+    worldTimerEndMs: w.worldTimerEndMs || 0,
+    worldCategory: w.worldCategory || "None",
     spawnX: w.spawnX,
     spawnY: w.spawnY,
   };
@@ -184,6 +267,20 @@ export function hydrateWorldFromDisk(raw: PersistedWorld): WorldInstance {
     ownerUserId: typeof raw.ownerUserId === "number" ? raw.ownerUserId : 0,
     worldBans: raw.worldBans && typeof raw.worldBans === "object" ? Object.fromEntries(Object.entries(raw.worldBans).filter(([k,v])=>/^[1-9][0-9]*$/.test(k) && Number.isSafeInteger(v) && v > Date.now())) : {},
     xenonite: raw.xenonite,
+    allowAdminVending: !!raw.allowAdminVending,
+    disableMusicBlocks: !!raw.disableMusicBlocks,
+    makeMusicInvisible: !!raw.makeMusicInvisible,
+    musicBpm: typeof raw.musicBpm === "number" ? raw.musicBpm : 100,
+    entryLevel: typeof raw.entryLevel === "number" ? raw.entryLevel : 1,
+    royalSilence: !!raw.royalSilence,
+    royalRainbows: !!raw.royalRainbows,
+    bulletin: Array.isArray(raw.bulletin) ? raw.bulletin : [],
+    bulletinSettings: Array.isArray(raw.bulletinSettings) ? raw.bulletinSettings : [],
+    storageItems: Array.isArray(raw.storageItems) ? raw.storageItems : [],
+    cctvSettings: Array.isArray(raw.cctvSettings) ? raw.cctvSettings : [],
+    cctvLogs: Array.isArray(raw.cctvLogs) ? raw.cctvLogs : [],
+    worldTimerEndMs: typeof raw.worldTimerEndMs === "number" ? raw.worldTimerEndMs : 0,
+    worldCategory: typeof raw.worldCategory === "string" ? raw.worldCategory : "None",
     spawnX: typeof raw.spawnX === "number" ? raw.spawnX : 48 * 32,
     spawnY: typeof raw.spawnY === "number" ? raw.spawnY : 36 * 32,
     peers: new Set(),
@@ -360,6 +457,77 @@ export function canModifyTile(
 }
 
 export const canModifyWorldTile = canModifyTile;
+
+const WORLD_LOCK_IDS = new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
+
+export function getWorldLockTile(world: WorldInstance): WorldTile | undefined {
+  return world.tiles.find((t) => WORLD_LOCK_IDS.has(t.fg) && t.extra?.kind === "lock");
+}
+
+/**
+ * GTPS3 World.h:5084 block_access(..., vend = true) parity:
+ * - World owner & developer can always manage vending.
+ * - If world.allowAdminVending (v_p), un-area-locked vending can be edited by world admins.
+ * - If area-locked, only the area lock owner can manage vending.
+ * - In unlocked worlds, anyone can manage vending.
+ */
+export function canManageVending(
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile
+): boolean {
+  const uid = session.account.userId;
+  if (world.ownerUserId === uid || session.account.rank === "developer") return true;
+  const isAreaLocked = (tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0;
+  if (world.allowAdminVending && !isAreaLocked) {
+    const wl = getWorldLockTile(world);
+    if (wl?.extra?.kind === "lock" && wl.extra.adminIds.includes(uid)) return true;
+  }
+  if (isAreaLocked) {
+    const lockTile = world.tiles[tile.parentIndex];
+    return lockTile?.extra?.kind === "lock" && lockTile.extra.ownerUserId === uid;
+  }
+  return world.ownerUserId === 0;
+}
+
+/**
+ * Records an activity entry for all configured Security Cameras in a world (GTPS3 World.h:1650).
+ */
+export function logCctvEvent(
+  world: WorldInstance,
+  session: PlayerSession,
+  type: "entered" | "left" | "took" | "dropped" | "bought",
+  extraText = ""
+): void {
+  const settingsList = world.cctvSettings;
+  if (!settingsList || settingsList.length === 0) return;
+
+  const uid = session.account.userId;
+  const wl = getWorldLockTile(world);
+  const isOwner = world.ownerUserId === uid;
+  const isAdmin = !!wl && wl.extra?.kind === "lock" && wl.extra.adminIds.includes(uid);
+  const now = new Date();
+  const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} on ${now.getMonth() + 1}/${now.getDate()}`;
+  const logs = (world.cctvLogs = world.cctvLogs || []);
+
+  for (const s of settingsList) {
+    if (s.hideOwner && isOwner) continue;
+    if (s.hideAdmins && isAdmin) continue;
+    if (s.hideNoAccess && !isOwner && !isAdmin) continue;
+    const match =
+      (type === "entered" && s.showEnter) ||
+      (type === "left" && s.showExit) ||
+      (type === "took" && s.showTaking) ||
+      (type === "dropped" && s.showDropping) ||
+      (type === "bought" && s.showVend);
+    if (!match) continue;
+
+    const mid = extraText ? ` ${extraText} ` : " ";
+    const text = `\`w${session.account.name}\`\` ${type}${mid}at ${timeStr}`;
+    logs.push({ x: s.x, y: s.y, log: text, icon: type === "took" ? 18 : 1400 });
+    while (logs.length > 50) logs.shift();
+  }
+}
 
 export function getDefaultLockWeather(world: WorldInstance): number {
   const wlTile = world.tiles.find(

@@ -1,7 +1,8 @@
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
-import { spawnOrMergeWorldDrop } from "../../database/world";
+import { logCctvEvent, spawnOrMergeWorldDrop } from "../../database/world";
 import { OnPlayPositioned, OnTextOverlay } from "../../onVariant";
+import { stripGtColors } from "../../tools/string";
 
 /**
  * Verified against ReGrowtopia-1.50.wasm Func #1737 (`World::HandleObjectChangePacket`):
@@ -53,5 +54,7 @@ export function handleDropItemReturn(
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
 
   spawnOrMergeWorldDrop(world, itemId, amt, dropX, dropY, session.netId);
+  const droppedName = stripGtColors(ctx.itemsDb.get(itemId)?.name || "Item");
+  logCctvEvent(world, session, "dropped", `${amt} ${droppedName}`);
   ctx.dirty = true;
 }

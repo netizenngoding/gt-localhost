@@ -13,3 +13,5 @@ export * from "./OnNameChanged";
 export * from "./SetHasGrowID";
 export * from "./RequestWorldSelectMenu";
 export * from "./RequestGazette";
+export * from "./OnSetIconState";
+export * from "./OnEmoticonDataChanged";

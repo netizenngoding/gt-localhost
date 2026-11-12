@@ -1,184 +1,383 @@
-<!DOCTYPE html>
-<html lang="en-us">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=overlays-content">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#000000">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Game Server</title>
+    <meta name="theme-color" content="#1e1e1e">
+    <title>Growtopia</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="/branding/favicon.png">
+    <link rel="apple-touch-icon" href="/branding/icon-192.png">
+    <meta name="application-name" content="Growtopia">
     <script src="/server-config.js"></script>
-    <link rel="icon" type="image/png" href="branding/favicon.png">
-    <meta name="application-name" content="Game Server">
     <script>
-      // Technical upstream bundle basename; not the displayed product name.
       var appName = "MagnoliaClient";
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').catch(function(e) {
+            console.warn('[SW] Register warning:', e);
+          });
+        });
+      }
     </script>
     <style>
-      html {
+      @font-face {
+        font-family: 'CenturyGothicBold';
+        src: url('/branding/CenturyGothicBold.ttf') format('truetype');
+        font-weight: bold;
+        font-style: normal;
+      }
+
+      html, body {
         box-sizing: border-box;
+        position: fixed;
+        inset: 0;
+        margin: 0;
+        padding: 0;
+        background: #000000;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+        font-family: 'CenturyGothicBold', "Century Gothic", "Trebuchet MS", sans-serif;
       }
       *, *:before, *:after {
         box-sizing: inherit;
       }
-      body {
-        margin: 0;
-        background: #0b1824;
-        overflow: hidden;
-        font-family: "Century Gothic", "Trebuchet MS", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      }
+
       #gameContainer {
-        width: 100vw;
-        height: 100vh;
-      }
-      canvas.emscripten {
+        position: fixed;
+        left: 0;
+        top: 0;
         width: 100%;
         height: 100%;
+        z-index: 1;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas.emscripten {
+        width: 100% !important;
+        height: 100% !important;
         display: block;
         outline: none;
       }
-      .logo {
-        display: block;
-        max-width: 85vw;
-        max-height: 45vh;
-        object-fit: contain;
-      }
-      .progress {
-        margin: 1.5em;
-        border: 1px solid rgba(255, 255, 255, 0.85);
-        width: min(50vw, 480px);
-        display: none;
-        border-radius: 4px;
-        overflow: hidden;
-        background: rgba(0, 0, 0, 0.35);
-      }
-      .progress .full {
-        margin: 2px;
-        background: #58d64d;
-        height: 1em;
-        transform-origin: top left;
-        transition: transform 0.08s linear;
-      }
-      .loaderStyle {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100vw;
-        height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(180deg, #4db8ff 0%, #1d6fa5 55%, #0b2438 100%);
-        z-index: 100;
-      }
-      #loader {
-        pointer-events: none;
-      }
-      #errortext {
-        color: #ff5555;
-        font-weight: 900;
-        font-size: 20px;
-      }
-      .overlayBackground {
+
+      /* ============================================================
+         Exact GTSetPlanner Loader Styles (styles3.css)
+         ============================================================ */
+      .loader {
         position: fixed;
-        left: 0;
         top: 0;
+        left: 0;
         width: 100%;
         height: 100%;
-        background: #000;
-        opacity: 0.5;
-      }
-      .loadingtext {
-        color: white;
-        text-align: center;
-        z-index: 99;
-        font-size: 15px;
-        font-weight: 700;
-        margin-top: 8px;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
-      }
-      .spinner,
-      .spinner:after {
-        border-radius: 50%;
-        width: 5em;
-        height: 5em;
-      }
-      .spinner {
-        margin: 14px;
-        font-size: 10px;
-        position: relative;
-        text-indent: -9999em;
-        border-top: 1.1em solid rgba(255, 255, 255, 0.25);
-        border-right: 1.1em solid rgba(255, 255, 255, 0.25);
-        border-bottom: 1.1em solid rgba(255, 255, 255, 0.25);
-        border-left: 1.1em solid #ffffff;
-        transform: translateZ(0);
-        animation: spinner-spin 1.1s infinite linear;
-      }
-      @keyframes spinner-spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      .textInputContainer {
-        position: fixed;
-        left: 8px;
-        bottom: 8px;
-        width: 1px;
-        height: 1px;
-        pointer-events: none;
-        z-index: 10001;
-      }
-      .textInput {
-        opacity: 0.01;
-        width: 1px;
-        height: 1px;
-        font-size: 16px;
-        padding: 0;
-        margin: 0;
-        border: 0;
-      }
-      .startButton {
-        z-index: 99;
-        padding: 10px 20px;
-        font-size: 16px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      #hideAll {
+        background: linear-gradient(135deg, #1e1e1e, #333);
+        display: flex;
+        align-content: center;
+        align-items: center;
+        justify-content: center;
         z-index: 9999;
+      }
+
+      .loader-content {
+        text-align: center;
+        color: white;
+        font-family: 'CenturyGothicBold', "Century Gothic", sans-serif;
+        font-size: 20px;
+        width: 90%;
+        max-width: 550px;
+      }
+
+      .loader-header {
+        background-color: rgb(62, 118, 152);
+        width: 100%;
+        height: 35px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      }
+
+      #loader-header {
+        margin: 0;
+        line-height: 35px;
+        color: #fff;
+        font-size: 24px;
+        letter-spacing: 0.5px;
+      }
+
+      #loader-icon {
+        border: none;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        max-width: min(80vw, 360px);
+        max-height: 110px;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 12px;
+        filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+      }
+
+      #loader-text {
+        margin: 20px auto 12px;
+        font-size: 16px;
+        color: #fce6ba;
+        text-shadow: 1px 1px 0 #000;
+        min-height: 24px;
+      }
+
+      #loader-minitext {
+        text-align: left;
         position: absolute;
-        left: 0;
+        bottom: 8px;
+        left: 14px;
+        line-height: 15px;
+        font-family: 'CenturyGothicBold', "Century Gothic", sans-serif;
+      }
+
+      /* Circular Loader */
+      .loader-ring-wrap {
+        position: relative;
+        width: 58px;
+        height: 58px;
+        margin: 10px auto 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .loader-ring-svg {
+        width: 58px;
+        height: 58px;
+        transform: rotate(-90deg);
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+      }
+
+      .loader-ring-track {
+        fill: none;
+        stroke: rgba(190, 232, 241, 0.25);
+        stroke-width: 5;
+      }
+
+      .loader-ring-fill {
+        fill: none;
+        stroke: #bee8f1;
+        stroke-width: 5;
+        stroke-linecap: round;
+        stroke-dasharray: 138.23;
+        stroke-dashoffset: 103.67;
+        transition: stroke-dashoffset 0.18s ease;
+        transform-origin: 50% 50%;
+      }
+
+      .loader-ring-wrap.is-spinning .loader-ring-svg {
+        animation: loaderSpin 1.15s linear infinite;
+      }
+
+      .loader-ring-pct {
+        position: absolute;
+        font-size: 12px;
+        font-weight: bold;
+        color: #ffffff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+        pointer-events: none;
+      }
+
+      @keyframes loaderSpin {
+        from { transform: rotate(-90deg); }
+        to { transform: rotate(270deg); }
+      }
+
+      /* ============================================================
+         Exact GTSetPlanner Dialogs & Buttons (styles4.css)
+         ============================================================ */
+      .overlay {
+        position: fixed;
         top: 0;
-        width: 100vw;
-        height: 100vh;
-        background-color: #000;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.65);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        overflow: hidden;
+      }
+
+      .overlay-content {
+        background: rgba(68, 129, 166, .88);
+        border: 5px solid #bee8f1;
+        border-radius: 7px;
+        width: 90%;
+        max-width: 500px;
+        padding: 18px 24px;
+        box-shadow: #000 3px 3px, #000 3px 3px inset;
+        text-align: center;
+        font-family: 'CenturyGothicBold', "Century Gothic", sans-serif;
+        box-sizing: border-box;
+      }
+
+      .growtopia-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .growtopia-modal-header h4 {
+        margin: 0;
+        font-family: 'CenturyGothicBold', "Century Gothic", sans-serif;
+        font-size: 26px;
+        color: #fff;
+        text-shadow: 2px 2px #000;
+      }
+
+      .changelog-sprite img {
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+      }
+
+      .growtopia-button {
+        background: #89c3d6;
+        all: unset;
+        border-radius: 5px;
+        box-shadow: 2px 2px #000;
+        color: #fff;
+        cursor: pointer;
+        display: inline-block;
+        font-family: 'CenturyGothicBold', "Century Gothic", sans-serif;
+        font-weight: bold;
+        font-size: 19px;
+        margin-top: 14px;
+        padding: 8px 20px 10px;
+        text-decoration: none;
+        text-shadow: 2px 2px rgba(0, 0, 0, .7);
+        transition: transform 0.05s;
+        box-sizing: border-box;
+      }
+
+      .growtopia-button:active {
+        transform: translate(1px, 1px);
+        box-shadow: 1px 1px #000;
+      }
+
+      /* Phone Rotation Animation */
+      @keyframes phoneRotateAnim {
+        0%, 15% { transform: rotate(0deg); }
+        50%, 85% { transform: rotate(-90deg); }
+        100% { transform: rotate(0deg); }
+      }
+      .phone-icon-anim {
+        width: 56px;
+        height: 56px;
+        margin: 12px auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .phone-icon-anim svg {
+        animation: phoneRotateAnim 2.4s infinite ease-in-out;
+      }
+
+      .textInputContainer {
+        position: fixed !important;
+        left: 8px !important;
+        top: 8px !important;
+        bottom: auto !important;
+        width: 1px !important;
+        height: 1px !important;
+        pointer-events: none !important;
+        z-index: 10001 !important;
+      }
+      .textInput, #textInput {
+        position: fixed !important;
+        left: 8px !important;
+        top: 8px !important;
+        bottom: auto !important;
+        opacity: 0.01 !important;
+        width: 1px !important;
+        height: 1px !important;
+        font-size: 16px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: 0 !important;
+        pointer-events: none !important;
       }
     </style>
   </head>
   <body>
-    <div id="loader" class="loaderStyle">
-      <img class="logo" data-server-logo alt="Server logo">
-      <div class="spinner"></div>
-      <div data-server-loading class="loadingtext">Loading Game Server V1.50...</div>
-      <div class="progress"><div class="full"></div></div>
+    <!-- Landscape Prompt Overlay for Mobile (Exact GTSetPlanner Style) -->
+    <div id="rotateOverlay" class="overlay" style="display:none;">
+      <div class="overlay-content">
+        <div class="growtopia-modal-header">
+          <span class="changelog-sprite">
+            <img src="/branding/favicon.png" alt="icon">
+          </span>
+          <h4>Rotate Device</h4>
+        </div>
+        <div class="phone-icon-anim">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#bee8f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+        </div>
+        <p style="color: #fce6ba; font-size: 17px; margin: 10px 0 6px; text-shadow: 1px 1px 0 #000;">
+          Please rotate your device to <strong>landscape mode</strong> to play.
+        </p>
+        <div class="growtopia-button" onclick="enterFullscreenAndStart()">Enter Fullscreen</div>
+      </div>
     </div>
-    <div id="interstitial" class="loaderStyle" style="display:none">
-      <img class="logo" data-server-logo alt="Server logo">
-      <br/>
-      <div data-server-loading class="loadingtext" id="errortext"></div>
-      <br/>
-      <div data-server-loading class="loadingtext">Rotate device to landscape mode, then tap Start:</div>
-      <br/>
-      <button class="startButton" onclick="dismissInterstitial()">Start <span data-server-name>Game Server</span>!</button>
+
+    <!-- Main Game Loader (Exact GTSetPlanner Reverse Engineered Loader) -->
+    <div id="loader" class="loader">
+      <div class="loader-content">
+        <img id="loader-icon" src="/branding/logo.png" data-server-logo alt="logo">
+        <p style="margin: 8px 0 4px; font-size: 18px; color: #fff;">Welcome to</p>
+        <div class="loader-header">
+          <p id="loader-header" data-server-name>Magnolia Growtopia</p>
+        </div>
+        <p id="loader-text" class="loadingtext">Loading...</p>
+        <div class="loader-ring-wrap is-spinning" id="loader-ring">
+          <svg class="loader-ring-svg" viewBox="0 0 54 54" aria-hidden="true">
+            <circle class="loader-ring-track" cx="27" cy="27" r="22"></circle>
+            <circle class="loader-ring-fill" id="progress-ring" cx="27" cy="27" r="22"></circle>
+          </svg>
+          <span class="loader-ring-pct" id="loader-pct"></span>
+        </div>
+        <div id="loader-minitext">
+          <a style="color: white; font-size: 12px;">Version 1.50<br>Copyright &copy; MagnoliaGrowtopia. All rights reserved.</a><br>
+          <a style="color: rgb(150, 150, 150); font-size: 10px;">Growtopia Web Private Server Edition.</a>
+        </div>
+      </div>
     </div>
-    <div id="enterFullScreenPopup" class="loaderStyle" style="display:none">
-      <div class="overlayBackground"></div>
-      <div data-server-loading class="loadingtext">Please ensure your device is in landscape mode, then enter fullscreen mode.</div>
-      <br/>
-      <button class="startButton" onclick="enterFullscreenMode()">Enter full-screen mode</button>
+
+    <!-- Fallback Popups styled with exact GTSetPlanner Overlay -->
+    <div id="enterFullScreenPopup" class="overlay" style="display:none;">
+      <div class="overlay-content">
+        <div class="growtopia-modal-header">
+          <span class="changelog-sprite">
+            <img src="/branding/favicon.png" alt="icon">
+          </span>
+          <h4>Fullscreen Mode</h4>
+        </div>
+        <p style="color: #fce6ba; font-size: 16px; margin: 10px 0;">
+          Please ensure your device is in landscape mode, then enter fullscreen.
+        </p>
+        <div class="growtopia-button" onclick="enterFullscreenMode()">Enter Fullscreen</div>
+      </div>
     </div>
+
     <div id="gameContainer">
       <div class="textInputContainer">
         <input class="textInput" id="textInput" type="text" enterkeyhint="done"
@@ -186,14 +385,15 @@
       </div>
       <canvas class="emscripten" id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
     </div>
-    <div id="hideAll"></div>
-    <script src="WebLoaderData/BrandingAssets.js?v=2100"></script>
-    <script src="WebLoaderData/UIAssets.js?v=2100"></script>
-    <script src="WebLoaderData/ServerBranding.js?v=2100"></script>
-    <script src="WebLoaderData/GameSDK.js?v=2100"></script>
-    <script src="WebLoaderData/NativeSession.js?v=2502"></script>
-    <script src="WebLoaderData/NativeChatHeads.js?v=2502"></script>
-    <script src="WebLoaderData/NativeAutofill.js?v=2400"></script>
-    <script src="WebLoaderData/GameInterstitial.js?v=2100"></script>
+
+    <script src="WebLoaderData/ViewportLock.js?v=2701"></script>
+    <script src="WebLoaderData/BrandingAssets.js?v=2701"></script>
+    <script src="WebLoaderData/UIAssets.js?v=2701"></script>
+    <script src="WebLoaderData/ServerBranding.js?v=2701"></script>
+    <script src="WebLoaderData/GameSDK.js?v=2701"></script>
+    <script src="WebLoaderData/NativeSession.js?v=2701"></script>
+    <script src="WebLoaderData/NativeChatHeads.js?v=2701"></script>
+    <script src="WebLoaderData/NativeAutofill.js?v=2701"></script>
+    <script src="WebLoaderData/GameInterstitial.js?v=2701"></script>
   </body>
 </html>

@@ -1,3 +1,4 @@
+import { requestTrade } from '../action/trade';
 import { setSkin, showSkinMenu } from "../progression/skin";
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { hasPermission } from "../ranks";
@@ -5,12 +6,15 @@ import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import {
   applySkinColorUpdate,
+  broadcastIconState,
   broadcastTextOverlay,
   OnConsoleMessage,
+  OnDialogRequest,
   OnPlayPositioned,
   OnSetBux,
   OnTextOverlay,
 } from "../onVariant";
+import { DialogBuilder } from "../tools/create_dialog";
 import { rgbHexToGtSkinColor, sanitizeChatText, stripGtColors } from "../tools/string";
 import { openItemFinderDialog } from "../action/dialog_return/find_item";
 import { openCheatsMenu } from "../action/dialog_return/player_dialogs";
@@ -37,6 +41,13 @@ export function handlePlayerCommand(
   }
   if (cmd === "find" || cmd === "item" || cmd === "search") {
     openItemFinderDialog(ctx, session, argStr);
+    return true;
+  }
+
+  if (cmd === "trade") {
+    const target=ctx.findOnlineSessionByName(parts[1]||'');
+    if(!target || target.world!==session.world || !session.world)OnConsoleMessage(session,"That player is not in this world.");
+    else requestTrade(ctx,session,target.netId);
     return true;
   }
 
@@ -176,7 +187,8 @@ export function handlePlayerCommand(
       `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
       chatPortrait(session, ctx.itemsDb)
     );
-    OnPlayPositioned(target, "audio/beep.wav");
+    OnPlayPositioned(target, "audio/pay_time.wav");
+    if (hasPermission(target.account,"moderate")) OnConsoleMessage(session, "`4Note:`` Message a moderator only once about an issue. Moderators do not replace scammed items.");
     OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
@@ -196,6 +208,115 @@ export function handlePlayerCommand(
     OnTextOverlay(session, "`wOpening YouTube...``");
     ctx.sendCustomVariant(session, "OnSendPlayerToYoutube", targetUrl);
     OnConsoleMessage(session, `\`2Opening YouTube: \`w${targetUrl}\`\`...`);
+    return true;
+  }
+
+  if (cmd === "brb" || cmd === "afk") {
+    const world = session.world;
+    if (!world) return true;
+    const next = !session.brb;
+    session.brb = next;
+    broadcastIconState(world, session, next ? 2 : 0, true);
+    OnConsoleMessage(session, next ? "`2BRB mode enabled.``" : "`2BRB mode disabled.``");
+    return true;
+  }
+
+  if (cmd === "daily") {
+    const now = Date.now();
+    const acct = session.account;
+    const cooldown = 24 * 60 * 60 * 1000;
+    if (acct.lastDailyReward && now - acct.lastDailyReward < cooldown) {
+      const leftHours = Math.ceil((cooldown - (now - acct.lastDailyReward)) / 3600000);
+      OnConsoleMessage(session, `\`4Crazy Jim's Daily Quest: Come back in \`w${leftHours} hours\`4!\`\``);
+      return true;
+    }
+    const rewardGems = 500;
+    acct.gems = (acct.gems || 0) + rewardGems;
+    acct.lastDailyReward = now;
+    ctx.savePlayersNow();
+    OnSetBux(session);
+    OnPlayPositioned(session, "audio/level_up.wav");
+    const dlg = new DialogBuilder()
+      .setDefaultColor("`o")
+      .addLabelWithIcon("big", "`wCrazy Jim's Daily Quest``", 18)
+      .addTextbox("`2Congratulations! You completed today's quest!``")
+      .addTextbox(`Reward: \`2+${rewardGems} Gems\`\`!`)
+      .addQuickExit()
+      .endDialog("daily_reward", "Close", "");
+    OnDialogRequest(session, dlg);
+    OnConsoleMessage(session, `\`2[Daily Quest] Received \`w+${rewardGems} Gems\`2! Come back tomorrow for more.\`\``);
+    return true;
+  }
+
+  if (cmd === "phone") {
+    const dlg = new DialogBuilder()
+      .setDefaultColor("`o")
+      .addLabelWithIcon("big", "`wTelephone Services``", 638)
+      .addTextbox("`wWho would you like to call?``")
+      .addButton("call_police", "`4Emergency (911)``")
+      .addButton("call_locke", "`5Locke's Traveling Wagon``")
+      .addButton("call_daily", "`2Crazy Jim's Daily Quests``")
+      .addQuickExit()
+      .endDialog("phone_dialog", "Hang Up", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "locke") {
+    const dlg = new DialogBuilder()
+      .setDefaultColor("`o")
+      .addLabelWithIcon("big", "`wLocke's Traveling Wagon``", 1796)
+      .addTextbox("`wWelcome to Locke's Traveling Wagon! Locke offers rare goods from distant lands.``")
+      .addTextbox("`2Today's Special: \`wUltra Gem Pack\`\` (1 Diamond Lock for 100,000 Gems)!")
+      .addButton("locke_trade", "`wTrade 1 DL for 100,000 Gems``")
+      .addQuickExit()
+      .endDialog("locke_dialog", "Close", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "rules") {
+    // Exact GTPS3 World.h:8152
+    const dlg = new DialogBuilder()
+      .setDefaultColor("`o")
+      .addLabelWithIcon("big", "`wHelp & Rules``", 18)
+      .addSpacer("small")
+      .addTextbox("`w`2World or Accounts`` may be deleted after long periods of inactivity if a world is not visited regularly. `2Item function and prices are subject to change`` at anytime and without warning as we are constantly trying to balance different aspects of the game.``")
+      .addSpacer("small")
+      .addTextbox("`wProtect your worlds and the items by using Doors, Locks, and Blocks wisely, `2never share your login credentials`` with anyone, and be aware of `2fake system messages and phishing websites``.``")
+      .addSpacer("small")
+      .addTextbox("`w`2Inappropriate behavior`` (profanity, racist, sexist or sexual content, abusive behavior, and bullying); any form of scam game such as Drop Game, Dirt Game, etc.; `2buying, selling, or trading GTPS accounts, items, or worlds`` for real money; `2purchase fraud``; and usage of `2third party software``, including, but not limited to, client-side manipulation, auto-clickers, speed hacks, clock manipulation, bots, macroing, and auto-farming, will be sanctioned and may result in a permanent suspension.``")
+      .addSpacer("small")
+      .addTextbox("`wTo report a world, type `2/report`` and exit the world immediately. To report a player, `2wrench and report`` them, or contact us directly. For any issues and questions you may have, please visit our discord server``")
+      .addSpacer("small")
+      .addQuickExit()
+      .endDialog("rules_dialog", "OK", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "discord") {
+    // Exact GTPS3 World.h:8146
+    const dlg = new DialogBuilder()
+      .setDefaultColor("`o")
+      .addLabelWithIcon("big", "`wDiscord``", 10568)
+      .addSpacer("small")
+      .addTextbox("`oVisit the Growtopia Discord page?``")
+      .addSpacer("small")
+      .addUrlButton("comment", "`wLaunch``", "https://discord.gg/gtps3", "Open Discord?", "noflags")
+      .addQuickExit()
+      .endDialog("discord_dialog", "", "");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "status" || cmd === "stats") {
+    const acct = session.account;
+    const worldName = session.world?.name || "EXIT";
+    OnConsoleMessage(
+      session,
+      `\`o[Status] Name: \`w${acct.name}\`o | World: \`w${worldName}\`o | Gems: \`2${acct.gems || 0}\`o | Backpack: \`w${acct.inventory.filter(i => i.count > 0).length}/${acct.backpackSize}\`o | Online: \`2${ctx.sessions.size}\`o players.\`\``
+    );
     return true;
   }
 

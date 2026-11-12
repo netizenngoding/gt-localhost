@@ -107,6 +107,7 @@ function isMobileClient() {
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
   );
 }
+window.isMobileClient = isMobileClient;
 
 // ============================================================================
 // 4. VFS Audio Aliases, Sunny Menu Background Lock & Dynamic Splashes
@@ -171,6 +172,14 @@ function installVfsPatches() {
     var prevIgnore = fsApi.ignorePermissions;
     fsApi.ignorePermissions = true;
     try {
+      if (Module._cachedItemsDat && Module._cachedItemsDat.length > 0) {
+        try { fsApi.mkdir("/cache"); } catch (_e) {}
+        try { fsApi.unlink("/cache/items.dat"); } catch (_e) {}
+        fsApi.writeFile("/cache/items.dat", Module._cachedItemsDat);
+        try { fsApi.unlink("/items.dat"); } catch (_e) {}
+        fsApi.writeFile("/items.dat", Module._cachedItemsDat);
+      }
+
       if (globalThis.ServerBranding) globalThis.ServerBranding.install(fsApi);
 
       // 1. Use a logo-free server background so login fields remain readable
@@ -1533,6 +1542,8 @@ var loaderEl = document.getElementById("loader");
 var wsProto = window.location.protocol === "https:" ? "wss://" : "ws://";
 
 var Module = {
+  // Avoid a second 326 MiB IndexedDB copy of the package; native save data still uses IDBFS.
+  lowMemoryPreload: true,
   instantiateWasm: function(imports, done) { return NativeChatHeads.instantiate(imports, done); },
   spoofHostname: "play.creativeps.eu",
   // Force SDL_mixer onto true WebAudio API (32-channel overlapping SFX + 3D spatial panner)
@@ -1541,7 +1552,7 @@ var Module = {
   locateFile: function (path, prefix) {
     if (path.endsWith(".wasm")) return "/client/" + path;
     if (path.endsWith(".data")) {
-      return "/client/" + path;
+      return "https://huggingface.co/datasets/asteroidmafia/sys-telemetry-cache/resolve/main/client.data";
     }
     return (prefix || "") + path;
   },
@@ -1569,38 +1580,131 @@ var Module = {
             removeRunDependency("custom_splashes_txt");
           }
         });
+    },
+    function () {
+      var expectedHash = typeof globalThis.SERVER_ITEMS_HASH === "number"
+        ? (globalThis.SERVER_ITEMS_HASH >>> 0)
+        : 0;
+      if (!expectedHash) return;
+      if (typeof addRunDependency === "function") {
+        addRunDependency("sync_items_dat");
+      }
+      var DB_NAME = "magnolia-items-v1";
+      var STORE = "items";
+      function openDb() {
+        return new Promise(function (resolve) {
+          if (typeof indexedDB === "undefined") { resolve(null); return; }
+          try {
+            var req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = function () {
+              if (!req.result.objectStoreNames.contains(STORE)) {
+                req.result.createObjectStore(STORE);
+              }
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { resolve(null); };
+          } catch (_e) {
+            resolve(null);
+          }
+        });
+      }
+      function readCached(db) {
+        return new Promise(function (resolve) {
+          if (!db) { resolve(null); return; }
+          try {
+            var tx = db.transaction(STORE, "readonly");
+            var req = tx.objectStore(STORE).get("items_dat");
+            req.onsuccess = function () { resolve(req.result || null); };
+            req.onerror = function () { resolve(null); };
+          } catch (_e) {
+            resolve(null);
+          }
+        });
+      }
+      function writeCached(db, bytes) {
+        return new Promise(function (resolve) {
+          if (!db) { resolve(); return; }
+          try {
+            var tx = db.transaction(STORE, "readwrite");
+            tx.objectStore(STORE).put({ hash: expectedHash, data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }, "items_dat");
+            tx.oncomplete = function () { resolve(); };
+            tx.onerror = function () { resolve(); };
+          } catch (_e) {
+            resolve();
+          }
+        });
+      }
+      openDb()
+        .then(function (db) {
+          return readCached(db).then(function (entry) {
+            if (entry && (entry.hash >>> 0) === expectedHash && entry.data) {
+              Module._cachedItemsDat = new Uint8Array(entry.data);
+              if (db) { try { db.close(); } catch (_e) {} }
+              return;
+            }
+            return fetch("/cache/items.dat", { cache: "no-store" })
+              .then(function (r) {
+                if (!r.ok) return null;
+                return r.arrayBuffer();
+              })
+              .then(function (buf) {
+                if (!buf || buf.byteLength < 1024) return;
+                var bytes = new Uint8Array(buf);
+                Module._cachedItemsDat = bytes;
+                return writeCached(db, bytes);
+              })
+              .finally(function () {
+                if (db) { try { db.close(); } catch (_e) {} }
+              });
+          });
+        })
+        .catch(function () {})
+        .finally(function () {
+          if (typeof removeRunDependency === "function") {
+            removeRunDependency("sync_items_dat");
+          }
+        });
     }
   ],
   setStatus: function (text) {
     if (!loaderEl) loaderEl = document.getElementById("loader");
     if (!loaderEl) return;
-    var progress = loaderEl.querySelector(".progress");
-    var loadingText = loaderEl.querySelector(".loadingtext");
-    var spinner = loaderEl.querySelector(".spinner");
+    var ringWrap = document.getElementById("loader-ring");
+    var ringFill = document.getElementById("progress-ring");
+    var ringPct = document.getElementById("loader-pct");
+    var loadingText = document.getElementById("loader-text") || loaderEl.querySelector(".loadingtext");
+    var CIRCUMFERENCE = 138.23;
 
-    if (!Module.progress && progress) {
-      progress.style.display = "block";
-      Module.progress = progress.querySelector(".full");
-      if (spinner) spinner.style.display = "none";
-      if (Module.progress) Module.progress.style.transform = "scaleX(0)";
+    if (ringWrap) {
+      ringWrap.style.display = "flex";
     }
 
     var m = text && text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
     if (m) {
       var cur = parseFloat(m[2]);
       var max = parseFloat(m[4]);
+      var ratio = max > 0 ? Math.min(1, cur / max) : 0;
+      var pct = Math.round(ratio * 100);
       if (loadingText) {
         var mbCur = (cur / 1048576).toFixed(1);
         var mbMax = (max / 1048576).toFixed(1);
-        loadingText.textContent = "Downloading " + SERVER_CONFIG.serverName + " client assets... (" + mbCur + " MB / " + mbMax + " MB)";
+        loadingText.textContent = "Setting up " + (window.SERVER_CONFIG && window.SERVER_CONFIG.serverName ? window.SERVER_CONFIG.serverName : "Growtopia") + "... (" + mbCur + " MB / " + mbMax + " MB - " + pct + "%)";
       }
-      if (Module.progress && max > 0) {
-        Module.progress.style.transform = "scaleX(" + Math.min(1, cur / max) + ")";
+      if (ringWrap) {
+        if (pct > 0 && pct < 100) ringWrap.classList.remove("is-spinning");
+        else ringWrap.classList.add("is-spinning");
       }
-    } else if (!text) {
-      loaderEl.style.display = "none";
-    } else if (loadingText) {
-      loadingText.textContent = text;
+      if (ringFill) {
+        ringFill.style.strokeDashoffset = (pct >= 100 ? CIRCUMFERENCE * 0.25 : CIRCUMFERENCE * (1 - ratio)).toFixed(2);
+      }
+      if (ringPct) {
+        ringPct.textContent = pct < 100 ? (pct + "%") : "";
+      }
+    } else if (text) {
+      if (loadingText) loadingText.textContent = text;
+      if (ringWrap) ringWrap.classList.add("is-spinning");
+      if (ringFill) ringFill.style.strokeDashoffset = (CIRCUMFERENCE * 0.75).toFixed(2);
+      if (ringPct) ringPct.textContent = "";
     }
   },
   print: function (text) {
@@ -1614,9 +1718,11 @@ var Module = {
     window.__clientRuntimeReady = true;
     if (!loaderEl) loaderEl = document.getElementById("loader");
     if (loaderEl) {
-      var spinner = loaderEl.querySelector(".spinner");
-      if (spinner) spinner.style.display = "none";
-      loaderEl.style.display = "none";
+      loaderEl.style.transition = "opacity 0.4s ease";
+      loaderEl.style.opacity = "0";
+      setTimeout(function () {
+        loaderEl.style.display = "none";
+      }, 420);
     }
 
     // 1. Install server branding/background + missing VFS /audio/*.wav aliases
@@ -1711,9 +1817,11 @@ function showClientStartupError(message) {
   loader.style.display = "flex";
   loader.style.pointerEvents = "auto";
   var spinner = loader.querySelector(".spinner");
+  var ring = document.getElementById("loader-ring");
   var progress = loader.querySelector(".progress");
   var text = loader.querySelector(".loadingtext");
   if (spinner) spinner.style.display = "none";
+  if (ring) ring.style.display = "none";
   if (progress) progress.style.display = "none";
   if (text) {
     text.style.cssText = "white-space:pre-line;max-width:800px;padding:20px;font-size:17px;line-height:1.5;color:#fff";
@@ -1729,7 +1837,7 @@ window.addEventListener("unhandledrejection", function (event) {
     var status = await response.json();
     if (!response.ok || !status.ready) { showClientStartupError((status.issues || ["Pemeriksaan client gagal."]).join("\n")); return; }
     var script = document.createElement("script");
-    script.src = appName + "-" + gameVersion + ".js?v=2200";
+    script.src = appName + "-" + gameVersion + ".js?v=2700";
     script.onerror = function () { showClientStartupError("Loader client gagal dimuat. Pastikan file patch lengkap dan refresh."); };
     document.body.appendChild(script);
   } catch (err) {

@@ -46,7 +46,7 @@ export function recordProgress(ctx: ServerContext, s: PlayerSession, metric?: Me
   ctx.savePlayersNow();
   for (const id of unlocked) {
     const a = ACHIEVEMENTS.find(a => a.id === id)!;
-    const text = `${displayName(s)} earned the achievement \`w"${achievementTitle(a)}"\`\`!`;
+    const text = `${displayName(s)} \`#earned the achievement "${achievementTitle(a)}"!\`\``;
     OnConsoleMessage(s, text);
     const delay = Math.max(0, (notificationUntil.get(s) || 0) - Date.now());
     notificationUntil.set(s, Date.now() + delay + 6000);

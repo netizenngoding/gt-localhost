@@ -1,4 +1,3 @@
-import { SERVER_NAME } from "../../config/branding";
 import { hasPermission } from "../../ranks";
 import type { ServerContext } from "../../database/context";
 import type { ItemDef } from "../../database/items";
@@ -15,35 +14,38 @@ const DEFAULT_FIND_SHOWCASE = [
 export function openItemFinderDialog(
   ctx: ServerContext,
   session: PlayerSession,
-  query: string
+  query: string,
+  page = 0
 ): void {
   const q = query.trim();
   session.lastItemSearchQuery = q;
+  session.lastFindItemIds = [];
 
-  const matches: ItemDef[] = q
-    ? ctx.itemsDb.search(q, 32)
+  page = Math.max(0, Math.min(500, Math.floor(page)));
+  const allMatches: ItemDef[] = q
+    ? ctx.itemsDb.search(q, ctx.itemsDb.items.size)
     : DEFAULT_FIND_SHOWCASE
         .map((id) => ctx.itemsDb.get(id))
         .filter((d): d is ItemDef => d !== undefined);
+  const matches=allMatches.slice(page*32,(page+1)*32+1);
 
   const dlg = new DialogBuilder()
     .setDefaultColor("`o")
-    .addLabelWithIcon("big", `\`w${SERVER_NAME} Item Finder\`\``, 6016)
-    .addTextbox(`Search ${ctx.itemsDb.items.size} enabled reference items:`)
+    .addLabelWithIcon("big", `\`wFound \`2${allMatches.length} items\`\``, 6016)
+    .addTextbox("Select items below.")
     .addTextInput("search_q", "Item name or ID:", q.replace(/\|/g, ""), 40)
     .addSpacer("small");
 
   if (matches.length > 0) {
-    for (const m of matches) {
-      dlg.addButtonWithIcon(
-        `claim_${m.id}`,
-        `\`w${stripGtColors(m.name)}\`\``,
-        m.id,
-        "staticBlueFrame",
-        m.id
-      );
+    session.lastFindItemIds=matches.slice(0,32).map(m=>m.id);
+    for (const m of matches.slice(0,32)) {
+      const full=stripGtColors(m.name).replace(/[|\r\n]/g," ");
+      // Label is the text slot; frame_message is the quantity overlay.
+      dlg.raw(`add_checkicon|item_${m.id}|${full}|staticframe|${m.id}||${session.findSelectedItemIds?.includes(m.id)?1:0}|\n`);
     }
-    dlg.raw("add_button_with_icon||END_LIST|noflags|0|\n");
+    dlg.addButton("claim_selected", "Claim selected");
+    if(page>0)dlg.addButton(`findpage_${page-1}`, "Previous");
+    if(matches.length>32)dlg.addButton(`findpage_${page+1}`, "Next");
   } else {
     dlg.addTextbox("`4No matching items found. Try another keyword!``");
   }
@@ -58,23 +60,27 @@ export function handleFindItemDialogReturn(
   kv: Record<string, string>
 ): void {
   const btn = kv.buttonClicked || "";
-  if (btn.startsWith("claim_")) {
+  const selected=new Set(session.findSelectedItemIds || []);
+  // Only accept changes to IDs shown on the most recently rendered page.
+  for(const id of session.lastFindItemIds || []) {
+    if(kv[`item_${id}`] === "1") { if(selected.size<512) selected.add(id); }
+    else if(kv[`item_${id}`] === "0") selected.delete(id);
+  }
+  session.findSelectedItemIds=[...selected];
+  if (/^findpage_\d+$/.test(btn)) { openItemFinderDialog(ctx,session,session.lastItemSearchQuery,Number(btn.slice(9))); return; }
+  if (btn === "claim_selected") {
     if (!hasPermission(session.account, "grantItems")) { OnConsoleMessage(session, "`4Item grants are operator-only.``"); return; }
-    const id = parseInt(btn.slice(6), 10);
-    const def = ctx.itemsDb.get(id);
-    if (def && !def.name.startsWith("null_")) {
-      const qty = def.isClothing || def.isLock ? 1 : 50;
-      const added = ctx.giveInventoryItem(session, id, qty, true);
-      if (added > 0) {
-        OnPlayPositioned(session, "audio/object_collect.wav");
-        OnConsoleMessage(
-          session,
-          `\`2Claimed \`w${added}x ${stripGtColors(def.name)}\`2 (#${def.id})!\`\``
-        );
-      } else {
-        OnConsoleMessage(session, "`4Backpack full or stack already at 200!``");
-      }
+    const ids=session.findSelectedItemIds || [];
+    session.findSelectedItemIds=[];
+    session.lastFindItemIds=[];
+    for (const id of ids) {
+      const def=ctx.itemsDb.get(id); if(!def || def.name.startsWith("null_"))continue;
+      const added=ctx.giveInventoryItem(session,id,def.isClothing||def.isLock?1:50,true);
+      if(added>0)OnConsoleMessage(session,`Claimed ${added}x ${stripGtColors(def.name)} (#${id}).`);
+      else OnConsoleMessage(session,`Could not claim ${stripGtColors(def.name)}: backpack or stack full.`);
     }
+    if(ids.length)OnPlayPositioned(session,"audio/object_collect.wav");
+    else OnConsoleMessage(session,"Select at least one item.");
     return;
   }
 

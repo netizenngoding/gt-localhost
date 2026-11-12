@@ -13,9 +13,9 @@ export function displayName(session: PlayerSession): string {
   const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0,18);
   const rank = rankOf(session.account);
   let prefix: string = RANKS[rank].prefix;
-  if (rank === "player" && session.world) {
-    if (session.world.ownerUserId === session.account.userId) prefix = "`2";
-    else if (session.world.tiles.some(t => t.extra?.kind === "lock" && [242,1796,7188].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
+  if (session.world) {
+    if (session.world.ownerUserId === session.account.userId) prefix = rank === "player" ? "`2" : "`2@";
+    else if (rank === "player" && session.world.tiles.some(t => t.extra?.kind === "lock" && [242,1796,7188,11550].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
   }
   return `${prefix}${name}\`\``;
 }

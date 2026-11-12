@@ -67,8 +67,21 @@
       m.HEAPU8.set(savedResource,resource);if(copied)ex.portraitDestroy(state);m._free(state);m._free(fake);m._free(scale);capturing=false;
     }
   }
-  function ensureOverlay(){if(!overlay){overlay=document.createElement('canvas');overlay.id='native-chat-heads';overlay.setAttribute('aria-hidden','true');Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'15',imageRendering:'pixelated'});document.body.appendChild(overlay);paint=overlay.getContext('2d');}
-    const c=module.canvas,r=c.getBoundingClientRect();if(overlay.width!==c.width||overlay.height!==c.height){overlay.width=c.width;overlay.height=c.height;}Object.assign(overlay.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});paint.clearRect(0,0,overlay.width,overlay.height);stats.visible=0;wanted=new Map();lastDraw=performance.now();
+  function ensureOverlay(){
+    if(!overlay){
+      overlay=document.createElement('canvas');
+      overlay.id='native-chat-heads';
+      overlay.setAttribute('aria-hidden','true');
+      Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'15',imageRendering:'pixelated'});
+      document.body.appendChild(overlay);
+      paint=overlay.getContext('2d');
+    }
+    const c=module&&module.canvas;
+    if(!c) return;
+    const r=c.getBoundingClientRect();
+    if(overlay.width!==c.width||overlay.height!==c.height){overlay.width=c.width;overlay.height=c.height;}
+    Object.assign(overlay.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+    paint.clearRect(0,0,overlay.width,overlay.height);stats.visible=0;wanted=new Map();lastDraw=performance.now();
   }
   function prepare(){if(document.hidden)return;let budget=1;for(const meta of wanted.values()){
     const k=key(meta),item=cache.get(k),now=Date.now();
@@ -79,9 +92,17 @@
     while(cache.size>96)cache.delete(cache.keys().next().value);
   }}
   function measure(font,text,scale){const m=module,p=m._malloc(24);m.HEAPU8.fill(0,p,p+24);try{GameSDK._abi.writeStdString(p,text);m.wasmTable.get(450)(p+16,font,p,scale);return m.HEAPF32[(p+16)>>2];}finally{GameSDK._abi.freeStdString(p);m._free(p);}}
-  function draw(font,x,y,text,scale){const hit=marker.exec(text);if(!hit)return;const id=hit[1].replace(/`/g,''),meta=rows.get(id);if(!meta)return;wanted.set(key(meta),meta);const item=cache.get(key(meta));if(!item||!item.image)return;
-    const gl=module.ctx,clip=gl.getParameter(gl.SCISSOR_BOX),prefix=text.slice(0,hit.index),reserved=measure(font,hit[0].match(/ +$/)[0],scale),height=new DataView(module.HEAPU8.buffer).getInt16(font+14,true)*scale,size=Math.max(1,Math.min(reserved-1,height));
-    paint.save();if(gl.isEnabled(gl.SCISSOR_TEST)){paint.beginPath();paint.rect(clip[0],overlay.height-clip[1]-clip[3],clip[2],clip[3]);paint.clip();}paint.imageSmoothingEnabled=false;paint.drawImage(item.image,x+measure(font,prefix,scale),y+(height-size)/2,size,size);paint.restore();stats.visible++;
+  function draw(font,x,y,text,scale){
+    try {
+      const hit=marker.exec(text);if(!hit)return;const id=hit[1].replace(/`/g,''),meta=rows.get(id);if(!meta)return;wanted.set(key(meta),meta);const item=cache.get(key(meta));if(!item||!item.image)return;
+      const gl=module&&module.ctx; if(!gl||!overlay||!paint) return;
+      const clip=gl.getParameter(gl.SCISSOR_BOX),prefix=text.slice(0,hit.index),reserved=measure(font,hit[0].match(/ +$/)[0],scale),height=new DataView(module.HEAPU8.buffer).getInt16(font+14,true)*scale,size=Math.max(1,Math.min(reserved-1,height));
+      const vw=(module.HEAP32&&module.HEAP32[392500>>2])||overlay.width,vh=(module.HEAP32&&module.HEAP32[392496>>2])||overlay.height;
+      const sx=overlay.width/vw,sy=overlay.height/vh;
+      paint.save();if(gl.isEnabled(gl.SCISSOR_TEST)&&clip){paint.beginPath();paint.rect(clip[0],overlay.height-clip[1]-clip[3],clip[2],clip[3]);paint.clip();}paint.imageSmoothingEnabled=false;paint.drawImage(item.image,(x+measure(font,prefix,scale))*sx,(y+(height-size)/2)*sy,size*sx,size*sy);paint.restore();stats.visible++;
+    } catch(err) {
+      console.warn('[Chat heads] draw error:', err);
+    }
   }
   function install(m){if(installed||!ex)return;installed=true;module=m;GameSDK.onPacket('OnConsoleMessage',receive);// Cached pixels and the owned template deliberately survive world exit/reconnect.
     let clothes;clothes=m.hookWasmTable(3191,(p,v)=>{const result=clothes(p,v);const next=m._malloc(1056);m.wasmTable.get(1970)(next,p+516);if(template){ex.portraitDestroy(template);m._free(template);}template=next;return result;},'vii');

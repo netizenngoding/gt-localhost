@@ -8,7 +8,7 @@ export interface ModDefinition {
  effect:number; text:string; skin?:number; gravity?:number; speed?:number;
  // Food-buff gameplay metadata is server-side; the client only renders the
  // generic item/character state. Durations and magnitudes are wiki-derived.
- group?: 'food'|'luck'; treeGrowthDiscount?: number; extraBreakGemChance?: number;
+ group?: 'food'|'luck'|'floating'; treeGrowthDiscount?: number; extraBreakGemChance?: number;
  xpMultiplierChance?: number; xpMultiplier?: number; consumableXpMultiplier?: number;
  punchDamage?: boolean; luckyBreaks?: boolean; doubleGemsChance?: number;
 }
@@ -129,7 +129,8 @@ export const MODS: readonly ModDefinition[] = [
   "item": 338,
   "title": "Floating!",
   "seconds": 2,
-  "flags": 0,
+  "flags": 1024,
+  "group": "floating",
   "onAdd": "Whoooooooaaaaaaaa...",
   "onRemove": "Gravity - it's the law.",
   "icon": 338,
@@ -137,7 +138,7 @@ export const MODS: readonly ModDefinition[] = [
   "action": "drop",
   "effect": 0,
   "text": "",
-  "gravity": -30
+  "gravity": 250
  },
  {
   "id": "gtps3-19",
@@ -334,7 +335,8 @@ export const MODS: readonly ModDefinition[] = [
   "item": 1772,
   "title": "Floating!",
   "seconds": 2,
-  "flags": 0,
+  "flags": 1024,
+  "group": "floating",
   "onAdd": "Whoooooooaaaaaaaa...",
   "onRemove": "Gravity - it's the law.",
   "icon": 1772,
@@ -342,7 +344,7 @@ export const MODS: readonly ModDefinition[] = [
   "action": "drop",
   "effect": 0,
   "text": "",
-  "gravity": -30
+  "gravity": 250
  },
  {
   "id": "gtps3-73",
@@ -562,6 +564,7 @@ export function normalizeMods(raw: unknown, now=Date.now()): TimedMod[] {
  if(!Array.isArray(raw))return [];
  const seen=new Set<string>(), seenGroups=new Set<string>();
  return raw.filter(m=>{
+  if (m?.id === 'irradiated') return Number.isSafeInteger(m.expiresAt) && m.expiresAt > now;
   const def=MODS.find(d=>d.id===m?.id);
   if(!def || seen.has(m.id) || !Number.isSafeInteger(m.expiresAt) || m.expiresAt<=now || m.expiresAt>now+def.seconds*1000) return false;
   if(def.group && seenGroups.has(def.group)) return false;
@@ -570,7 +573,10 @@ export function normalizeMods(raw: unknown, now=Date.now()): TimedMod[] {
  }).map(m=>({id:m.id,expiresAt:m.expiresAt}));
 }
 export function activeMods(a: PlayerAccount, now=Date.now()) {
- return (a.playmods || []).filter(m=>m.expiresAt>now).flatMap(m=>{const d=MODS.find(d=>d.id===m.id);return d?[d]:[];});
+ return (a.playmods || []).filter(m=>m.expiresAt>now).flatMap(m=>{
+  if (m.id === 'irradiated') return [{ id: 'irradiated', item: 2204, title: 'Irradiated', seconds: 1800, flags: 0, onAdd: 'You are aglow with radiation!', onRemove: 'The radiation has faded.', icon: 2204, sound: '', action: '', effect: 0, text: '' }];
+  const d=MODS.find(d=>d.id===m.id);return d?[d]:[];
+ });
 }
 export function effectiveSkin(a: PlayerAccount): number {
  // GTPS3 update_clothes chooses the FIRST active skin override, not latest.

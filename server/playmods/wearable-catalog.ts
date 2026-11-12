@@ -242,7 +242,6 @@ export const PUNCH_RANGE_IDS: ReadonlySet<number> = new Set([
   6110, // Pineapple Spear
   6754, // Squirrel King
   7088, // Ezio's Armguards
-  7106, // Cat Eyes
   7142, // Tamed Looming Triffid
   7392, // Mage's Orb
   7504, // Super Squirt Rifle 500
@@ -389,6 +388,8 @@ export const PUNCH_RANGE_IDS: ReadonlySet<number> = new Set([
 
 export const BUILD_RANGE_IDS: ReadonlySet<number> = new Set([
   4746, // Diamond Horn
+  4748, // Diamond Horns
+  4750, // Diamond Devil Horns
   6830, // Exquisite Trowel
   7192, // Shadow Spirit of the Underworld
   7938, // Paintball Power Popper

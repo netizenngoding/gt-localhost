@@ -48,6 +48,8 @@ export const TILE_FLAG_SPLICED = 0x0004;
 export const TILE_FLAG_SEED = 0x0010;
 export const TILE_FLAG_FLIPPED = 0x0020;
 export const TILE_FLAG_OPEN = 0x0040;
+export const TILE_FLAG_EXTRA_VISUAL = 0x0040;
+export const TILE_FLAG_HAS_WLS = 0x0200;
 export const TILE_FLAG_PUBLIC = 0x0080;
 
 // Character State bitmask flags (verified against Func #4565 avatar[156])
@@ -192,8 +194,8 @@ export function buildTankPacket(f: TankPacketFields): Buffer {
   b[t + 1] = (f.objType ?? 0) & 0xff;
   b[t + 2] = (f.count1 ?? 0) & 0xff;
   b[t + 3] = (f.count2 ?? 0) & 0xff;
-  b.writeInt32LE(f.netId ?? -1, t + 4);
-  b.writeInt32LE(f.targetNetId ?? 0, t + 8);
+  b.writeInt32LE((f.netId ?? -1) | 0, t + 4);
+  b.writeInt32LE((f.targetNetId ?? 0) | 0, t + 8);
   let flags = f.flags ?? 0;
   if (ext) flags |= TANK_FLAG_EXTENDED;
   b.writeUInt32LE(flags >>> 0, t + 12);
@@ -204,8 +206,8 @@ export function buildTankPacket(f: TankPacketFields): Buffer {
   b.writeFloatLE(f.speedX ?? 0, t + 32);
   b.writeFloatLE(f.speedY ?? 0, t + 36);
   b.writeInt32LE(0, t + 40);
-  b.writeInt32LE(f.punchX ?? 0, t + 44);
-  b.writeInt32LE(f.punchY ?? 0, t + 48);
+  b.writeInt32LE((f.punchX ?? 0) | 0, t + 44);
+  b.writeInt32LE((f.punchY ?? 0) | 0, t + 48);
   b.writeUInt32LE(ext ? ext.length : 0, t + 52);
   if (ext) {
     ext.copy(b, 60);
@@ -309,6 +311,9 @@ export interface CharacterStateParams {
   stateFlags?: number;     // avatar[156], CHAR_STATE_* bitmask
   moveSpeed?: number;      // avatar[292], default 250.0 (speedy = 325.0, super = 420.0)
   gravity?: number;        // avatar[284], default 1000.0 (parasol/slowfall = 250.0, lowgrav = 550.0)
+  hairColor?: number;      // raw+44
+  eyeDrop?: number;        // raw+48
+  eyeLenses?: number;      // raw+8
 }
 
 export function makeSetCharacterStatePacket(p: CharacterStateParams): Buffer {
@@ -320,6 +325,7 @@ export function makeSetCharacterStatePacket(p: CharacterStateParams): Buffer {
     count1: buildByte,
     count2: punchByte,
     netId: p.netId,
+    targetNetId: p.eyeLenses ?? 0,
     flags: (p.pupilColor ?? 0) >>> 0,
     floatVar: p.waterSpeed ?? 125.0,
     value: (p.stateFlags ?? 0) >>> 0,
@@ -327,6 +333,8 @@ export function makeSetCharacterStatePacket(p: CharacterStateParams): Buffer {
     y: 200.0,
     speedX: p.moveSpeed ?? 250.0,
     speedY: p.gravity ?? 1000.0,
+    punchX: p.hairColor ?? 0xFFFFFFFF,
+    punchY: p.eyeDrop ?? 0xFFFFFFFF,
   });
 }
 
@@ -480,7 +488,15 @@ export function makeModifyInventoryPacket(itemId: number, addedCount = 0, remove
 export type TileExtra =
   | { kind: "door"; label: string; destination: string; id?: string; locked?: boolean }
   | { kind: "sign"; label: string }
-  | { kind: "lock"; ownerUserId: number; ownerName?: string; adminIds: number[]; settings: number };
+  | { kind: "lock"; ownerUserId: number; ownerName?: string; adminIds: number[]; settings: number; emptyAir?: boolean; buildOnly?: boolean; limitAdmins?: boolean }
+  | { kind: "vending"; itemId: number; price: number; count: number; wl: number }
+  | { kind: "sucker"; itemId: number; count: number; enabled: boolean; magnetron?: boolean }
+  | { kind: "provider"; plantedAtMs: number; lastProviderClaim?: number }
+  | { kind: "weatherBg"; itemId: number; r?: number; g?: number; b?: number }
+  | { kind: "weatherStuff"; itemId: number; gravity?: number; spin?: boolean; invert?: boolean }
+  | { kind: "weatherInf"; cycleSec?: number; weatherIds?: number[] }
+  | { kind: "growscan"; mode?: number }
+  | { kind: "xenonite"; powers?: [number, number, number, number] };
 
 export interface SeedExtra {
   kind: "seed";
@@ -497,6 +513,7 @@ export interface WorldTile {
   extra?: TileExtra | SeedExtra;
   damage?: number;
   lastHitMs?: number;
+  lastPunchWeatherMs?: number;
 }
 
 export interface DroppedObject {
@@ -508,12 +525,20 @@ export interface DroppedObject {
   flags: number;
 }
 
+const PROVIDER_FALLBACK_IDS = new Set([
+  866, 872, 928, 1008, 1044, 1632, 2798, 3044, 3888, 4584, 5116, 5196, 6212,
+]);
+const WEATHER_BG_FALLBACK_IDS = new Set([3694, 4892, 5000, 5654, 5716, 6854]);
+const WEATHER_STUFF_FALLBACK_IDS = new Set([3832, 5958, 6280]);
+const LOCK_FALLBACK_IDS = new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 11550, 12654]);
+
 export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
-  let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED);
+  // Note: do NOT strip TILE_FLAG_EXTRA_VISUAL (0x0040) unconditionally because 0x0040 is also
+  // TILE_FLAG_OPEN (doors, checkpoints, active weather machines). Strip only for vending/sucker below.
+  let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED | TILE_FLAG_HAS_WLS);
   let extraBuf: Buffer | null = null;
 
   if (tile.extra) {
-    flags |= TILE_FLAG_HAS_EXTRA;
     if (tile.extra.kind === "door") {
       const lb = Buffer.from(tile.extra.label, "utf8");
       extraBuf = Buffer.allocUnsafe(1 + 2 + lb.length + 1);
@@ -529,6 +554,7 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       lb.copy(extraBuf, 3);
       extraBuf.writeInt32LE(-1, 3 + lb.length);
     } else if (tile.extra.kind === "lock") {
+      flags &= ~TILE_FLAG_LOCKED;
       const admins = tile.extra.adminIds;
       extraBuf = Buffer.allocUnsafe(1 + 1 + 4 + 4 + admins.length * 4);
       extraBuf[0] = 3;
@@ -546,7 +572,118 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf[0] = 4;
       extraBuf.writeUInt32LE(ageSec >>> 0, 1);
       extraBuf[5] = tile.extra.fruitCount & 0xff;
+    } else if (tile.extra.kind === "vending") {
+      flags &= ~(TILE_FLAG_EXTRA_VISUAL | TILE_FLAG_HAS_WLS);
+      extraBuf = Buffer.allocUnsafe(9);
+      extraBuf[0] = 24;
+      const isNeg = tile.extra.price < 0;
+      const vendItem = (isNeg && tile.extra.itemId !== 0 && tile.extra.count < Math.abs(tile.extra.price)) ? 0 : tile.extra.itemId;
+      const vendPrice = (isNeg && tile.extra.itemId !== 0 && tile.extra.count < Math.abs(tile.extra.price)) ? 0 : tile.extra.price;
+      extraBuf.writeUInt32LE(vendItem >>> 0, 1);
+      extraBuf.writeInt32LE(vendPrice, 5);
+      if (vendItem !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+      if (tile.extra.wl > 0) flags |= TILE_FLAG_HAS_WLS;
+    } else if (tile.extra.kind === "sucker") {
+      flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      extraBuf = Buffer.allocUnsafe(15);
+      extraBuf[0] = 62;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.count >>> 0, 5);
+      extraBuf[9] = tile.extra.enabled ? 1 : 0;
+      extraBuf[10] = tile.extra.magnetron ? 1 : 0;
+      const cap = tile.fg === 5638 ? 5000 : 1500;
+      extraBuf.writeUInt32LE(cap >>> 0, 11);
+      if (tile.extra.itemId !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+    } else if (tile.extra.kind === "provider") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 9;
+      const ageSec = Math.max(0, Math.floor((nowMs - tile.extra.plantedAtMs) / 1000));
+      extraBuf.writeUInt32LE(ageSec >>> 0, 1);
+    } else if (tile.extra.kind === "weatherBg") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 40;
+      if (tile.fg === 3694 && tile.extra.r !== undefined) {
+        const packed = ((tile.extra.b ?? 0) & 0xff) << 16 | ((tile.extra.g ?? 0) & 0xff) << 8 | ((tile.extra.r ?? 0) & 0xff);
+        extraBuf.writeInt32LE(packed, 1);
+      } else {
+        extraBuf.writeInt32LE((tile.extra.itemId || 14) | 0, 1);
+      }
+    } else if (tile.extra.kind === "weatherStuff") {
+      extraBuf = Buffer.allocUnsafe(10);
+      extraBuf[0] = 49;
+      extraBuf.writeUInt32LE((tile.extra.itemId || 2) >>> 0, 1);
+      extraBuf.writeInt32LE((tile.extra.gravity ?? 50) | 0, 5);
+      extraBuf[9] = (tile.extra.spin ? 1 : 0) | (tile.extra.invert ? 2 : 0);
+    } else if (tile.extra.kind === "growscan") {
+      extraBuf = Buffer.allocUnsafe(2);
+      extraBuf[0] = 66;
+      extraBuf[1] = (tile.extra.mode ?? 0) & 0xff;
+    } else if (tile.extra.kind === "weatherInf") {
+      const ids = tile.extra.weatherIds || [];
+      extraBuf = Buffer.allocUnsafe(9 + ids.length * 4);
+      extraBuf[0] = 77;
+      extraBuf.writeInt32LE((tile.extra.cycleSec ?? 0) | 0, 1);
+      extraBuf.writeUInt32LE(ids.length >>> 0, 5);
+      for (let i = 0; i < ids.length; i++) extraBuf.writeUInt32LE(ids[i] >>> 0, 9 + i * 4);
+    } else if (tile.extra.kind === "xenonite") {
+      const p = tile.extra.powers || [0, 0, 0, 0];
+      extraBuf = Buffer.allocUnsafe(9);
+      extraBuf[0] = 18;
+      extraBuf.writeUInt16LE(p[0] & 0xffff, 1);
+      extraBuf.writeUInt16LE(p[1] & 0xffff, 3);
+      extraBuf.writeUInt16LE(p[2] & 0xffff, 5);
+      extraBuf.writeUInt16LE(p[3] & 0xffff, 7);
     }
+  }
+
+  // Fallbacks for tiles that require extra data in upstream.wasm (#689 / VA 317184 / #2458) even if extra was uninitialized
+  if (!extraBuf && tile.fg !== 0) {
+    if (tile.fg === 2978 || tile.fg === 9268) {
+      flags &= ~(TILE_FLAG_EXTRA_VISUAL | TILE_FLAG_HAS_WLS);
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 24;
+    } else if (tile.fg === 5638 || tile.fg === 6948 || tile.fg === 6946) {
+      flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      extraBuf = Buffer.alloc(15);
+      extraBuf[0] = 62;
+      const cap = tile.fg === 5638 ? 5000 : 1500;
+      extraBuf.writeUInt32LE(cap, 11);
+    } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 40;
+      extraBuf.writeInt32LE(14, 1);
+    } else if (WEATHER_STUFF_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(10);
+      extraBuf[0] = 49;
+      extraBuf.writeUInt32LE(2, 1);
+      extraBuf.writeInt32LE(50, 5);
+    } else if (tile.fg === 6016) {
+      extraBuf = Buffer.from([66, 0]);
+    } else if (tile.fg === 10058) {
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 77;
+    } else if (tile.fg === 2072) {
+      extraBuf = Buffer.alloc(9);
+      extraBuf[0] = 18;
+    } else if (PROVIDER_FALLBACK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 9;
+    } else if (LOCK_FALLBACK_IDS.has(tile.fg)) {
+      flags &= ~TILE_FLAG_LOCKED;
+      extraBuf = Buffer.alloc(10);
+      extraBuf[0] = 3;
+    } else if (tile.fg === 6 || tile.fg === 12) {
+      extraBuf = Buffer.from([1, 0, 0, 0]);
+    } else if (tile.fg === 20) {
+      extraBuf = Buffer.alloc(7);
+      extraBuf[0] = 2;
+      extraBuf.writeInt32LE(-1, 3);
+    }
+  }
+
+  // Only set TILE_FLAG_HAS_EXTRA if extraBuf is actually present!
+  if (extraBuf) {
+    flags |= TILE_FLAG_HAS_EXTRA;
   }
 
   const isChildLocked = (flags & TILE_FLAG_LOCKED) !== 0;
@@ -572,6 +709,40 @@ export function makeTileUpdatePacket(x: number, y: number, tile: WorldTile, nowM
     punchY: y,
     flags: TANK_FLAG_EXTENDED,
     extendedData: serializeSingleTile(tile, nowMs),
+  });
+}
+
+export function makeSendLockPacket(
+  ownerUserId: number,
+  lockItemId: number,
+  lx: number,
+  ly: number,
+  lockedIndices: number[]
+): Buffer {
+  if (lockedIndices.length === 0) {
+    return buildTankPacket({
+      type: PACKET_SEND_LOCK,
+      netId: ownerUserId,
+      targetNetId: 0,
+      value: lockItemId,
+      punchX: lx,
+      punchY: ly,
+      flags: 0,
+    });
+  }
+  const ext = Buffer.allocUnsafe(lockedIndices.length * 2);
+  for (let i = 0; i < lockedIndices.length; i++) {
+    ext.writeUInt16LE(lockedIndices[i] & 0xffff, i * 2);
+  }
+  return buildTankPacket({
+    type: PACKET_SEND_LOCK,
+    netId: ownerUserId,
+    targetNetId: lockedIndices.length,
+    value: lockItemId,
+    punchX: lx,
+    punchY: ly,
+    flags: TANK_FLAG_EXTENDED,
+    extendedData: ext,
   });
 }
 

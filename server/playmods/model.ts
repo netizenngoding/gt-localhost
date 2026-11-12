@@ -129,7 +129,7 @@ export const MODS: readonly ModDefinition[] = [
   "item": 338,
   "title": "Floating!",
   "seconds": 2,
-  "flags": 1024,
+  "flags": 0,
   "group": "floating",
   "onAdd": "Whoooooooaaaaaaaa...",
   "onRemove": "Gravity - it's the law.",
@@ -138,7 +138,7 @@ export const MODS: readonly ModDefinition[] = [
   "action": "drop",
   "effect": 0,
   "text": "",
-  "gravity": 250
+  "gravity": -30
  },
  {
   "id": "gtps3-19",
@@ -335,7 +335,7 @@ export const MODS: readonly ModDefinition[] = [
   "item": 1772,
   "title": "Floating!",
   "seconds": 2,
-  "flags": 1024,
+  "flags": 0,
   "group": "floating",
   "onAdd": "Whoooooooaaaaaaaa...",
   "onRemove": "Gravity - it's the law.",
@@ -344,7 +344,7 @@ export const MODS: readonly ModDefinition[] = [
   "action": "drop",
   "effect": 0,
   "text": "",
-  "gravity": 250
+  "gravity": -30
  },
  {
   "id": "gtps3-73",
@@ -417,7 +417,10 @@ export const MODS: readonly ModDefinition[] = [
   "effect": 0,
   "text": "",
   "speed": 420
- }
+ },
+ // GTPS3 World.h:83 playmod 13 (Megaphone!): broadcast cooldown, 300s in practice.
+ {id:'gtps3-megaphone',item:2480,title:'Megaphone!',seconds:600,flags:0,
+  onAdd:'Broadcasting to ALL!',onRemove:'You can broadcast once again.',icon:2480,sound:'',action:'',effect:0,text:''}
 ];
 export const SIMPLE_FOODS: readonly {item:number;text:string}[] = [
  // Player-consumption behaviour documented by the individual wiki pages.

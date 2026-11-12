@@ -35,6 +35,7 @@ export function handleWrenchPlayer(
       .addSpacer('small').addSpacer('small')
       .customSpacing(5,10)
       .customButton('notebook_edit','gui_wrench_notebook')
+      .customButton('billboard_edit','gui_wrench_edit_billboard')
       .customButton('my_worlds','gui_wrench_my_worlds')
       .customButton('alist','gui_wrench_achievements')
       .raw(`add_custom_label|(${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`)
@@ -57,6 +58,7 @@ export function handleWrenchPlayer(
     }
     for(const effect of equipmentEffects) dlg.addLabelWithIcon('small',`\`w${effect.title}\`\``,effect.icon);
     dlg.addSpacer('small')
+      .addButton('backpack_menu', `\`wOpen Backpack Storage (${(acct.storedItems || []).length}/${(acct.backpackLevel || 1) * 10})\`\``)
       .addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`)
       .addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x/32)}, ${Math.floor(session.y/32)}) (${world.peers.size} person)`)
       .addTextbox(p.superSupporter?'You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``.':'You are not yet a `2Supporter`` or `5Super Supporter``.');

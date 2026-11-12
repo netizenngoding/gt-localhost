@@ -189,7 +189,7 @@ export class ItemDatabase {
         id === 7188 ||
         id === 11550;
       const isDoor = actionType === 2 || actionType === 13 || actionType === 26;
-      const isSign = actionType === 10 || actionType === 34;
+      const isSign = actionType === 10;
       const isWeather =
         actionType === 41 ||
         actionType === 81 ||

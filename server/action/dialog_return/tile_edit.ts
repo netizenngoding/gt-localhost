@@ -285,6 +285,28 @@ export function openLockSettingsDialog(
         .raw("add_smalltext|People with lock access can both build and break unless you check below. The lock owner can always build and break.|left|\n")
         .raw(`add_checkbox|checkbox_admins|Admins Are Limited|${lock.limitAdmins ? 1 : 0}|\n`);
     }
+  } else {
+    const world = session.world;
+    dlgBuilder
+      .raw(`add_checkbox|checkbox_vending|Allow admins to edit vending|${world.allowAdminVending ? 1 : 0}|\n`)
+      .raw(`add_checkbox|checkbox_disable_music|Disable Custom Music Blocks|${world.disableMusicBlocks ? 1 : 0}|\n`)
+      .raw(`add_text_input|tempo|Music BPM|${world.musicBpm ?? 100}|3|\n`)
+      .raw(`add_checkbox|checkbox_disable_music_render|Make Custom Music Blocks invisible|${world.makeMusicInvisible ? 1 : 0}|\n`);
+    if (session.account.homeWorld) {
+      dlgBuilder.raw(`add_smalltext|Your current home world is: ${session.account.homeWorld}|left|\n`);
+    }
+    dlgBuilder.raw(`add_checkbox|checkbox_set_as_home_world|Set as Home World|${session.account.homeWorld === world.name ? 1 : 0}|\n`);
+    if (tile.fg === 4802) {
+      dlgBuilder
+        .raw("add_label|small|Ye Royal Options|left\n")
+        .raw(`add_checkbox|checkbox_silence|Silence, Peasants!|${world.royalSilence ? 1 : 0}|\n`)
+        .raw(`add_checkbox|checkbox_rainbows|Royal Rainbows!|${world.royalRainbows ? 1 : 0}|\n`);
+    }
+    dlgBuilder
+      .raw(`add_text_input|minimum_entry_level|World Level: |${world.entryLevel ?? 1}|3|\n`)
+      .raw("add_smalltext|Set minimum world entry level.|\n")
+      .raw("add_button|sessionlength_dialog|`wSet World Timer``|noflags|0|0|\n")
+      .raw(`add_button|changecat|\`wCategory: ${world.worldCategory || "None"}\`\`|noflags|0|0|\n`);
   }
   // Shatter & Lock Upgrade UI intentionally omitted per design.
   const dlg = dlgBuilder.endDialog("lock_edit", "Cancel", "OK");
@@ -306,7 +328,9 @@ export function handleTileEditDialogReturn(
     dlgName !== "weatherspcl" &&
     dlgName !== "xenonite_edit" &&
     dlgName !== "lock_settings" &&
-    dlgName !== "lock_edit"
+    dlgName !== "lock_edit" &&
+    dlgName !== "sessionlength_dialog" &&
+    dlgName !== "changecat"
   ) {
     return false;
   }
@@ -449,7 +473,7 @@ export function handleTileEditDialogReturn(
     return true;
   }
 
-  if (dlgName === "lock_settings" || dlgName === "lock_edit") {
+  if (dlgName === "lock_settings" || dlgName === "lock_edit" || dlgName === "sessionlength_dialog" || dlgName === "changecat") {
     if (tile.extra?.kind !== "lock") return true;
     const lock = tile.extra;
     const btn = kv.buttonClicked || "";
@@ -474,6 +498,27 @@ export function handleTileEditDialogReturn(
 
     if (!isOwnerOrDev) return true;
 
+    if (dlgName === "sessionlength_dialog") {
+      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer")) return true;
+      const mins = Math.max(0, Math.min(180, Number.parseInt(kv.session_minutes || "0", 10) || 0));
+      world.worldTimerEndMs = mins > 0 ? Date.now() + mins * 60_000 : 0;
+      ctx.dirty = true;
+      broadcastConsoleMessage(world, mins > 0 ? `\`2World Timer set to \`w${mins}\`\` minutes!\`\`` : "`2World Timer cleared.``");
+      return true;
+    }
+
+    if (dlgName === "changecat") {
+      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer")) return true;
+      const cats = ["None", "Trade", "Social", "Parkour", "Farm", "Shop", "Game", "Art", "Story", "Music", "Storage"];
+      const picked = cats.find((c) => btn === `cat_${c}` || kv.category === c);
+      if (picked) {
+        world.worldCategory = picked;
+        ctx.dirty = true;
+        OnTalkBubble(session, session.netId, `World category set to \`2${picked}\`\`!`, 0, true);
+      }
+      return true;
+    }
+
     if (dlgName === "lock_edit") {
       lock.adminIds = lock.adminIds.filter((id) => kv[`acc_${id}`] !== "0");
       if (kv.checkbox_public !== undefined) {
@@ -485,6 +530,70 @@ export function handleTileEditDialogReturn(
       if (tile.fg === 4994) {
         if (kv.checkbox_buildonly !== undefined) lock.buildOnly = kv.checkbox_buildonly === "1";
         if (kv.checkbox_admins !== undefined) lock.limitAdmins = kv.checkbox_admins === "1";
+      } else if (tile.fg !== 202 && tile.fg !== 204 && tile.fg !== 206) {
+        if (kv.checkbox_vending !== undefined) {
+          const nextVp = kv.checkbox_vending === "1";
+          if (!!world.allowAdminVending !== nextVp) {
+            world.allowAdminVending = nextVp;
+            broadcastConsoleMessage(world, `${session.account.name} has set the \`$Vending\`\` to ${nextVp ? "`$PUBLIC" : "`4PRIVATE``"}`);
+          }
+        }
+        if (kv.checkbox_disable_music !== undefined) world.disableMusicBlocks = kv.checkbox_disable_music === "1";
+        if (kv.checkbox_disable_music_render !== undefined) world.makeMusicInvisible = kv.checkbox_disable_music_render === "1";
+        if (kv.tempo !== undefined) {
+          const bpm = Number.parseInt(kv.tempo, 10);
+          if (Number.isFinite(bpm) && bpm !== (world.musicBpm ?? 100)) {
+            if (bpm < 20 || bpm > 200) {
+              OnTalkBubble(session, session.netId, "Tempo must be from 20-200 BPM.", 0, false);
+            } else {
+              world.musicBpm = bpm;
+            }
+          }
+        }
+        if (kv.checkbox_set_as_home_world !== undefined) {
+          const wantHome = kv.checkbox_set_as_home_world === "1";
+          if (wantHome && session.account.homeWorld !== world.name) {
+            session.account.homeWorld = world.name;
+            OnTalkBubble(session, session.netId, `${world.name} has been set as your home world!`, 0, false);
+          } else if (!wantHome && session.account.homeWorld === world.name) {
+            session.account.homeWorld = "";
+            OnTalkBubble(session, session.netId, `${world.name} has been removed as your home world!`, 0, false);
+          }
+        }
+        if (kv.minimum_entry_level !== undefined) {
+          const lvl = Number.parseInt(kv.minimum_entry_level, 10);
+          if (Number.isFinite(lvl) && lvl !== (world.entryLevel ?? 1)) {
+            if (lvl < 1) OnTalkBubble(session, session.netId, "Minimum entry level can't be lower than 1.", 0, false);
+            else if (lvl > 124) OnTalkBubble(session, session.netId, "Minimum entry level can't be higher than 124.", 0, false);
+            else {
+              world.entryLevel = lvl;
+              OnTalkBubble(session, session.netId, `Minimum entry level for this world is set to \`2Level ${lvl}\`\`.`, 0, false);
+            }
+          }
+        }
+        if (tile.fg === 4802) {
+          if (kv.checkbox_silence !== undefined) world.royalSilence = kv.checkbox_silence === "1";
+          if (kv.checkbox_rainbows !== undefined) world.royalRainbows = kv.checkbox_rainbows === "1";
+        }
+        if (btn === "sessionlength_dialog") {
+          session.pendingEditTile = { x, y };
+          const curLeft = world.worldTimerEndMs && world.worldTimerEndMs > Date.now() ? Math.ceil((world.worldTimerEndMs - Date.now()) / 60_000) : 0;
+          OnDialogRequest(
+            session,
+            `set_default_color|\`o\nadd_label_with_icon|big|\`wSet World Timer\`\`|left|${tile.fg}|\nembed_data|tilex|${x}\nembed_data|tiley|${y}\nadd_textbox|Set world timer in minutes (0 to disable, max 180).|left|\nadd_text_input|session_minutes|Minutes:|${curLeft}|3|\nend_dialog|sessionlength_dialog|Cancel|OK|`
+          );
+          return true;
+        }
+        if (btn === "changecat") {
+          session.pendingEditTile = { x, y };
+          const cats = ["None", "Trade", "Social", "Parkour", "Farm", "Shop", "Game", "Art", "Story", "Music", "Storage"];
+          const buttons = cats.map((c) => `add_button|cat_${c}|${c === (world.worldCategory || "None") ? "`2" + c + "``" : c}|noflags|0|0|`).join("\n");
+          OnDialogRequest(
+            session,
+            `set_default_color|\`o\nadd_label_with_icon|big|\`wWorld Category\`\`|left|${tile.fg}|\nembed_data|tilex|${x}\nembed_data|tiley|${y}\n${buttons}\nend_dialog|changecat|Cancel||`
+          );
+          return true;
+        }
       }
       const netId = Number(kv.playerNetID);
       const target = [...world.peers].find((p) => p.netId === netId);

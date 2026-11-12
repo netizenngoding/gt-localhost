@@ -10,10 +10,12 @@ import {
   broadcastSetCurrentWeather,
   broadcastTalkBubble,
   OnConsoleMessage,
+  OnDialogRequest,
   OnTalkBubble,
   OnPlayPositioned,
   RequestGazette,
 } from "../onVariant";
+import { openBillboardDialog } from "../action/dialog_return/player_dialogs";
 import { sanitizeChatText } from "../tools/string";
 import { convertPlacedLock, openDoorSettingsDialog } from "../action/dialog_return/tile_edit";
 
@@ -64,24 +66,6 @@ export function handleWorldCommand(
     // C++ variants include player_chat=, but this client displays it literally.
     broadcastTalkBubble(world, session.netId, action, 0);
     broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`, chatPortrait(session, ctx.itemsDb));
-    return true;
-  }
-
-  if (cmd === "sb" || cmd === "bc") {
-    if (!argStr) {
-      OnConsoleMessage(session, "`4Usage: /sb <message>``");
-      return true;
-    }
-    const clean = sanitizeChatText(argStr, 120);
-    const originWorld = world ? world.name : "LOBBY";
-    for (const p of ctx.sessions) {
-      OnConsoleMessage(
-        p,
-        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``,
-        chatPortrait(session, ctx.itemsDb)
-      );
-      OnPlayPositioned(p, "audio/beep.wav");
-    }
     return true;
   }
 
@@ -147,6 +131,41 @@ export function handleWorldCommand(
       return true;
     }
     convertPlacedLock(ctx, session, world, tx, ty);
+    return true;
+  }
+
+  if (cmd === "unaccess") {
+    if (!world) return true;
+    const dlg = [
+      "set_default_color|`o",
+      "add_label_with_icon|small|Remove Your Access From World|left|242|",
+      "add_textbox|Are you sure you want to remove yourself from all locks in this world?|left|",
+      "add_textbox|Any locks you placed will still be owned by you, but you will be removed from any other locks that you have access on.|left|",
+      "add_spacer|small|",
+      "end_dialog|unaccess|No|Yes|",
+    ].join("\n");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "top") {
+    const list = [...ctx.worlds.values()].sort((a, b) => b.peers.size - a.peers.size).slice(0, 15);
+    const lines = [
+      "set_default_color|`o",
+      "add_label_with_icon|big|`oWorld Rankings``|left|394|",
+      "add_spacer|small|",
+      "add_textbox|World Rankings are based on active players online.|",
+    ];
+    list.forEach((w, idx) => {
+      lines.push(`add_button|warp_to_${w.name}|#${idx + 1}: \`8${w.name}\`\` (${w.peers.size} online)|noflags|0|0|`);
+    });
+    lines.push("end_dialog|top|Close||");
+    OnDialogRequest(session, lines.join("\n"));
+    return true;
+  }
+
+  if (cmd === "billboard") {
+    openBillboardDialog(ctx, session);
     return true;
   }
 

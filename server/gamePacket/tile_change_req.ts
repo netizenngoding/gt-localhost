@@ -17,6 +17,7 @@ import {
   TILE_FLAG_FLIPPED,
   TILE_FLAG_LOCKED,
   TILE_FLAG_OPEN,
+  TILE_FLAG_PUBLIC,
   type SeedExtra,
   type TankPacket,
   type TileExtra,
@@ -27,6 +28,7 @@ import { WEATHER_BY_ITEM_ID, type ItemDef } from "../database/items";
 import type { PlayerSession } from "../database/peer";
 import {
   applyAreaLock,
+  canManageVending,
   canModifyWorldTile,
   clearAreaLock,
   getBuildersLockDenial,
@@ -64,6 +66,35 @@ import { openVendingOwnerDialog, openVendingBuyerDialog } from "../action/dialog
 import { openGrowScanDialog } from "../action/dialog_return/growscan";
 import { openSuckerDialog } from "../action/dialog_return/sucker";
 import { openLockeDialog, openSalesManUntradeableDialog } from "../action/dialog_return/telephone_locke";
+import {
+  AUTO_ACTION_IDS,
+  BOOMBOX_IDS,
+  BULLETIN_BOARD_IDS,
+  CAMERA_IDS,
+  CRYSTAL_IDS,
+  DISPLAY_SHELF_IDS,
+  DONATION_BOX_IDS,
+  GRINDER_IDS,
+  MAILBOX_IDS,
+  MANNEQUIN_IDS,
+  openAutoActionBlockDialog,
+  openBulletinOrMailboxDialog,
+  openCameraDialog,
+  openCrystalExchangeDialog,
+  openDisplayBlockDialog,
+  openDisplayShelfDialog,
+  openDonationBoxDialog,
+  openGrinderDialog,
+  openMannequinDialog,
+  openStorageBoxDialog,
+  openToggleableDialog,
+  STORAGE_BOX_IDS,
+  useClothingOnMannequin,
+  useCrystalOnCrystal,
+  useItemOnDisplayBlock,
+  useItemOnDonationBox,
+  useItemOnGrinder,
+} from "../action/dialog_return/world_blocks";
 import { findCombinerRecipe, GTPS3_FISHING_LOOT } from "../database/recipes";
 import { toggleWearableItem } from "./item_activate";
 
@@ -154,6 +185,117 @@ function lockedMessage(
   }
   const name = (ctx.findAccountByUserId(id)?.name || "someone").replace(/[^A-Za-z0-9_]/g, "");
   return "That area is owned by `w" + name + "``";
+}
+
+/**
+ * Dye / eye-drop / contact-lens consumables (GTPS3 World.h apply_dye, 18042-18140).
+ * Runs before the placement branch: these are actionType 8 consumables, and the
+ * old placement fallthrough let them be placed as ordinary blocks.
+ */
+const DYE_SPEC: Record<number, [number, number, number, number, boolean]> = {
+  3822: [0x0000ffff, 16, -16, -16, false],
+  3824: [0x00ff00ff, -16, 16, -16, false],
+  3826: [0xff0000ff, -16, -16, 16, false],
+  3828: [0x000000ff, -16, -16, -16, false],
+  3830: [0xffffffff, 32, 32, 32, true],
+  5458: [0x0000ffff, 16, -16, -16, false],
+  5460: [0x00ff00ff, -16, 16, -16, false],
+  5462: [0xff0000ff, -16, -16, 16, false],
+  5464: [0x000000ff, -16, -16, -16, false],
+  5466: [0xffffffff, 32, 32, 32, true],
+  6760: [0x0000ffff, 32, -16, -16, false],
+  6762: [0x00ff00ff, -16, 32, -16, false],
+  6764: [0xff0000ff, -16, -16, 32, false],
+  6766: [0x000000ff, -32, -32, -32, false],
+  6768: [0xffffffff, 32, 32, 32, true],
+};
+
+function useDyeItem(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  itemId: number,
+  tx: number,
+  ty: number,
+  playerTileX: number,
+  playerTileY: number
+): boolean {
+  const isHair = HAIR_DYE_ITEMS.has(itemId);
+  const kind: "hair" | "drops" | "lenses" = isHair ? "hair" : itemId >= 6760 ? "lenses" : "drops";
+  const spec = DYE_SPEC[itemId];
+  if (!spec) return false;
+  const pTileX = Math.floor(playerTileX);
+  const pTileY = Math.floor(playerTileY);
+  if (Math.abs(tx - pTileX) > 1 || Math.abs(ty - pTileY) > 1) {
+    OnTalkBubble(session, session.netId, "(Must be used on yourself)", 0, true);
+    return true;
+  }
+  const pTile = world.tiles[pTileY * world.width + pTileX];
+  const cTile = world.tiles[ty * world.width + tx];
+  const hasFixture = isHair
+    ? (pTile?.fg === 230 || pTile?.fg === 6158 || cTile?.fg === 230 || cTile?.fg === 6158)
+    : (pTile?.fg === 5468 || pTile?.fg === 7740 || cTile?.fg === 5468 || cTile?.fg === 7740);
+  if (!hasFixture) {
+    OnTalkBubble(
+      session,
+      session.netId,
+      isHair
+        ? "You'll make a huge mess if you do that outside the Bathtub!"
+        : "You'd better do that in front of a bathroom mirror or you'll poke your eye out!",
+      0,
+      true
+    );
+    return true;
+  }
+  const [targetColorRaw, baseDr, baseDg, baseDb, isCleaner] = spec;
+  const targetColor = targetColorRaw >>> 0;
+  const curRaw =
+    kind === "hair" ? session.account.hairColor : kind === "drops" ? session.account.eyeColor : session.account.pupilColor;
+  const cur = (curRaw && curRaw !== 0 ? curRaw : 0xffffffff) >>> 0;
+  if (cur === targetColor) {
+    const alreadyMsg =
+      kind === "hair"
+        ? isCleaner ? "Your hair is already clean!" : "Your hair is already that color!"
+        : kind === "drops"
+        ? isCleaner ? "Your eyes are already clean!" : "Your eyes are already that color!"
+        : isCleaner ? "Your lenses are already clean!" : "Your pupils are already that color!";
+    OnTalkBubble(session, session.netId, alreadyMsg, 0, true);
+    return true;
+  }
+  let dr = baseDr, dg = baseDg, db = baseDb;
+  if (kind === "lenses" && !isCleaner && cur === 0xffffffff) { dr *= 9; dg *= 9; db *= 9; }
+  // Little-endian uint32 colour: [0]=A, [1]=R, [2]=G, [3]=B.
+  const a = cur & 0xff || 0xff;
+  const r = Math.max(0, Math.min(255, ((cur >>> 8) & 0xff) + dr));
+  const g = Math.max(0, Math.min(255, ((cur >>> 16) & 0xff) + dg));
+  const b = Math.max(0, Math.min(255, ((cur >>> 24) & 0xff) + db));
+  const nextColor = (((b << 24) | (g << 16) | (r << 8) | a) >>> 0);
+  if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+  if (kind === "hair") {
+    session.account.hairColor = nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
+    const actPkt = makeVariantPacket(["OnAction", "/shower"], session.netId);
+    for (const p of world.peers) p.peer.sendPacket(0, actPkt, true);
+    OnTalkBubble(session, session.netId, isCleaner ? "Your hair got cleaner!" : "You dyed your hair!", 0, true);
+  } else if (kind === "drops") {
+    session.account.eyeColor = nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+    OnTalkBubble(session, session.netId, isCleaner ? "Your eyes got cleaner!" : "You used eye drops!", 0, true);
+  } else {
+    session.account.pupilColor = isCleaner && nextColor === 0xffffffff ? 0 : nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+    OnTalkBubble(
+      session,
+      session.netId,
+      isCleaner ? "Your lenses got cleaner!" : "You put in some contact lenses!",
+      0,
+      true
+    );
+  }
+  ctx.dirty = true;
+  ctx.savePlayersNow();
+  ctx.sendCharacterState(session);
+  return true;
 }
 
 export function handleTileActivateRequest(
@@ -310,13 +452,33 @@ export function handleTileChangeRequest(
         OnDialogRequest(session, dlg);
       }
     }
-    // Vending Machine / DigiVend wrench (GTPS3 World.h:20520)
+    // Vending Machine / DigiVend wrench (GTPS3 World.h:20508)
     if (tile.fg === 2978 || tile.fg === 9268) {
-      if (canModifyWorldTile(session, world, tile, tx, ty)) {
+      if (Math.abs(tx * 32 - session.x) > 24 || Math.abs(ty * 32 - session.y) > 24) {
+        OnTalkBubble(session, session.netId, "Get closer!", 0, true);
+        return;
+      }
+      if (canManageVending(session, world, tile)) {
         openVendingOwnerDialog(ctx, session, world, tile, tx, ty);
       } else {
         openVendingBuyerDialog(ctx, session, world, tile, tx, ty);
       }
+      return;
+    }
+    // Migrated GTPS3 World Block Wrench Handlers
+    if (tile.fg === 2946) { openDisplayBlockDialog(ctx, session, world, tile, tx, ty); return; }
+    if (DISPLAY_SHELF_IDS.has(tile.fg)) { openDisplayShelfDialog(ctx, session, world, tile, tx, ty); return; }
+    if (DONATION_BOX_IDS.has(tile.fg)) { openDonationBoxDialog(ctx, session, world, tile, tx, ty); return; }
+    if (MAILBOX_IDS.has(tile.fg) || BULLETIN_BOARD_IDS.has(tile.fg)) { openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty); return; }
+    if (STORAGE_BOX_IDS.has(tile.fg)) { openStorageBoxDialog(ctx, session, world, tile, tx, ty); return; }
+    if (CAMERA_IDS.has(tile.fg)) { openCameraDialog(ctx, session, world, tile, tx, ty); return; }
+    if (MANNEQUIN_IDS.has(tile.fg)) { openMannequinDialog(ctx, session, world, tile, tx, ty); return; }
+    if (AUTO_ACTION_IDS.has(tile.fg)) { openAutoActionBlockDialog(ctx, session, world, tile, tx, ty); return; }
+    if (GRINDER_IDS.has(tile.fg)) { openGrinderDialog(ctx, session, tile); return; }
+    if (CRYSTAL_IDS.has(tile.fg)) { openCrystalExchangeDialog(ctx, session, world, tile, tx, ty); return; }
+    const wrenchTargetDef = tile.fg ? ctx.itemsDb.get(tile.fg) : undefined;
+    if (BOOMBOX_IDS.has(tile.fg) || wrenchTargetDef?.actionType === 9 || wrenchTargetDef?.actionType === 12 || wrenchTargetDef?.actionType === 31 || wrenchTargetDef?.actionType === 36) {
+      openToggleableDialog(ctx, session, world, tile, tx, ty);
       return;
     }
     // GrowScan 9000 wrench (GTPS3 World.h:20478)
@@ -599,6 +761,31 @@ export function handleTileChangeRequest(
         OnTalkBubble(session, session.netId, `Empty this ${stripGtColors(bDef.name)} before breaking!`, 0, true);
         return false;
       }
+      if (bId === 2946 && bt.extra?.kind === "display" && bt.extra.itemId > 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove what's in there first!", 0, true);
+        return false;
+      }
+      if (DISPLAY_SHELF_IDS.has(bId) && bt.extra?.kind === "displayShelf" && (bt.extra.s1 || bt.extra.s2 || bt.extra.s3 || bt.extra.s4)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove all items from the Display Shelf before breaking!", 0, true);
+        return false;
+      }
+      if (DONATION_BOX_IDS.has(bId) && bt.extra?.kind === "donation" && bt.extra.donates.length > 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Empty the Donation Box before breaking!", 0, true);
+        return false;
+      }
+      if (STORAGE_BOX_IDS.has(bId) && (world.storageItems || []).some((s) => s.x === bx && s.y === by)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, `Empty this ${stripGtColors(bDef.name)} before breaking!`, 0, true);
+        return false;
+      }
+      if (MANNEQUIN_IDS.has(bId) && bt.extra?.kind === "mannequin" && (bt.extra.hair || bt.extra.shirt || bt.extra.pants || bt.extra.feet || bt.extra.face || bt.extra.hand || bt.extra.back || bt.extra.mask || bt.extra.neck)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove clothes from the Mannequin before breaking!", 0, true);
+        return false;
+      }
 
       if (bt.fg !== 0 && bt.extra?.kind === "seed") {
         const growSec = Math.max(1, bDef.growTime || 15);
@@ -727,10 +914,28 @@ export function handleTileChangeRequest(
 
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
 
+  // Dyes and eye items are actionType 8 consumables. Previously they fell
+  // through to the placement branch and could be placed as blocks.
+  if (HAIR_DYE_ITEMS.has(itemId) || EYE_ITEMS.has(itemId)) {
+    useDyeItem(ctx, session, world, itemId, tx, ty, playerTileX, playerTileY);
+    return;
+  }
+  if (def.actionType === 8) {
+    OnConsoleMessage(session, "This consumable is not implemented yet. Your item was not consumed.");
+    return;
+  }
+
   if (def.isClothing) {
+    if (tile.fg && useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId)) return;
     toggleWearableItem(ctx, session, itemId);
     return;
   }
+
+  // Interactive item-on-block mechanics BEFORE normal tile placement
+  if (tile.fg && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
+  if (tile.fg && useItemOnDonationBox(ctx, session, tile, tx, ty, itemId)) return;
+  if (tile.fg && useItemOnGrinder(ctx, session, tile, tx, ty, itemId)) return;
+  if (tile.fg && useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId)) return;
 
   if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) {
     OnPlayPositioned(session, "audio/punch_locked.wav");
@@ -853,121 +1058,6 @@ export function handleTileChangeRequest(
       return;
     }
 
-    // 2. Hair Dyes, Eye Drops & Contact Lenses (GTPS3 World.h:18043-18140, 21515-21537)
-    if (HAIR_DYE_ITEMS.has(itemId) || EYE_ITEMS.has(itemId)) {
-      const kind = HAIR_DYE_ITEMS.has(itemId) ? "hair" : itemId >= 6760 ? "lenses" : "drops";
-      const pTileX = Math.floor(playerTileX);
-      const pTileY = Math.floor(playerTileY);
-      const pTile = world.tiles[pTileY * world.width + pTileX];
-      const hasFixture =
-        kind === "hair"
-          ? tile.fg === 230 || tile.fg === 6158 || (pTile && (pTile.fg === 230 || pTile.fg === 6158))
-          : tile.fg === 5468 || tile.fg === 7740 || (pTile && (pTile.fg === 5468 || pTile.fg === 7740));
-      if (!hasFixture) {
-        OnTalkBubble(
-          session,
-          session.netId,
-          kind === "hair"
-            ? "You'll make a huge mess if you do that outside the Bathtub!"
-            : "You'd better do that in front of a bathroom mirror or you'll poke your eye out!",
-          0,
-          true
-        );
-        return;
-      }
-
-      const dyeSpec: Record<number, [number, number, number, number, boolean]> = {
-        3822: [0x0000ffff, 16, -16, -16, false],
-        3824: [0x00ff00ff, -16, 16, -16, false],
-        3826: [0xff0000ff, -16, -16, 16, false],
-        3828: [0x000000ff, -16, -16, -16, false],
-        3830: [0xffffffff, 32, 32, 32, true],
-        5458: [0x0000ffff, 16, -16, -16, false],
-        5460: [0x00ff00ff, -16, 16, -16, false],
-        5462: [0xff0000ff, -16, -16, 16, false],
-        5464: [0x000000ff, -16, -16, -16, false],
-        5466: [0xffffffff, 32, 32, 32, true],
-        6760: [0x0000ffff, 32, -16, -16, false],
-        6762: [0x00ff00ff, -16, 32, -16, false],
-        6764: [0xff0000ff, -16, -16, 32, false],
-        6766: [0x000000ff, -32, -32, -32, false],
-        6768: [0xffffffff, 32, 32, 32, true],
-      };
-      const spec = dyeSpec[itemId];
-      if (!spec) return;
-      const [targetColorRaw, baseDr, baseDg, baseDb, isCleaner] = spec;
-      const targetColor = targetColorRaw >>> 0;
-
-      const curRaw =
-        kind === "hair"
-          ? session.account.hairColor
-          : kind === "drops"
-          ? session.account.eyeColor
-          : session.account.pupilColor;
-      const cur = ((curRaw && curRaw !== 0 ? curRaw : 0xffffffff) >>> 0);
-
-      if (cur === targetColor) {
-        const alreadyMsg =
-          kind === "hair"
-            ? isCleaner
-              ? "Your hair is already clean!"
-              : "Your hair is already that color!"
-            : kind === "drops"
-            ? isCleaner
-              ? "Your eyes are already clean!"
-              : "Your eyes are already that color!"
-            : isCleaner
-            ? "Your lenses are already clean!"
-            : "Your pupils are already that color!";
-        OnTalkBubble(session, session.netId, alreadyMsg, 0, true);
-        return;
-      }
-
-      let dr = baseDr;
-      let dg = baseDg;
-      let db = baseDb;
-      if (kind === "lenses" && !isCleaner && cur === 0xffffffff) {
-        dr *= 9;
-        dg *= 9;
-        db *= 9;
-      }
-
-      // Little-endian Growtopia uint32 color layout: [0]=A, [1]=R, [2]=G, [3]=B
-      const a = cur & 0xff || 0xff;
-      const r = Math.max(0, Math.min(255, ((cur >>> 8) & 0xff) + dr));
-      const g = Math.max(0, Math.min(255, ((cur >>> 16) & 0xff) + dg));
-      const b = Math.max(0, Math.min(255, ((cur >>> 24) & 0xff) + db));
-      const nextColor = (((b << 24) | (g << 16) | (r << 8) | a) >>> 0);
-
-      ctx.consumeInventoryItem(session, itemId, 1, true);
-      if (kind === "hair") {
-        session.account.hairColor = nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
-        const actPkt = makeVariantPacket(["OnAction", "/shower"], session.netId);
-        for (const p of world.peers) p.peer.sendPacket(0, actPkt, true);
-        OnTalkBubble(session, session.netId, isCleaner ? "Your hair got cleaner!" : "You dyed your hair!", 0, true);
-      } else if (kind === "drops") {
-        session.account.eyeColor = nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
-        OnTalkBubble(session, session.netId, isCleaner ? "Your eyes got cleaner!" : "You used eye drops!", 0, true);
-      } else {
-        session.account.pupilColor = nextColor === 0xffffffff && isCleaner ? 0 : nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
-        OnTalkBubble(
-          session,
-          session.netId,
-          isCleaner ? "Your lenses got cleaner!" : "You put in some contact lenses!",
-          0,
-          true
-        );
-      }
-      ctx.dirty = true;
-      ctx.savePlayersNow();
-      ctx.sendCharacterState(session);
-      broadcastSetClothing(world, session, ctx.itemsDb, true);
-      return;
-    }
-
     if (tile.fg !== 0) return;
     if (def.collisionType === 1) {
       const px = tx * 32;
@@ -1010,6 +1100,19 @@ export function handleTileChangeRequest(
       } else if (AREA_LOCK_IDS.has(itemId) && (prevFlags & TILE_FLAG_LOCKED) !== 0) {
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, "You can't place a lock over an area that's already locked!", 0, true);
+        return;
+      }
+    }
+
+    // GTPS3 World.h:23264 & 23379: Vending & Sucker require World Lock; Cameras max 8 per world
+    if (world.ownerUserId === 0 && session.account.rank !== "developer" && (itemId === 2978 || itemId === 9268 || itemId === 5638 || itemId === 6946 || itemId === 6948 || itemId === 6950 || itemId === 6952)) {
+      OnTalkBubble(session, session.netId, "This item can only be used in World-Locked worlds!", 0, true);
+      return;
+    }
+    if (CAMERA_IDS.has(itemId)) {
+      const camCount = world.tiles.filter((t) => CAMERA_IDS.has(t.fg)).length;
+      if (camCount >= 8) {
+        OnTalkBubble(session, session.netId, `You can only have 8 ${stripGtColors(def.name)} in a world.`, 0, true);
         return;
       }
     }
@@ -1066,7 +1169,10 @@ export function handleTileChangeRequest(
         speedy: 0,
         powerups: 0,
       };
-      extra = { kind: "xenonite", powers: [0, 0, 0, 0] };
+      // GTPS3 keeps Xenonite state on the world object only; it never sends a
+      // per-tile extra. The invented type-18 payload desynchronised this
+      // client's tile-extra parser and corrupted the whole world view.
+      extra = undefined;
       needsFullTileUpdate = true;
       for (const p of world.peers) ctx.sendCharacterState(p);
     } else if (itemId === 6016) {
@@ -1083,6 +1189,43 @@ export function handleTileChangeRequest(
       needsFullTileUpdate = true;
     } else if (WEATHER_STUFF_SPECIAL_IDS.has(itemId)) {
       extra = { kind: "weatherStuff", itemId: itemId === 5958 ? 2 : 0, gravity: 50, spin: false, invert: false };
+      needsFullTileUpdate = true;
+    } else if (itemId === 2946) {
+      extra = { kind: "display", itemId: 0 };
+      needsFullTileUpdate = true;
+    } else if (DISPLAY_SHELF_IDS.has(itemId)) {
+      extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
+      needsFullTileUpdate = true;
+    } else if (DONATION_BOX_IDS.has(itemId)) {
+      extra = { kind: "donation", donates: [] };
+      needsFullTileUpdate = true;
+    } else if (MAILBOX_IDS.has(itemId)) {
+      extra = { kind: "mailbox" };
+      needsFullTileUpdate = true;
+    } else if (BULLETIN_BOARD_IDS.has(itemId)) {
+      extra = { kind: "bulletin" };
+      needsFullTileUpdate = true;
+    } else if (STORAGE_BOX_IDS.has(itemId)) {
+      extra = { kind: "storage" };
+      needsFullTileUpdate = true;
+    } else if (MANNEQUIN_IDS.has(itemId)) {
+      extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      needsFullTileUpdate = true;
+    } else if (CRYSTAL_IDS.has(itemId)) {
+      extra = { kind: "crystal", crystals: { [itemId]: 1 } };
+      needsFullTileUpdate = true;
+    } else if (AUTO_ACTION_IDS.has(itemId)) {
+      extra = { kind: "autoAction", fuel: 0, targetItemId: 0, enabled: false };
+      needsFullTileUpdate = true;
+    } else if (CAMERA_IDS.has(itemId)) {
+      extra = { kind: "camera" };
+      world.cctvSettings = world.cctvSettings || [];
+      if (!world.cctvSettings.some((c) => c.x === tx && c.y === ty)) {
+        world.cctvSettings.push({
+          x: tx, y: ty, showTaking: false, showDropping: false, showEnter: true, showExit: false,
+          hideOwner: false, hideAdmins: false, hideNoAccess: false, showVend: false,
+        });
+      }
       needsFullTileUpdate = true;
     }
     tile.extra = extra;
@@ -1218,6 +1361,14 @@ function finalizeTileBreak(
   if (targetId === 2072) {
     world.xenonite = undefined;
     for (const p of world.peers) ctx.sendCharacterState(p);
+  }
+  if (CAMERA_IDS.has(targetId) && world.cctvSettings) {
+    world.cctvSettings = world.cctvSettings.filter((c) => !(c.x === tx && c.y === ty));
+    if (world.cctvLogs) world.cctvLogs = world.cctvLogs.filter((l) => !(l.x === tx && l.y === ty));
+  }
+  if ((MAILBOX_IDS.has(targetId) || BULLETIN_BOARD_IDS.has(targetId)) && world.bulletin) {
+    world.bulletin = world.bulletin.filter((b) => !(b.x === tx && b.y === ty));
+    if (world.bulletinSettings) world.bulletinSettings = world.bulletinSettings.filter((s) => !(s.x === tx && s.y === ty));
   }
 
   if (tile.fg !== 0) {

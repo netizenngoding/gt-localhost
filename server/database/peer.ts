@@ -70,6 +70,7 @@ export interface PlayerAccount {
   friendIds?: number[];
   lastDailyReward?: number;
   personalNote?: string;
+  homeWorld?: string;
   lastKitClaim?: number;
   spawnWorld?: string;
   spawnX?: number;
@@ -78,6 +79,9 @@ export interface PlayerAccount {
   eyeColor?: number;
   pupilColor?: number;
   lastDailyQuestDay?: number;
+  nickname?: string;
+  backpackLevel?: number;
+  storedItems?: Array<{ itemId: number; count: number }>;
 }
 
 export interface PendingTradeOffer {
@@ -112,6 +116,9 @@ export interface PlayerSession {
   smstate: number;
   iconState?: number;
   brb?: boolean;
+  radio?: boolean;
+  lastMsg?: string;
+  lastMsgWorld?: string;
   lastIconStatePacket?: Buffer;
   cheats: {
     noclip: boolean;
@@ -127,6 +134,10 @@ export interface PlayerSession {
   lastLockeItem?: number;
   lastWrenchX?: number;
   lastWrenchY?: number;
+  lastWrenchB?: number;
+  lastChoosenItem?: number;
+  lastChoosenNr?: number;
+  invis?: boolean;
 }
 
 export type TenClothingSlots = [
@@ -197,6 +208,11 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     spawnWorld: raw.spawnWorld,
     spawnX: raw.spawnX,
     spawnY: raw.spawnY,
+    nickname: typeof raw.nickname === "string" ? raw.nickname.replace(/[|\r\n\0]/g, "").slice(0, 24) : undefined,
+    backpackLevel: typeof raw.backpackLevel === "number" && raw.backpackLevel >= 1 ? Math.min(20, raw.backpackLevel) : 1,
+    storedItems: Array.isArray(raw.storedItems)
+      ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0)
+      : [],
   };
 }
 
@@ -235,7 +251,8 @@ export function buildCharacterStateForSession(
     // GTPS3 World.h form_state(): Mark of Growganoth uses state bit 4.
     // No-Face is the face-slot item that hides eyes/mouth; verify client visual.
     if (session.account.inventory.some(v=>v.itemId===3774 && v.equipped && v.count>0)) stateFlags |= 1<<4;
-    if (abilities.speedy.length) moveSpeed = 325.0;
+    if (abilities.speedy.length) moveSpeed = 310.0;
+    if (abilities.highJump.length) gravity = 700.0;
     // Ordinary punch range stacks up to two extra tiles. Ring of Range has
     // a separate owner-world rule and is deliberately absent from the table.
     const ringOfRange = session.account.inventory.some(i=>i.equipped && i.count>0 && i.itemId===11094);
@@ -263,24 +280,10 @@ export function buildCharacterStateForSession(
       if (mod.gravity!==undefined) gravity = mod.gravity;
       if (mod.speed!==undefined) moveSpeed = mod.speed;
     }
-    // GTPS3 World.h update_clothes, Infected movement speed.
+    // GTPS3 World.h update_clothes: Infected movement speed & Floating! (-30 gravity).
     if (activeMods(session.account).some(m=>m.id==='gtps3-infected')) moveSpeed=(moveSpeed===420||moveSpeed===310||moveSpeed===325)?190:150;
-
-    // Balloons, Parasols, and slow fall equipment (GTPS3 World.h:88, 143)
-    const balloonIds = new Set([
-      338, 1112, 1114, 1116, 1118, 1120, 1122, 1124, 1126, 1128, 1130, 1772, 2816, 3216, 3218, 3840
-    ]);
-    const hasBalloon = session.account.inventory.some(
-      (v) => v.equipped && v.count > 0 && (
-        balloonIds.has(v.itemId) ||
-        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("balloon") ?? false) ||
-        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("parasol") ?? false) ||
-        (itemsDb.get(v.itemId)?.name.toLowerCase().includes("umbrella") ?? false)
-      )
-    );
-    if (hasBalloon) {
-      gravity = 250.0;
-      stateFlags |= 1 << 10;
+    if (activeMods(session.account).some((m) => m.group === "floating")) {
+      gravity = -30.0;
     }
 
     const xeno = session.world?.xenonite?.enabled ? session.world.xenonite : undefined;
@@ -320,6 +323,10 @@ export function buildCharacterStateForSession(
     stateFlags,
     moveSpeed,
     gravity,
+    // Native Func #4565 reads the lens/pupil colour from the tank body at +12
+    // and eye lenses at +8; hair/eye-drop live at +44/+48. Omitting pupilColor
+    // previously sent 0 at +12, so the client could never tint contact lenses.
+    pupilColor: session.account.pupilColor ?? 0,
     hairColor: session.account.hairColor ?? 0xFFFFFFFF,
     eyeDrop: session.account.eyeColor ?? 0xFFFFFFFF,
     eyeLenses: session.account.pupilColor ?? 0,

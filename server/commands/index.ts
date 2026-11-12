@@ -6,6 +6,7 @@ import { OnConsoleMessage } from "../onVariant";
 import { handleAdminCommand } from "./admin_commands";
 import { handlePlayerCommand } from "./player_commands";
 import { handleWorldCommand } from "./world_commands";
+import { handleBroadcastCommand } from "./broadcast";
 
 export function dispatchCommand(
   ctx: ServerContext,
@@ -14,7 +15,7 @@ export function dispatchCommand(
 ): void {
   const parts = rawWithoutSlash.trim().split(/\s+/);
   const typed = (parts[0] || "").toLowerCase();
-  const names = ["help","?","rank","mods","level","achievements","hidestatus","msg","tell","w","trade","sb","bc","time","who","me","find","item","search","warp","world","worlds","news","gazette","middle","brb","afk","wave","dance","love","sleep","facepalm","fp","smh","yes","no","omg","idk","shrug","furious","rolleyes","foldarms","fa","stubborn","fold","dab","sassy","dance2","march","grumpy","shy","growid","register","skin","flag","door","weather","convert","youtube","yt","kick","pull","freeze","unfreeze","ban","worldban","unban","worldunban","uba","setlevel","givexp","kits","kit","gitem","clearinv","ghost","cheats","give","guestrank","mstate","smstate","daily","phone","locke","rules","discord","status","stats"];
+  const names = ["help","?","rank","mods","level","achievements","hidestatus","msg","tell","w","r","rgo","trade","sb","bc","broadcast","cb","sdb","radio","go","time","who","me","find","item","search","warp","world","worlds","news","gazette","middle","brb","afk","wave","dance","love","sleep","facepalm","fp","smh","yes","no","omg","idk","shrug","furious","rolleyes","foldarms","fa","stubborn","fold","dab","sassy","dance2","march","grumpy","shy","growid","register","skin","flag","door","weather","convert","youtube","yt","kick","pull","freeze","unfreeze","ban","worldban","unban","worldunban","uba","setlevel","givexp","kits","kit","gitem","clearinv","ghost","cheats","give","guestrank","mstate","smstate","daily","phone","locke","rules","discord","status","stats"];
   const aliases: Record<string,string> = {k:"kick",p:"pull",b:"ban",ub:"unban",u:"unban"};
   const candidates=names.filter(n=>n.startsWith(typed));
   const cmd=names.includes(typed) ? typed : aliases[typed] || (candidates.length===1?candidates[0]:typed);
@@ -37,6 +38,7 @@ export function dispatchCommand(
     return;
   }
 
+  if (handleBroadcastCommand(ctx, session, cmd, argStr)) return;
   if (handlePlayerCommand(ctx, session, cmd, parts, argStr)) return;
   if (handleWorldCommand(ctx, session, cmd, argStr)) return;
   if (handleAdminCommand(ctx, session, cmd, parts, argStr)) return;

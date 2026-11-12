@@ -926,3 +926,12 @@ export const SPEEDY_IDS: ReadonlySet<number> = new Set([
   13162, // Slopestyle Bike
   13164, // Iroquois Helmet
 ]);
+
+export const HIGH_JUMP_IDS: ReadonlySet<number> = new Set([
+  212,  // Froghat
+  506,  // Bunny Ears
+  1146, // Moon Boots
+  5988, // Totally Legit Bunny Ears
+  8014, // Spring Flinger Shoes
+  8016, // Ultra Spring Flinger Shoes
+]);

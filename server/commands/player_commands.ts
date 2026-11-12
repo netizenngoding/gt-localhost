@@ -1,7 +1,7 @@
 import { requestTrade } from '../action/trade';
 import { setSkin, showSkinMenu } from "../progression/skin";
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
-import { hasPermission } from "../ranks";
+import { displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import {
@@ -17,7 +17,8 @@ import {
 import { DialogBuilder } from "../tools/create_dialog";
 import { rgbHexToGtSkinColor, sanitizeChatText, stripGtColors } from "../tools/string";
 import { openItemFinderDialog } from "../action/dialog_return/find_item";
-import { openCheatsMenu } from "../action/dialog_return/player_dialogs";
+import { openCheatsMenu, openBackpackMenu } from "../action/dialog_return/player_dialogs";
+import { progression } from "../progression/service";
 import { showGrowIdApplyModal } from "../action/growid";
 
 const KIT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -170,26 +171,59 @@ export function handlePlayerCommand(
     return true;
   }
 
-  if (cmd === "msg" || cmd === "tell" || cmd === "w") {
-    const targetName = parts[1] || "";
-    const msgBody = sanitizeChatText(parts.slice(2).join(" "), 120);
-    if (!targetName || !msgBody) {
-      OnConsoleMessage(session, "`4Usage: /msg <player> <message>``");
-      return true;
+  if (cmd === "msg" || cmd === "tell" || cmd === "w" || cmd === "r") {
+    // Mirrors GTPS3 World.h: /msg and /r share one handler; /r targets the last sender.
+    const USAGE_MSG = "Usage: /msg <`$full or first part of a name``> <`$your message``> - This will send a private message to someone anywhere in the universe.  If you don't include a message, you can just see if he/she is online or not.";
+    const USAGE_R = "Usage: /r <`$your message``> - This will send a private message to the last person who sent you a message. Use /msg to talk to somebody new!";
+    let username: string;
+    let msgBody: string;
+    if (cmd === "r") {
+      username = session.lastMsg || "";
+      if (!argStr || !username) {
+        OnConsoleMessage(session, USAGE_R);
+        return true;
+      }
+      msgBody = sanitizeChatText(argStr, 120);
+    } else {
+      username = parts[1] || "";
+      if (!username) {
+        OnConsoleMessage(session, USAGE_MSG);
+        return true;
+      }
+      msgBody = sanitizeChatText(parts.slice(2).join(" "), 120);
     }
-    const target = ctx.findOnlineSessionByName(targetName);
+    const lower = username.toLowerCase();
+    const online = [...ctx.sessions];
+    // GTPS3: exact name first, then a prefix match that needs at least 5 letters.
+    let target = online.find((p) => p.account.name.toLowerCase() === lower);
+    if (!target && username.length >= 5) target = online.find((p) => p.account.name.toLowerCase().startsWith(lower));
     if (!target) {
-      OnConsoleMessage(session, "`4Player is not online!``");
+      OnConsoleMessage(
+        session,
+        username.length < 5
+          ? `\`6>> \`$${username}\`\` is not online right now (you need to enter at least 5 letters if you meant a longer name!).\`\``
+          : `\`6>> No one online who has a name starting with \`$${username}\`\`.\`\``
+      );
       return true;
     }
+    const tname = target.account.name;
+    if (!msgBody) {
+      OnConsoleMessage(session, `\`6>> \`$${tname}\`\` is online now.\`\``);
+      return true;
+    }
+    if (hasPermission(target.account, "moderate")) {
+      OnConsoleMessage(session, `CT:[MSG]_\`6>> (Sent to \`$${tname}\`\`)\`\` (\`4Note: \`\`Message a mod \`4ONLY ONCE\`\` about an issue. Mods don't fix scams or replace items, they punish players who break the \`5/rules\`\`.  For issues related to account recovery or purchasing, contact support at \`5http://privategt.com\`\`)`);
+    } else {
+      OnConsoleMessage(session, `CT:[MSG]_\`6>> (Sent to \`$${tname}\`\`)\`\``);
+    }
+    target.lastMsg = session.account.name;
+    target.lastMsgWorld = session.world?.name || "";
     OnConsoleMessage(
       target,
-      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
+      `CP:0_PL:0_OID:_CT:[MSG]_>> \`c>> from (\`\`\`c\`w${session.account.name}\`\`\`\`\`c) in [\`$${session.world?.name || "EXIT"}\`\`] > \`\`\`$${msgBody}\`\``,
       chatPortrait(session, ctx.itemsDb)
     );
     OnPlayPositioned(target, "audio/pay_time.wav");
-    if (hasPermission(target.account,"moderate")) OnConsoleMessage(session, "`4Note:`` Message a moderator only once about an issue. Moderators do not replace scammed items.");
-    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
 
@@ -317,6 +351,87 @@ export function handlePlayerCommand(
       session,
       `\`o[Status] Name: \`w${acct.name}\`o | World: \`w${worldName}\`o | Gems: \`2${acct.gems || 0}\`o | Backpack: \`w${acct.inventory.filter(i => i.count > 0).length}/${acct.backpackSize}\`o | Online: \`2${ctx.sessions.size}\`o players.\`\``
     );
+    return true;
+  }
+
+  if (cmd === "home" || cmd === "gethome") {
+    const home = session.account.homeWorld;
+    if (!home) {
+      OnConsoleMessage(session, "`4You don't have a home world yet. Enter one and type `2/sethome``4.``");
+      return true;
+    }
+    if (cmd === "gethome") {
+      OnConsoleMessage(session, `\`2Your home world is \`w${home}\`2.\`\``);
+      return true;
+    }
+    OnConsoleMessage(session, `Magically warping to your home world \`5${home}\`\`...`);
+    OnPlayPositioned(session, "audio/door_open.wav");
+    ctx.joinWorld(session, home);
+    return true;
+  }
+
+  if (cmd === "sethome") {
+    const world = session.world;
+    if (!world) {
+      OnConsoleMessage(session, "`4Enter a world first.``");
+      return true;
+    }
+    session.account.homeWorld = world.name;
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    OnConsoleMessage(session, `\`2Your home world is now \`w${world.name}\`2.\`\``);
+    return true;
+  }
+
+  if (cmd === "rgo") {
+    // GTPS3: go to the world the last /msg was sent from.
+    const dest = session.lastMsgWorld || "";
+    if (dest && session.world && dest === session.world.name) {
+      OnConsoleMessage(session, "You magically appear at the world you were already in.  Great job!");
+      return true;
+    }
+    if (!dest) {
+      OnTextOverlay(session, "Unable to track down the location of the last broadcast!");
+      return true;
+    }
+    OnTextOverlay(session, `Moving to where \`w/${session.lastMsg}\`\` sent that last \`5/msg\`\` from... (\`2${dest}\`\`) ...`);
+    OnPlayPositioned(session, "audio/object_spawn.wav");
+    ctx.joinWorld(session, dest);
+    return true;
+  }
+
+  if (cmd === "mods") {
+    const staff = [...ctx.sessions].filter((p) => hasPermission(p.account, "moderate")).map((p) => displayName(p));
+    OnConsoleMessage(
+      session,
+      staff.length ? `\`2Online staff:\`\` ${staff.join(", ")}` : "There are no staff members online right now."
+    );
+    return true;
+  }
+
+  if (cmd === "backpack" || cmd === "bp") {
+    openBackpackMenu(ctx, session);
+    return true;
+  }
+
+  if (cmd === "roles") {
+    const p = progression(session.account);
+    const placed = p.counters.blocks_placed || 0;
+    const harvested = p.counters.trees_harvested || 0;
+    const broken = p.counters.blocks_broken || 0;
+    const dlg = [
+      "add_label_with_icon|big|`wRole Quests``|left|982|",
+      "add_spacer|small|",
+      "add_textbox|`9Punch, Build, Grow, and more to track your Role Progress!``|left|",
+      "add_spacer|small|",
+      `add_smalltext|- Builder (Blocks Placed): \`w${placed}\`\`|left|`,
+      `add_smalltext|- Farmer (Trees Harvested): \`w${harvested}\`\`|left|`,
+      `add_smalltext|- Breaker (Blocks Broken): \`w${broken}\`\`|left|`,
+      `add_smalltext|- Level: \`w${p.level}\`\`|left|`,
+      "end_dialog|rolequestspage||Back|",
+      "add_quick_exit|",
+    ].join("\n");
+    OnDialogRequest(session, dlg);
     return true;
   }
 

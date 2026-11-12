@@ -2,3 +2,6 @@ node_modules/
 .env
 vendor/
 data/client/client.data
+client.data
+gtps3_ref/
+data_store/*.tmp-*

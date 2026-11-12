@@ -26862,7 +26862,7 @@ var MODS = [
     "item": 338,
     "title": "Floating!",
     "seconds": 2,
-    "flags": 1024,
+    "flags": 0,
     "group": "floating",
     "onAdd": "Whoooooooaaaaaaaa...",
     "onRemove": "Gravity - it's the law.",
@@ -26871,7 +26871,7 @@ var MODS = [
     "action": "drop",
     "effect": 0,
     "text": "",
-    "gravity": 250
+    "gravity": -30
   },
   {
     "id": "gtps3-19",
@@ -27068,7 +27068,7 @@ var MODS = [
     "item": 1772,
     "title": "Floating!",
     "seconds": 2,
-    "flags": 1024,
+    "flags": 0,
     "group": "floating",
     "onAdd": "Whoooooooaaaaaaaa...",
     "onRemove": "Gravity - it's the law.",
@@ -27077,7 +27077,7 @@ var MODS = [
     "action": "drop",
     "effect": 0,
     "text": "",
-    "gravity": 250
+    "gravity": -30
   },
   {
     "id": "gtps3-73",
@@ -27352,6 +27352,7 @@ var TILE_FLAG_FLIPPED = 32;
 var TILE_FLAG_OPEN = 64;
 var TILE_FLAG_EXTRA_VISUAL = 64;
 var TILE_FLAG_HAS_WLS = 512;
+var TILE_FLAG_PUBLIC = 128;
 var CHAR_STATE_NOCLIP = 1 << 0;
 var CHAR_STATE_DOUBLE_JUMP = 1 << 1;
 var CHAR_STATE_INVISIBLE = 1 << 2;
@@ -27642,9 +27643,15 @@ var PROVIDER_FALLBACK_IDS = /* @__PURE__ */ new Set([
 var WEATHER_BG_FALLBACK_IDS = /* @__PURE__ */ new Set([3694, 4892, 5e3, 5654, 5716, 6854]);
 var WEATHER_STUFF_FALLBACK_IDS = /* @__PURE__ */ new Set([3832, 5958, 6280]);
 var LOCK_FALLBACK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 11550, 12654]);
+var DONATION_MAILBOX_IDS = /* @__PURE__ */ new Set([656, 1006, 1452, 10784]);
+var BULLETIN_STORAGE_IDS = /* @__PURE__ */ new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
+var DISPLAY_SHELF_IDS = /* @__PURE__ */ new Set([3794, 10190, 10552]);
+var MANNEQUIN_IDS = /* @__PURE__ */ new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+var CRYSTAL_BLOCK_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
 function serializeSingleTile(tile, nowMs) {
   let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED | TILE_FLAG_HAS_WLS);
   let extraBuf = null;
+  let omitExtraFlag = false;
   if (tile.extra) {
     if (tile.extra.kind === "door") {
       const lb = Buffer.from(tile.extra.label, "utf8");
@@ -27733,13 +27740,56 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf.writeUInt32LE(ids.length >>> 0, 5);
       for (let i = 0; i < ids.length; i++) extraBuf.writeUInt32LE(ids[i] >>> 0, 9 + i * 4);
     } else if (tile.extra.kind === "xenonite") {
-      const p = tile.extra.powers || [0, 0, 0, 0];
-      extraBuf = Buffer.allocUnsafe(9);
-      extraBuf[0] = 18;
-      extraBuf.writeUInt16LE(p[0] & 65535, 1);
-      extraBuf.writeUInt16LE(p[1] & 65535, 3);
-      extraBuf.writeUInt16LE(p[2] & 65535, 5);
-      extraBuf.writeUInt16LE(p[3] & 65535, 7);
+      omitExtraFlag = true;
+      extraBuf = Buffer.from([0]);
+    } else if (tile.extra.kind === "display") {
+      extraBuf = Buffer.allocUnsafe(5);
+      extraBuf[0] = 23;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+    } else if (tile.extra.kind === "displayShelf") {
+      extraBuf = Buffer.allocUnsafe(17);
+      extraBuf[0] = 43;
+      extraBuf.writeUInt32LE(tile.extra.s1 >>> 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.s2 >>> 0, 5);
+      extraBuf.writeUInt32LE(tile.extra.s3 >>> 0, 9);
+      extraBuf.writeUInt32LE(tile.extra.s4 >>> 0, 13);
+    } else if (tile.extra.kind === "donation" || tile.extra.kind === "mailbox") {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 12;
+      if (tile.extra.kind === "donation" && tile.extra.donates.length > 0) {
+        flags |= TILE_FLAG_EXTRA_VISUAL;
+      }
+    } else if (tile.extra.kind === "bulletin" || tile.extra.kind === "storage") {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 6;
+    } else if (tile.extra.kind === "crystal") {
+      extraBuf = Buffer.from([20, 0, 0]);
+    } else if (tile.extra.kind === "mannequin") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.alloc(26 + lb.length);
+      extraBuf[0] = 14;
+      extraBuf.writeUInt16LE(lb.length, 1);
+      lb.copy(extraBuf, 3);
+      extraBuf[3 + lb.length] = 0;
+      extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 4 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.hair & 65535, 8 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.shirt & 65535, 10 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.pants & 65535, 12 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.feet & 65535, 14 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.face & 65535, 16 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.hand & 65535, 18 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.back & 65535, 20 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.mask & 65535, 22 + lb.length);
+      extraBuf.writeUInt16LE(tile.extra.neck & 65535, 24 + lb.length);
+    } else if (tile.extra.kind === "autoAction") {
+      extraBuf = Buffer.alloc(13);
+      extraBuf[0] = tile.fg === 6950 ? 70 : 69;
+      extraBuf.writeUInt32LE(tile.extra.fuel > 0 ? 1 : 0, 1);
+      extraBuf.writeUInt32LE(tile.extra.fuel >>> 0, 5);
+      extraBuf.writeUInt32LE(tile.extra.targetItemId >>> 0, 9);
+      if (tile.extra.enabled) flags |= TILE_FLAG_EXTRA_VISUAL;
+    } else if (tile.extra.kind === "camera") {
+      extraBuf = null;
     }
   }
   if (!extraBuf && tile.fg !== 0) {
@@ -27753,6 +27803,26 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf[0] = 62;
       const cap = tile.fg === 5638 ? 5e3 : 1500;
       extraBuf.writeUInt32LE(cap, 11);
+    } else if (tile.fg === 6950 || tile.fg === 6952) {
+      extraBuf = Buffer.alloc(13);
+      extraBuf[0] = tile.fg === 6950 ? 70 : 69;
+    } else if (tile.fg === 2946) {
+      extraBuf = Buffer.alloc(5);
+      extraBuf[0] = 23;
+    } else if (DISPLAY_SHELF_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(17);
+      extraBuf[0] = 43;
+    } else if (DONATION_MAILBOX_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 12;
+    } else if (BULLETIN_STORAGE_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(8);
+      extraBuf[0] = 6;
+    } else if (MANNEQUIN_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(26);
+      extraBuf[0] = 14;
+    } else if (CRYSTAL_BLOCK_IDS.has(tile.fg)) {
+      extraBuf = Buffer.from([20, 0, 0]);
     } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(5);
       extraBuf[0] = 40;
@@ -27768,8 +27838,8 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf = Buffer.alloc(9);
       extraBuf[0] = 77;
     } else if (tile.fg === 2072) {
-      extraBuf = Buffer.alloc(9);
-      extraBuf[0] = 18;
+      omitExtraFlag = true;
+      extraBuf = Buffer.from([0]);
     } else if (PROVIDER_FALLBACK_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(5);
       extraBuf[0] = 9;
@@ -27785,7 +27855,7 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf.writeInt32LE(-1, 3);
     }
   }
-  if (extraBuf) {
+  if (extraBuf && !omitExtraFlag) {
     flags |= TILE_FLAG_HAS_EXTRA;
   }
   const isChildLocked = (flags & TILE_FLAG_LOCKED) !== 0;
@@ -30118,12 +30188,26 @@ var SPEEDY_IDS = /* @__PURE__ */ new Set([
   13164
   // Iroquois Helmet
 ]);
+var HIGH_JUMP_IDS = /* @__PURE__ */ new Set([
+  212,
+  // Froghat
+  506,
+  // Bunny Ears
+  1146,
+  // Moon Boots
+  5988,
+  // Totally Legit Bunny Ears
+  8014,
+  // Spring Flinger Shoes
+  8016
+  // Ultra Spring Flinger Shoes
+]);
 
 // server/playmods/equipment.ts
 var hasRaymanFist = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && s.itemId === 5480);
 var hasEnhancedDigging = (a) => a.inventory.some((s) => s.equipped && s.count > 0 && PUNCH_DAMAGE_IDS.has(s.itemId)) || activeMods(a).some((m) => m.punchDamage);
 function equippedAbilities(a) {
-  const r = { damage: [], punchRange: [], buildRange: [], doubleJump: [], speedy: [] };
+  const r = { damage: [], punchRange: [], buildRange: [], doubleJump: [], speedy: [], highJump: [] };
   for (const slot of a.inventory) {
     if (!slot.equipped || slot.count <= 0) continue;
     const id = slot.itemId;
@@ -30132,6 +30216,7 @@ function equippedAbilities(a) {
     if (BUILD_RANGE_IDS.has(id)) r.buildRange.push(id);
     if (DOUBLE_JUMP_IDS.has(id)) r.doubleJump.push(id);
     if (SPEEDY_IDS.has(id)) r.speedy.push(id);
+    if (HIGH_JUMP_IDS.has(id)) r.highJump.push(id);
   }
   return r;
 }
@@ -30221,11 +30306,15 @@ function canModerate(actor, target) {
   return hasPermission(actor, "moderate") && RANKS[rankOf(actor)].level > RANKS[rankOf(target)].level;
 }
 function displayName(session) {
+  const rawNick = session.account.nickname?.trim();
+  if (rawNick) {
+    return rawNick.replace(/[|\r\n\0]/g, "").slice(0, 24) + "``";
+  }
   const name = session.account.name.replace(/[^A-Za-z0-9_]/g, "").slice(0, 18);
   const rank = rankOf(session.account);
   let prefix = RANKS[rank].prefix;
   if (session.world) {
-    if (session.world.ownerUserId === session.account.userId) prefix = rank === "player" ? "`2" : "`2@";
+    if (session.world.ownerUserId === session.account.userId && rank === "player") prefix = "`2";
     else if (rank === "player" && session.world.tiles.some((t) => t.extra?.kind === "lock" && [242, 1796, 7188, 11550].includes(t.fg) && t.extra.adminIds.includes(session.account.userId))) prefix = "`^";
   }
   return `${prefix}${name}\`\``;
@@ -30444,7 +30533,10 @@ function normalizeAccount(raw) {
     pupilColor: typeof raw.pupilColor === "number" ? raw.pupilColor >>> 0 : void 0,
     spawnWorld: raw.spawnWorld,
     spawnX: raw.spawnX,
-    spawnY: raw.spawnY
+    spawnY: raw.spawnY,
+    nickname: typeof raw.nickname === "string" ? raw.nickname.replace(/[|\r\n\0]/g, "").slice(0, 24) : void 0,
+    backpackLevel: typeof raw.backpackLevel === "number" && raw.backpackLevel >= 1 ? Math.min(20, raw.backpackLevel) : 1,
+    storedItems: Array.isArray(raw.storedItems) ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0) : []
   };
 }
 function getClothingVector(account, itemsDb) {
@@ -30471,7 +30563,8 @@ function buildCharacterStateForSession(session, itemsDb) {
   const abilities = equippedAbilities(session.account);
   if (abilities.doubleJump.length) stateFlags |= CHAR_STATE_DOUBLE_JUMP;
   if (session.account.inventory.some((v) => v.itemId === 3774 && v.equipped && v.count > 0)) stateFlags |= 1 << 4;
-  if (abilities.speedy.length) moveSpeed = 325;
+  if (abilities.speedy.length) moveSpeed = 310;
+  if (abilities.highJump.length) gravity = 700;
   const ringOfRange = session.account.inventory.some((i) => i.equipped && i.count > 0 && i.itemId === 11094);
   const ringBonus = ringOfRange ? session.world?.ownerUserId === session.account.userId ? 3 : 1 : 0;
   const rangeCap = ringBonus === 3 ? 3 : 2;
@@ -30497,30 +30590,8 @@ function buildCharacterStateForSession(session, itemsDb) {
     if (mod.speed !== void 0) moveSpeed = mod.speed;
   }
   if (activeMods(session.account).some((m) => m.id === "gtps3-infected")) moveSpeed = moveSpeed === 420 || moveSpeed === 310 || moveSpeed === 325 ? 190 : 150;
-  const balloonIds = /* @__PURE__ */ new Set([
-    338,
-    1112,
-    1114,
-    1116,
-    1118,
-    1120,
-    1122,
-    1124,
-    1126,
-    1128,
-    1130,
-    1772,
-    2816,
-    3216,
-    3218,
-    3840
-  ]);
-  const hasBalloon = session.account.inventory.some(
-    (v) => v.equipped && v.count > 0 && (balloonIds.has(v.itemId) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("balloon") ?? false) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("parasol") ?? false) || (itemsDb.get(v.itemId)?.name.toLowerCase().includes("umbrella") ?? false))
-  );
-  if (hasBalloon) {
-    gravity = 250;
-    stateFlags |= 1 << 10;
+  if (activeMods(session.account).some((m) => m.group === "floating")) {
+    gravity = -30;
   }
   const xeno = session.world?.xenonite?.enabled ? session.world.xenonite : void 0;
   if (xeno) {
@@ -30555,6 +30626,10 @@ function buildCharacterStateForSession(session, itemsDb) {
     stateFlags,
     moveSpeed,
     gravity,
+    // Native Func #4565 reads the lens/pupil colour from the tank body at +12
+    // and eye lenses at +8; hair/eye-drop live at +44/+48. Omitting pupilColor
+    // previously sent 0 at +12, so the client could never tint contact lenses.
+    pupilColor: session.account.pupilColor ?? 0,
     hairColor: session.account.hairColor ?? 4294967295,
     eyeDrop: session.account.eyeColor ?? 4294967295,
     eyeLenses: session.account.pupilColor ?? 0
@@ -31070,6 +31145,33 @@ function OnEmoticonDataChanged(session, notification = false, timeout = 0) {
   session.peer.sendPacket(0, pkt, true);
 }
 
+// server/onVariant/OnBillboardChange.ts
+function OnBillboardChange(target, subject) {
+  const b = subject.account.billboard;
+  if (!b) return;
+  const billFlags = `${b.show ? 1 : 0},${b.buying ? 1 : 0}`;
+  target.peer.sendPacket(
+    0,
+    makeVariantPacket(
+      [
+        "OnBillboardChange",
+        { type: "i32", value: subject.netId },
+        { type: "i32", value: b.itemId },
+        billFlags,
+        { type: "i32", value: b.priceWl },
+        { type: "i32", value: b.perItem ? 1 : 0 }
+      ],
+      subject.netId
+    ),
+    true
+  );
+}
+function broadcastBillboardChange(world, subject) {
+  for (const p of world.peers) {
+    OnBillboardChange(p, subject);
+  }
+}
+
 // server/index.ts
 var import_node_http = __toESM(require("node:http"));
 
@@ -31547,6 +31649,20 @@ function serializeWorldForDisk(w) {
     ownerUserId: w.ownerUserId,
     worldBans: w.worldBans || {},
     xenonite: w.xenonite,
+    allowAdminVending: !!w.allowAdminVending,
+    disableMusicBlocks: !!w.disableMusicBlocks,
+    makeMusicInvisible: !!w.makeMusicInvisible,
+    musicBpm: w.musicBpm ?? 100,
+    entryLevel: w.entryLevel ?? 1,
+    royalSilence: !!w.royalSilence,
+    royalRainbows: !!w.royalRainbows,
+    bulletin: w.bulletin || [],
+    bulletinSettings: w.bulletinSettings || [],
+    storageItems: w.storageItems || [],
+    cctvSettings: w.cctvSettings || [],
+    cctvLogs: w.cctvLogs || [],
+    worldTimerEndMs: w.worldTimerEndMs || 0,
+    worldCategory: w.worldCategory || "None",
     spawnX: w.spawnX,
     spawnY: w.spawnY
   };
@@ -31563,6 +31679,20 @@ function hydrateWorldFromDisk(raw) {
     ownerUserId: typeof raw.ownerUserId === "number" ? raw.ownerUserId : 0,
     worldBans: raw.worldBans && typeof raw.worldBans === "object" ? Object.fromEntries(Object.entries(raw.worldBans).filter(([k, v]) => /^[1-9][0-9]*$/.test(k) && Number.isSafeInteger(v) && v > Date.now())) : {},
     xenonite: raw.xenonite,
+    allowAdminVending: !!raw.allowAdminVending,
+    disableMusicBlocks: !!raw.disableMusicBlocks,
+    makeMusicInvisible: !!raw.makeMusicInvisible,
+    musicBpm: typeof raw.musicBpm === "number" ? raw.musicBpm : 100,
+    entryLevel: typeof raw.entryLevel === "number" ? raw.entryLevel : 1,
+    royalSilence: !!raw.royalSilence,
+    royalRainbows: !!raw.royalRainbows,
+    bulletin: Array.isArray(raw.bulletin) ? raw.bulletin : [],
+    bulletinSettings: Array.isArray(raw.bulletinSettings) ? raw.bulletinSettings : [],
+    storageItems: Array.isArray(raw.storageItems) ? raw.storageItems : [],
+    cctvSettings: Array.isArray(raw.cctvSettings) ? raw.cctvSettings : [],
+    cctvLogs: Array.isArray(raw.cctvLogs) ? raw.cctvLogs : [],
+    worldTimerEndMs: typeof raw.worldTimerEndMs === "number" ? raw.worldTimerEndMs : 0,
+    worldCategory: typeof raw.worldCategory === "string" ? raw.worldCategory : "None",
     spawnX: typeof raw.spawnX === "number" ? raw.spawnX : 48 * 32,
     spawnY: typeof raw.spawnY === "number" ? raw.spawnY : 36 * 32,
     peers: /* @__PURE__ */ new Set()
@@ -31701,6 +31831,46 @@ function canModifyTile(session, world, tile, tx, ty, mode = "place") {
   return getBuildersLockDenial(world, uid, tile, tx, ty, mode) === null;
 }
 var canModifyWorldTile = canModifyTile;
+var WORLD_LOCK_IDS = /* @__PURE__ */ new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
+function getWorldLockTile(world) {
+  return world.tiles.find((t) => WORLD_LOCK_IDS.has(t.fg) && t.extra?.kind === "lock");
+}
+function canManageVending(session, world, tile) {
+  const uid = session.account.userId;
+  if (world.ownerUserId === uid || session.account.rank === "developer") return true;
+  const isAreaLocked = (tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0;
+  if (world.allowAdminVending && !isAreaLocked) {
+    const wl = getWorldLockTile(world);
+    if (wl?.extra?.kind === "lock" && wl.extra.adminIds.includes(uid)) return true;
+  }
+  if (isAreaLocked) {
+    const lockTile = world.tiles[tile.parentIndex];
+    return lockTile?.extra?.kind === "lock" && lockTile.extra.ownerUserId === uid;
+  }
+  return world.ownerUserId === 0;
+}
+function logCctvEvent(world, session, type, extraText = "") {
+  const settingsList = world.cctvSettings;
+  if (!settingsList || settingsList.length === 0) return;
+  const uid = session.account.userId;
+  const wl = getWorldLockTile(world);
+  const isOwner = world.ownerUserId === uid;
+  const isAdmin = !!wl && wl.extra?.kind === "lock" && wl.extra.adminIds.includes(uid);
+  const now = /* @__PURE__ */ new Date();
+  const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} on ${now.getMonth() + 1}/${now.getDate()}`;
+  const logs = world.cctvLogs = world.cctvLogs || [];
+  for (const s of settingsList) {
+    if (s.hideOwner && isOwner) continue;
+    if (s.hideAdmins && isAdmin) continue;
+    if (s.hideNoAccess && !isOwner && !isAdmin) continue;
+    const match = type === "entered" && s.showEnter || type === "left" && s.showExit || type === "took" && s.showTaking || type === "dropped" && s.showDropping || type === "bought" && s.showVend;
+    if (!match) continue;
+    const mid = extraText ? ` ${extraText} ` : " ";
+    const text = `\`w${session.account.name}\`\` ${type}${mid}at ${timeStr}`;
+    logs.push({ x: s.x, y: s.y, log: text, icon: type === "took" ? 18 : 1400 });
+    while (logs.length > 50) logs.shift();
+  }
+}
 function getDefaultLockWeather(world) {
   const wlTile = world.tiles.find(
     (t) => t.extra?.kind === "lock" && (t.fg === 10410 || t.fg === 11550 || t.fg === 11586 || t.fg === 11902 || t.fg === 12654)
@@ -32239,7 +32409,7 @@ var ServerContext = class {
     this.ranks = new RankService(rootDir);
     this.itemsDb = itemsDb;
     this.rootDir = rootDir;
-    this.dataStoreDir = import_node_path3.default.join(rootDir, "data_store");
+    this.dataStoreDir = process.env.DATA_STORE_DIR ? import_node_path3.default.resolve(process.env.DATA_STORE_DIR) : import_node_path3.default.join(rootDir, "data_store");
     this.playersFile = import_node_path3.default.join(this.dataStoreDir, "players.json");
     this.worldsFile = import_node_path3.default.join(this.dataStoreDir, "worlds.json");
     import_node_fs3.default.mkdirSync(this.dataStoreDir, { recursive: true });
@@ -32316,19 +32486,24 @@ var ServerContext = class {
       this.worlds.set("START", generateFreshWorld("START"));
     }
   }
+  atomicWriteJson(targetFile, payload) {
+    const tmp = `${targetFile}.tmp-${process.pid}`;
+    const fd = import_node_fs3.default.openSync(tmp, "w", 384);
+    try {
+      import_node_fs3.default.writeFileSync(fd, JSON.stringify(payload));
+      import_node_fs3.default.fsyncSync(fd);
+    } finally {
+      import_node_fs3.default.closeSync(fd);
+    }
+    try {
+      if (import_node_fs3.default.existsSync(targetFile)) import_node_fs3.default.copyFileSync(targetFile, targetFile + ".bak");
+    } catch {
+    }
+    import_node_fs3.default.renameSync(tmp, targetFile);
+  }
   savePlayersNow() {
     try {
-      const playersArr = Array.from(this.accounts.values());
-      const tmp = `${this.playersFile}.tmp-${process.pid}`;
-      const fd = import_node_fs3.default.openSync(tmp, "w", 384);
-      try {
-        import_node_fs3.default.writeFileSync(fd, JSON.stringify(playersArr));
-        import_node_fs3.default.fsyncSync(fd);
-      } finally {
-        import_node_fs3.default.closeSync(fd);
-      }
-      if (import_node_fs3.default.existsSync(this.playersFile)) import_node_fs3.default.copyFileSync(this.playersFile, this.playersFile + ".bak");
-      import_node_fs3.default.renameSync(tmp, this.playersFile);
+      this.atomicWriteJson(this.playersFile, Array.from(this.accounts.values()));
     } catch (err) {
       this.dirty = true;
       throw new Error("Player save failed; mutation was not acknowledged", { cause: err });
@@ -32337,17 +32512,10 @@ var ServerContext = class {
   savePersistentState() {
     this.savePlayersNow();
     try {
-      const worldsArr = Array.from(this.worlds.values()).map((w) => serializeWorldForDisk(w));
-      const tmpW = `${this.worldsFile}.tmp-${process.pid}`;
-      const fd = import_node_fs3.default.openSync(tmpW, "w", 384);
-      try {
-        import_node_fs3.default.writeFileSync(fd, JSON.stringify(worldsArr));
-        import_node_fs3.default.fsyncSync(fd);
-      } finally {
-        import_node_fs3.default.closeSync(fd);
-      }
-      if (import_node_fs3.default.existsSync(this.worldsFile)) import_node_fs3.default.copyFileSync(this.worldsFile, this.worldsFile + ".bak");
-      import_node_fs3.default.renameSync(tmpW, this.worldsFile);
+      this.atomicWriteJson(
+        this.worldsFile,
+        Array.from(this.worlds.values()).map((w) => serializeWorldForDisk(w))
+      );
       this.dirty = false;
     } catch (err) {
       console.warn("[ServerContext] Failed saving worlds.json:", err);
@@ -32560,6 +32728,12 @@ var ServerContext = class {
       session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true);
       return;
     }
+    const minLevel = world.entryLevel ?? 1;
+    if (minLevel > 1 && world.ownerUserId !== session.account.userId && !hasPermission(session.account, "moderate") && progression(session.account).level < minLevel) {
+      OnConsoleMessage(session, `\`4You need to be at least Level ${minLevel} to enter ${world.name}!\`\``);
+      session.peer.sendPacket(0, makeVariantPacket(["OnFailedToEnterWorld"]), true);
+      return;
+    }
     this.leaveCurrentWorld(session, false);
     const spawn = this.findMainDoorPixel(world);
     this.enterWorldAtPixel(session, world, spawn.x, spawn.y, "audio/door_open.wav", true);
@@ -32605,6 +32779,15 @@ var ServerContext = class {
     this.schedulePostSpawnSkinSync(session, world, session.netId);
     OnSetBux(session);
     this.sendCharacterState(session);
+    if (session.account.billboard?.show && session.account.billboard.itemId) {
+      broadcastBillboardChange(world, session);
+    }
+    for (const p of world.peers) {
+      if (p !== session && p.account.billboard?.show && p.account.billboard.itemId) {
+        OnBillboardChange(session, p);
+      }
+    }
+    logCctvEvent(world, session, "entered");
     broadcastPositionedSfx(world, session.netId, entrySfx);
     for (const peer of world.peers) recordProgress(this, peer, void 0, 0);
     if (announceEntry) {
@@ -32628,6 +32811,7 @@ var ServerContext = class {
     cancelTrade(session, "Trade cancelled: player left the world.");
     const world = session.world;
     if (!world) return;
+    logCctvEvent(world, session, "left");
     OnPlayPositioned(session, "audio/door_shut.wav");
     for (const other2 of world.peers) if (other2 !== session) OnPlayPositioned(other2, "audio/door_shut.wav");
     session.pullGeneration = (session.pullGeneration || 0) + 1;
@@ -32889,7 +33073,7 @@ var ItemDatabase = class _ItemDatabase {
       const isClothing = actionType === 20 || actionType === 107;
       const isLock = actionType === 3 || id === 202 || id === 204 || id === 206 || id === 242 || id === 1796 || id === 5260 || id === 7188 || id === 11550;
       const isDoor = actionType === 2 || actionType === 13 || actionType === 26;
-      const isSign = actionType === 10 || actionType === 34;
+      const isSign = actionType === 10;
       const isWeather = actionType === 41 || actionType === 81 || actionType === 89 || actionType === 134 || WEATHER_BY_ITEM_ID[id] !== void 0 || name.startsWith("Weather Machine");
       const isHazard = actionType === 6 || actionType === 16 || actionType === 25 || actionType === 136;
       const isBouncy = actionType === 7 || actionType === 24 || actionType === 108;
@@ -33196,8 +33380,8 @@ var ItemDatabase = class _ItemDatabase {
       if (results.includes(item)) continue;
       if (!item.name || item.name.startsWith("null_") || item.name.includes("REVOKED")) continue;
       if (excludeSeeds && item.isSeed) continue;
-      const cleanName2 = item.name.replace(/`.|``/g, "").toLowerCase();
-      if (cleanName2.includes(q)) {
+      const cleanName3 = item.name.replace(/`.|``/g, "").toLowerCase();
+      if (cleanName3.includes(q)) {
         results.push(item);
       }
     }
@@ -33352,6 +33536,8 @@ function handleDropItemReturn(ctx, session, kv) {
   const dropY = playerTileY * 32 + 6;
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
   spawnOrMergeWorldDrop(world, itemId, amt, dropX, dropY, session.netId);
+  const droppedName = stripGtColors(ctx.itemsDb.get(itemId)?.name || "Item");
+  logCctvEvent(world, session, "dropped", `${amt} ${droppedName}`);
   ctx.dirty = true;
 }
 
@@ -33475,12 +33661,12 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     OnConsoleMessage(session, "`4This account already has a GrowID.``");
     return;
   }
-  const cleanName2 = sanitizeAccountName(rawName, 18);
-  if (rawName !== cleanName2 || cleanName2.length < 3 || cleanName2.length > 18) {
+  const cleanName3 = sanitizeAccountName(rawName, 18);
+  if (rawName !== cleanName3 || cleanName3.length < 3 || cleanName3.length > 18) {
     showGrowIdApplyModal(
       session,
       "GrowID name must be between 3 and 18 letters/numbers!",
-      cleanName2
+      cleanName3
     );
     return;
   }
@@ -33488,7 +33674,7 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     showGrowIdApplyModal(
       session,
       "Password must be between 8 and 18 characters!",
-      cleanName2
+      cleanName3
     );
     return;
   }
@@ -33496,17 +33682,17 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     showGrowIdApplyModal(
       session,
       "Passwords do not match! Please re-enter both password fields.",
-      cleanName2
+      cleanName3
     );
     return;
   }
-  const lowerTarget = cleanName2.toLowerCase();
+  const lowerTarget = cleanName3.toLowerCase();
   const existing = ctx.accounts.get(lowerTarget);
   if (existing && existing.userId !== session.account.userId) {
     showGrowIdApplyModal(
       session,
-      `Sorry, the GrowID \`w${cleanName2}\`4 is already taken! Try another name.`,
-      cleanName2
+      `Sorry, the GrowID \`w${cleanName3}\`4 is already taken! Try another name.`,
+      cleanName3
     );
     return;
   }
@@ -33517,19 +33703,19 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
   if (session.account.deviceKey) {
     ctx.accountsByDevice.delete(session.account.deviceKey);
   }
-  session.account.name = cleanName2;
-  session.account.growId = cleanName2;
+  session.account.name = cleanName3;
+  session.account.growId = cleanName3;
   session.account.isGuest = false;
   session.account.passwordHash = hashPassword(rawPass);
   ctx.ranks.apply(session.account);
   ctx.accounts.set(lowerTarget, session.account);
   ctx.savePlayersNow();
-  SetHasGrowID(session, true, cleanName2, rawPass);
+  SetHasGrowID(session, true, cleanName3, rawPass);
   OnPlayPositioned(session, "audio/piano_nice.wav");
-  OnTextOverlay(session, `\`2GrowID \`w${cleanName2}\`2 Created!\`\``);
+  OnTextOverlay(session, `\`2GrowID \`w${cleanName3}\`2 Created!\`\``);
   OnConsoleMessage(
     session,
-    `\`2Account upgraded! Your new GrowID \`w${cleanName2}\`2 has been created and saved with all your items & clothes!\`\``
+    `\`2Account upgraded! Your new GrowID \`w${cleanName3}\`2 has been created and saved with all your items & clothes!\`\``
   );
   if (session.world) {
     broadcastNameChanged(session.world, session);
@@ -33847,7 +34033,7 @@ function handleWrenchPlayer(ctx, session, kv) {
   }
   if (target === session) {
     const acct = session.account, p = progression(acct);
-    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").raw(`add_custom_label|(${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`).customButton("emojis", "gui_wrench_growmojis").customBreak().addSpacer("small").customSpacing(0, 0);
+    const dlg2 = new DialogBuilder().setDefaultColor("`o").addPlayerInfo(displayName(session), p.level, p.xp, xpRequired(p.level)).addSpacer("small").addSpacer("small").customSpacing(5, 10).customButton("notebook_edit", "gui_wrench_notebook").customButton("billboard_edit", "gui_wrench_edit_billboard").customButton("my_worlds", "gui_wrench_my_worlds").customButton("alist", "gui_wrench_achievements").raw(`add_custom_label|(${ACHIEVEMENTS.filter((a) => p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`).customButton("emojis", "gui_wrench_growmojis").customBreak().addSpacer("small").customSpacing(0, 0);
     const mods = activeMods(acct);
     const equipmentEffects = [];
     const abilities = equippedAbilities(acct);
@@ -33864,7 +34050,7 @@ function handleWrenchPlayer(ctx, session, kv) {
       dlg2.addLabelWithIcon("small", `\`w${mod.title}\`\` (\`w${remaining}s\`\` left)`, mod.icon);
     }
     for (const effect of equipmentEffects) dlg2.addLabelWithIcon("small", `\`w${effect.title}\`\``, effect.icon);
-    dlg2.addSpacer("small").addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`).addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x / 32)}, ${Math.floor(session.y / 32)}) (${world.peers.size} person)`).addTextbox(p.superSupporter ? "You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``." : "You are not yet a `2Supporter`` or `5Super Supporter``.");
+    dlg2.addSpacer("small").addButton("backpack_menu", `\`wOpen Backpack Storage (${(acct.storedItems || []).length}/${(acct.backpackLevel || 1) * 10})\`\``).addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`).addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x / 32)}, ${Math.floor(session.y / 32)}) (${world.peers.size} person)`).addTextbox(p.superSupporter ? "You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``." : "You are not yet a `2Supporter`` or `5Super Supporter``.");
     if (acct.isGuest) dlg2.addButtonWithIcon("acct_growid", "`2Get Free GrowID!``", 206);
     OnDialogRequest(session, dlg2.addQuickExit().endDialog("popup", "", "Continue"));
     return;
@@ -33949,6 +34135,58 @@ function showGrowmojisDialog(session) {
   }
   const dialogStr = dlg.addSpacer("small").addQuickExit().endDialog("growmoji_dialog", "", "Back");
   OnDialogRequest(session, dialogStr);
+}
+function openBillboardDialog(ctx, session) {
+  const b = session.account.billboard || { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true };
+  const itemDef = b.itemId ? ctx.itemsDb.get(b.itemId) : void 0;
+  const lines = [
+    "set_default_color|`o",
+    "add_label_with_icon|big|`wTrade Billboard``|left|8282|",
+    "add_spacer|small|"
+  ];
+  if (itemDef) {
+    lines.push(`add_label_with_icon|small|\`w${stripGtColors(itemDef.name)}\`\`|left|${b.itemId}|`);
+  }
+  lines.push(
+    "add_item_picker|billboard_item|`wSelect Billboard Item``|Choose an item to put on your billboard!|",
+    "add_spacer|small|",
+    `add_checkbox|billboard_toggle|\`$Show Billboard\`\`|${b.show ? 1 : 0}`,
+    `add_checkbox|billboard_buying_toggle|\`$Is Buying\`\`|${b.buying ? 1 : 0}`,
+    `add_text_input|setprice|Price of item:|${b.priceWl || 1}|5|`,
+    `add_checkbox|chk_peritem|World Locks per Item|${b.perItem ? 1 : 0}`,
+    `add_checkbox|chk_perlock|Items per World Lock|${b.perItem ? 0 : 1}`,
+    "add_spacer|small|",
+    "end_dialog|billboard_edit|Close|Update|"
+  );
+  OnDialogRequest(session, lines.join("\n"));
+}
+function openBackpackMenu(ctx, session) {
+  const lvl = session.account.backpackLevel || 1;
+  const maxStored = lvl * 10;
+  const stored = session.account.storedItems || [];
+  const upgradeCost = 1e3 * (lvl * lvl + 25) * 2;
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wBackpack - Level ${lvl}\`\`|left|8430|`,
+    `add_textbox|\`w${stored.length}/${maxStored}\`\` items stored.|left|`
+  ];
+  if (stored.length > 0) {
+    lines.push("add_spacer|small|", "text_scaling_string|aaaaaaaaaaaaaaa|");
+    stored.forEach((s, idx) => {
+      const iName = stripGtColors(ctx.itemsDb.get(s.itemId)?.name || "Item");
+      lines.push(`add_button_with_icon|bp_${idx}|${iName}|frame|${s.itemId}|${s.count}|`);
+    });
+    lines.push("add_button_with_icon||END_LIST|noflags|0||");
+  }
+  lines.push("add_spacer|small|");
+  if (maxStored < 200) {
+    lines.push(`add_button|backpack_upgrade|\`2Upgrade for ${upgradeCost.toLocaleString()} gems\`\`|noflags|0|0|`);
+  }
+  if (stored.length < maxStored) {
+    lines.push("add_item_picker|itemid|`wDeposit Item``|Choose an item to store|");
+  }
+  lines.push("end_dialog|backpack_menu|Exit||", "add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
 }
 function openCheatsMenu(session) {
   if (!SERVER_CONFIG.enableDeveloperMenu) {
@@ -34096,7 +34334,148 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
       for (const w of ctx.worlds.values()) if (w.ownerUserId === session.account.userId) dlg.addButton(`visit_${w.name}`, w.name);
       OnDialogRequest(session, dlg.addQuickExit().endDialog("my_worlds", "Close", ""));
     }
+    if (btn === "billboard_edit") {
+      openBillboardDialog(ctx, session);
+      return true;
+    }
+    if (btn === "backpack_menu") {
+      openBackpackMenu(ctx, session);
+      return true;
+    }
     if (btn === "acct_growid") showGrowIdApplyModal(session);
+    return true;
+  }
+  if (dlgName === "billboard_edit") {
+    const b = session.account.billboard = session.account.billboard || { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true };
+    if (kv.billboard_item) {
+      const bid = Number.parseInt(kv.billboard_item, 10);
+      const def = ctx.itemsDb.get(bid);
+      if (bid > 0 && def && (def.flags & 16) === 0 && !def.isLock) {
+        b.itemId = bid;
+      } else {
+        OnConsoleMessage(session, "Item can not be untradeable.");
+        OnTalkBubble(session, session.netId, "Item can not be untradeable.", 0, true);
+      }
+    }
+    if (kv.billboard_toggle !== void 0) b.show = kv.billboard_toggle === "1";
+    if (kv.billboard_buying_toggle !== void 0) b.buying = kv.billboard_buying_toggle === "1";
+    if (kv.setprice !== void 0) {
+      const p = Number.parseInt(kv.setprice, 10);
+      if (Number.isFinite(p) && p > 0 && p <= 99999) b.priceWl = p;
+    }
+    if (kv.chk_peritem !== void 0 || kv.chk_perlock !== void 0) {
+      b.perItem = kv.chk_perlock !== "1";
+    }
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    if (session.world) broadcastBillboardChange(session.world, session);
+    else OnBillboardChange(session, session);
+    return true;
+  }
+  if (dlgName === "backpack_menu") {
+    const lvl = session.account.backpackLevel || 1;
+    const stored = session.account.storedItems = session.account.storedItems || [];
+    if (btn === "backpack_upgrade") {
+      if (lvl * 10 >= 200) {
+        OnTalkBubble(session, session.netId, "You have reached max slots!", 0, false);
+        return true;
+      }
+      const cost = 1e3 * (lvl * lvl + 25) * 2;
+      if (session.account.gems < cost) {
+        OnTalkBubble(session, session.netId, "You don't have enough gems!", 0, false);
+        return true;
+      }
+      session.account.gems -= cost;
+      session.account.backpackLevel = lvl + 1;
+      OnSetBux(session);
+      OnPlayPositioned(session, "audio/piano_nice.wav");
+      OnTalkBubble(session, session.netId, "Congratulations! You have upgraded your Backpack!", 0, false);
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      openBackpackMenu(ctx, session);
+      return true;
+    }
+    if (kv.itemid) {
+      const iid = Number.parseInt(kv.itemid, 10);
+      const slot = session.account.inventory.find((s) => s.itemId === iid && s.count > 0);
+      const def = ctx.itemsDb.get(iid);
+      if (!slot || !def) return true;
+      if ((def.flags & 16) !== 0 || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
+        OnTalkBubble(session, session.netId, "You can't store this item!", 0, false);
+        return true;
+      }
+      if (stored.length >= lvl * 10) {
+        OnTalkBubble(session, session.netId, "Backpack storage is full!", 0, false);
+        return true;
+      }
+      const amt = slot.count;
+      if (ctx.consumeInventoryItem(session, iid, amt, true)) {
+        stored.push({ itemId: iid, count: amt });
+        ctx.dirty = true;
+        ctx.savePlayersNow();
+        openBackpackMenu(ctx, session);
+      }
+      return true;
+    }
+    if (btn.startsWith("bp_")) {
+      const idx = Number.parseInt(btn.slice(3), 10);
+      const entry = stored[idx];
+      if (!entry) return true;
+      if (ctx.giveInventoryItem(session, entry.itemId, entry.count, true) === entry.count) {
+        const iName = stripGtColors(ctx.itemsDb.get(entry.itemId)?.name || "Item");
+        stored.splice(idx, 1);
+        OnConsoleMessage(session, `You picked up ${entry.count} ${iName}.`);
+        OnTalkBubble(session, session.netId, `You picked up ${entry.count} ${iName}.`, 0, false);
+        ctx.dirty = true;
+        ctx.savePlayersNow();
+        openBackpackMenu(ctx, session);
+      } else {
+        OnTalkBubble(session, session.netId, "You don't have enough inventory space!", 0, false);
+      }
+      return true;
+    }
+    return true;
+  }
+  if (dlgName === "unaccess") {
+    const world = session.world;
+    if (!world || btn !== "Yes" && btn !== "OK" && btn !== "") return true;
+    const uid = session.account.userId;
+    let removed = 0;
+    for (let i = 0; i < world.tiles.length; i++) {
+      const t = world.tiles[i];
+      if (t.extra?.kind === "lock" && t.extra.ownerUserId !== uid && t.extra.adminIds.includes(uid)) {
+        t.extra.adminIds = t.extra.adminIds.filter((id) => id !== uid);
+        removed++;
+        const upd = makeTileUpdatePacket(i % world.width, Math.floor(i / world.width), t, Date.now());
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+      }
+    }
+    if (removed > 0) {
+      ctx.dirty = true;
+      broadcastNameChanged(session);
+      OnTalkBubble(session, session.netId, "I've removed my access!", 0, true);
+      broadcastConsoleMessage(world, `${session.account.name} removed their access from all locks in ${world.name}.`);
+    } else {
+      OnConsoleMessage(session, "You don't have admin access on any locks in this world.");
+    }
+    return true;
+  }
+  if (dlgName === "top") {
+    const list = [...ctx.worlds.values()].sort((a, b) => b.peers.size - a.peers.size).slice(0, 15);
+    if (btn.startsWith("warp_to_")) {
+      ctx.joinWorld(session, btn.slice(8));
+      return true;
+    }
+    const lines = [
+      "set_default_color|`o",
+      "add_label_with_icon|big|`oTop Worlds``|left|394|",
+      "add_spacer|small|"
+    ];
+    list.forEach((w, idx) => {
+      lines.push(`add_button|warp_to_${w.name}|#${idx + 1}: \`w${w.name}\`\` (${w.peers.size} online)|noflags|0|0|`);
+    });
+    lines.push("end_dialog|top|Close||");
+    OnDialogRequest(session, lines.join("\n"));
     return true;
   }
   if (dlgName === "target_wrench") return true;
@@ -34492,13 +34871,34 @@ add_spacer|small|
 `).raw("add_smalltext|People with lock access can both build and break unless you check below. The lock owner can always build and break.|left|\n").raw(`add_checkbox|checkbox_admins|Admins Are Limited|${lock.limitAdmins ? 1 : 0}|
 `);
     }
+  } else {
+    const world = session.world;
+    dlgBuilder.raw(`add_checkbox|checkbox_vending|Allow admins to edit vending|${world.allowAdminVending ? 1 : 0}|
+`).raw(`add_checkbox|checkbox_disable_music|Disable Custom Music Blocks|${world.disableMusicBlocks ? 1 : 0}|
+`).raw(`add_text_input|tempo|Music BPM|${world.musicBpm ?? 100}|3|
+`).raw(`add_checkbox|checkbox_disable_music_render|Make Custom Music Blocks invisible|${world.makeMusicInvisible ? 1 : 0}|
+`);
+    if (session.account.homeWorld) {
+      dlgBuilder.raw(`add_smalltext|Your current home world is: ${session.account.homeWorld}|left|
+`);
+    }
+    dlgBuilder.raw(`add_checkbox|checkbox_set_as_home_world|Set as Home World|${session.account.homeWorld === world.name ? 1 : 0}|
+`);
+    if (tile.fg === 4802) {
+      dlgBuilder.raw("add_label|small|Ye Royal Options|left\n").raw(`add_checkbox|checkbox_silence|Silence, Peasants!|${world.royalSilence ? 1 : 0}|
+`).raw(`add_checkbox|checkbox_rainbows|Royal Rainbows!|${world.royalRainbows ? 1 : 0}|
+`);
+    }
+    dlgBuilder.raw(`add_text_input|minimum_entry_level|World Level: |${world.entryLevel ?? 1}|3|
+`).raw("add_smalltext|Set minimum world entry level.|\n").raw("add_button|sessionlength_dialog|`wSet World Timer``|noflags|0|0|\n").raw(`add_button|changecat|\`wCategory: ${world.worldCategory || "None"}\`\`|noflags|0|0|
+`);
   }
   const dlg = dlgBuilder.endDialog("lock_edit", "Cancel", "OK");
   OnDialogRequest(session, dlg);
 }
 function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
   if (!session.pendingEditTile || !session.world) return false;
-  if (dlgName !== "save_tile_label" && dlgName !== "door_settings" && dlgName !== "weather_picker" && dlgName !== "weatherspcl" && dlgName !== "xenonite_edit" && dlgName !== "lock_settings" && dlgName !== "lock_edit") {
+  if (dlgName !== "save_tile_label" && dlgName !== "door_settings" && dlgName !== "weather_picker" && dlgName !== "weatherspcl" && dlgName !== "xenonite_edit" && dlgName !== "lock_settings" && dlgName !== "lock_edit" && dlgName !== "sessionlength_dialog" && dlgName !== "changecat") {
     return false;
   }
   const fallback = session.pendingEditTile;
@@ -34630,7 +35030,7 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
     broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
     return true;
   }
-  if (dlgName === "lock_settings" || dlgName === "lock_edit") {
+  if (dlgName === "lock_settings" || dlgName === "lock_edit" || dlgName === "sessionlength_dialog" || dlgName === "changecat") {
     if (tile.extra?.kind !== "lock") return true;
     const lock = tile.extra;
     const btn = kv.buttonClicked || "";
@@ -34651,6 +35051,25 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
       return true;
     }
     if (!isOwnerOrDev) return true;
+    if (dlgName === "sessionlength_dialog") {
+      if (tile.extra?.kind !== "lock" || tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer") return true;
+      const mins = Math.max(0, Math.min(180, Number.parseInt(kv.session_minutes || "0", 10) || 0));
+      world.worldTimerEndMs = mins > 0 ? Date.now() + mins * 6e4 : 0;
+      ctx.dirty = true;
+      broadcastConsoleMessage(world, mins > 0 ? `\`2World Timer set to \`w${mins}\`\` minutes!\`\`` : "`2World Timer cleared.``");
+      return true;
+    }
+    if (dlgName === "changecat") {
+      if (tile.extra?.kind !== "lock" || tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer") return true;
+      const cats = ["None", "Trade", "Social", "Parkour", "Farm", "Shop", "Game", "Art", "Story", "Music", "Storage"];
+      const picked = cats.find((c) => btn === `cat_${c}` || kv.category === c);
+      if (picked) {
+        world.worldCategory = picked;
+        ctx.dirty = true;
+        OnTalkBubble(session, session.netId, `World category set to \`2${picked}\`\`!`, 0, true);
+      }
+      return true;
+    }
     if (dlgName === "lock_edit") {
       lock.adminIds = lock.adminIds.filter((id) => kv[`acc_${id}`] !== "0");
       if (kv.checkbox_public !== void 0) {
@@ -34662,6 +35081,81 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
       if (tile.fg === 4994) {
         if (kv.checkbox_buildonly !== void 0) lock.buildOnly = kv.checkbox_buildonly === "1";
         if (kv.checkbox_admins !== void 0) lock.limitAdmins = kv.checkbox_admins === "1";
+      } else if (tile.fg !== 202 && tile.fg !== 204 && tile.fg !== 206) {
+        if (kv.checkbox_vending !== void 0) {
+          const nextVp = kv.checkbox_vending === "1";
+          if (!!world.allowAdminVending !== nextVp) {
+            world.allowAdminVending = nextVp;
+            broadcastConsoleMessage(world, `${session.account.name} has set the \`$Vending\`\` to ${nextVp ? "`$PUBLIC" : "`4PRIVATE``"}`);
+          }
+        }
+        if (kv.checkbox_disable_music !== void 0) world.disableMusicBlocks = kv.checkbox_disable_music === "1";
+        if (kv.checkbox_disable_music_render !== void 0) world.makeMusicInvisible = kv.checkbox_disable_music_render === "1";
+        if (kv.tempo !== void 0) {
+          const bpm = Number.parseInt(kv.tempo, 10);
+          if (Number.isFinite(bpm) && bpm !== (world.musicBpm ?? 100)) {
+            if (bpm < 20 || bpm > 200) {
+              OnTalkBubble(session, session.netId, "Tempo must be from 20-200 BPM.", 0, false);
+            } else {
+              world.musicBpm = bpm;
+            }
+          }
+        }
+        if (kv.checkbox_set_as_home_world !== void 0) {
+          const wantHome = kv.checkbox_set_as_home_world === "1";
+          if (wantHome && session.account.homeWorld !== world.name) {
+            session.account.homeWorld = world.name;
+            OnTalkBubble(session, session.netId, `${world.name} has been set as your home world!`, 0, false);
+          } else if (!wantHome && session.account.homeWorld === world.name) {
+            session.account.homeWorld = "";
+            OnTalkBubble(session, session.netId, `${world.name} has been removed as your home world!`, 0, false);
+          }
+        }
+        if (kv.minimum_entry_level !== void 0) {
+          const lvl = Number.parseInt(kv.minimum_entry_level, 10);
+          if (Number.isFinite(lvl) && lvl !== (world.entryLevel ?? 1)) {
+            if (lvl < 1) OnTalkBubble(session, session.netId, "Minimum entry level can't be lower than 1.", 0, false);
+            else if (lvl > 124) OnTalkBubble(session, session.netId, "Minimum entry level can't be higher than 124.", 0, false);
+            else {
+              world.entryLevel = lvl;
+              OnTalkBubble(session, session.netId, `Minimum entry level for this world is set to \`2Level ${lvl}\`\`.`, 0, false);
+            }
+          }
+        }
+        if (tile.fg === 4802) {
+          if (kv.checkbox_silence !== void 0) world.royalSilence = kv.checkbox_silence === "1";
+          if (kv.checkbox_rainbows !== void 0) world.royalRainbows = kv.checkbox_rainbows === "1";
+        }
+        if (btn === "sessionlength_dialog") {
+          session.pendingEditTile = { x, y };
+          const curLeft = world.worldTimerEndMs && world.worldTimerEndMs > Date.now() ? Math.ceil((world.worldTimerEndMs - Date.now()) / 6e4) : 0;
+          OnDialogRequest(
+            session,
+            `set_default_color|\`o
+add_label_with_icon|big|\`wSet World Timer\`\`|left|${tile.fg}|
+embed_data|tilex|${x}
+embed_data|tiley|${y}
+add_textbox|Set world timer in minutes (0 to disable, max 180).|left|
+add_text_input|session_minutes|Minutes:|${curLeft}|3|
+end_dialog|sessionlength_dialog|Cancel|OK|`
+          );
+          return true;
+        }
+        if (btn === "changecat") {
+          session.pendingEditTile = { x, y };
+          const cats = ["None", "Trade", "Social", "Parkour", "Farm", "Shop", "Game", "Art", "Story", "Music", "Storage"];
+          const buttons = cats.map((c) => `add_button|cat_${c}|${c === (world.worldCategory || "None") ? "`2" + c + "``" : c}|noflags|0|0|`).join("\n");
+          OnDialogRequest(
+            session,
+            `set_default_color|\`o
+add_label_with_icon|big|\`wWorld Category\`\`|left|${tile.fg}|
+embed_data|tilex|${x}
+embed_data|tiley|${y}
+${buttons}
+end_dialog|changecat|Cancel||`
+          );
+          return true;
+        }
       }
       const netId = Number(kv.playerNetID);
       const target = [...world.peers].find((p) => p.netId === netId);
@@ -34910,16 +35404,25 @@ function handleVendingDialogReturn(ctx, session, kv) {
     tile.extra = { kind: "vending", itemId: 0, price: 0, count: 0, wl: 0 };
   }
   const extra = tile.extra;
-  const isOwner = canModifyWorldTile(session, world, tile, tx, ty);
+  const isOwner = canManageVending(session, world, tile);
   const btn = kv.buttonClicked || "";
   if (isOwner) {
     if (kv.stockitem && extra.itemId === 0) {
       const selectedId = parseInt(kv.stockitem, 10);
+      const selectedDef = ctx.itemsDb.get(selectedId);
       const slot = session.account.inventory.find((s) => s.itemId === selectedId);
-      if (slot && slot.count > 0 && selectedId !== 242 && selectedId !== 1796 && selectedId !== 7188) {
+      if (slot && slot.count > 0) {
+        if (!selectedDef || selectedDef.isLock || selectedId === 242 || selectedId === 1796 || selectedId === 7188 || selectedId === 1424 || selectedId === 5816 || selectedDef.actionType === 64 || (selectedDef.flags & 128) !== 0) {
+          const rejectMsg = selectedDef?.isLock || selectedId === 1424 || selectedId === 5816 ? "No no no." : `Can't put that in a ${stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Vending Machine")}.`;
+          OnTalkBubble(session, session.netId, rejectMsg, 0, true);
+          OnConsoleMessage(session, rejectMsg);
+          return true;
+        }
+        const maxCapacity = tile.fg === 2978 ? 5199 : 9999;
+        const putCount = Math.min(slot.count, maxCapacity);
         extra.itemId = selectedId;
-        extra.count = slot.count;
-        ctx.consumeInventoryItem(session, selectedId, slot.count, true);
+        extra.count = putCount;
+        ctx.consumeInventoryItem(session, selectedId, putCount, true);
         ctx.dirty = true;
         const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
         for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
@@ -34970,8 +35473,12 @@ function handleVendingDialogReturn(ctx, session, kv) {
     }
     if (btn === "pullstocks") {
       if (extra.itemId && extra.count > 0) {
-        const take = Math.min(200, extra.count);
-        if (ctx.giveInventoryItem(session, extra.itemId, take, true) > 0) {
+        const invSlot = session.account.inventory.find((s) => s.itemId === extra.itemId && s.count > 0);
+        const haveInInv = invSlot?.count || 0;
+        const canFitInSlot = invSlot ? Math.max(0, 200 - haveInInv) : freeCapacityForItem(session, extra.itemId) >= 1 || session.account.inventory.length < session.account.backpackSize ? 200 : 0;
+        const take = Math.min(canFitInSlot, extra.count);
+        if (take > 0 && ctx.giveInventoryItem(session, extra.itemId, take, true) > 0) {
+          const itemName2 = stripGtColors(ctx.itemsDb.get(extra.itemId)?.name || "Items");
           extra.count -= take;
           if (extra.count <= 0) {
             extra.itemId = 0;
@@ -34980,8 +35487,9 @@ function handleVendingDialogReturn(ctx, session, kv) {
           ctx.dirty = true;
           const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
           for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
-          OnTalkBubble(session, session.netId, `You picked up ${take} items.`, 0, true);
-          OnConsoleMessage(session, `You picked up ${take} items.`);
+          const msg = `You took ${take} ${itemName2} from the machine.`;
+          OnTalkBubble(session, session.netId, msg, 0, true);
+          OnConsoleMessage(session, msg);
         } else {
           OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
           OnConsoleMessage(session, "You don't have room in your backpack!");
@@ -34991,28 +35499,44 @@ function handleVendingDialogReturn(ctx, session, kv) {
     }
     if (btn === "withdraw") {
       if (extra.wl > 0) {
-        const dls = Math.floor(extra.wl / 100);
-        const wls = extra.wl % 100;
-        const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
-        if (dls > 0 && freeCapacityForItem(session, 1796) < dls) {
-          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
-          OnConsoleMessage(session, "You don't have room in your backpack!");
-          return true;
+        const wlSlot = session.account.inventory.find((s) => s.itemId === 242 && s.count > 0);
+        const wlSpace = freeCapacityForItem(session, 242);
+        let collected = 0;
+        let msg = "";
+        if (extra.wl < 100 && wlSpace >= extra.wl) {
+          collected = extra.wl;
+          extra.wl = 0;
+          ctx.giveInventoryItem(session, 242, collected, true);
+          msg = `You collected ${collected} World Locks.`;
+        } else if (extra.wl < 100 && wlSpace > 0 && wlSlot) {
+          collected = Math.min(extra.wl, wlSpace);
+          extra.wl -= collected;
+          ctx.giveInventoryItem(session, 242, collected, true);
+          msg = `You collected ${collected} World Locks.`;
+        } else {
+          const dls = Math.floor(extra.wl / 100);
+          const wls = extra.wl % 100;
+          const dlHave = session.account.inventory.find((s) => s.itemId === 1796 && s.count > 0)?.count || 0;
+          if (dls > 0 && freeCapacityForItem(session, 1796) < dls) {
+            OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+            OnConsoleMessage(session, "You don't have room in your backpack!");
+            return true;
+          }
+          const needNewDlSlot = dls > 0 && dlHave === 0 ? 1 : 0;
+          if (wls > 0 && freeCapacityForItem(session, 242, needNewDlSlot) < wls) {
+            OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
+            OnConsoleMessage(session, "You don't have room in your backpack!");
+            return true;
+          }
+          collected = extra.wl;
+          extra.wl = 0;
+          if (dls > 0) ctx.giveInventoryItem(session, 1796, dls, true);
+          if (wls > 0) ctx.giveInventoryItem(session, 242, wls, true);
+          msg = dls > 0 && wls > 0 ? `You collected ${dls} Diamond Locks and ${wls} World Locks.` : dls > 0 ? `You collected ${dls} Diamond Locks.` : `You collected ${wls} World Locks.`;
         }
-        const needNewDlSlot = dls > 0 && dlHave === 0 ? 1 : 0;
-        if (wls > 0 && freeCapacityForItem(session, 242, needNewDlSlot) < wls) {
-          OnTalkBubble(session, session.netId, "You don't have room in your backpack!", 0, true);
-          OnConsoleMessage(session, "You don't have room in your backpack!");
-          return true;
-        }
-        const collected = extra.wl;
-        extra.wl = 0;
-        if (dls > 0) ctx.giveInventoryItem(session, 1796, dls, true);
-        if (wls > 0) ctx.giveInventoryItem(session, 242, wls, true);
         ctx.dirty = true;
         const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
         for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
-        const msg = `You collected ${collected} World Locks.`;
         OnTalkBubble(session, session.netId, msg, 0, true);
         OnConsoleMessage(session, msg);
       }
@@ -35066,20 +35590,12 @@ function handleVendingDialogReturn(ctx, session, kv) {
       ctx.dirty = true;
       const upd2 = makeTileUpdatePacket(tx, ty, tile, Date.now());
       for (const p of world.peers) p.peer.sendPacket(0, upd2, true);
-      if (extra.itemId) {
-        const effectPkt2 = buildTankPacket({
-          type: PACKET_ITEM_EFFECT,
-          netId: session.netId,
-          x: tx * 32 + 16,
-          y: ty * 32 + 16,
-          punchX: extra.itemId,
-          punchY: session.netId,
-          value: 100
-        });
-        for (const p of world.peers) p.peer.sendPacket(0, effectPkt2, true);
-      }
-      broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
-      const msg = extra.price === 0 ? `\`7[\`\`${session.account.name} disabled the Vending Machine.\`\`\`7]\`\`` : extra.price < 0 ? `\`7[\`\`${session.account.name} changed the price to \`6${Math.abs(extra.price)} per World Lock.\`\`\`7]\`\`` : `\`7[\`\`${session.account.name} changed the price to \`5${extra.price} World Locks each.\`\`\`7]\`\``;
+      const particle = makeParticleEffectPacket(44, tx * 32 + 16, ty * 32 + 16);
+      for (const p of world.peers) p.peer.sendPacket(0, particle, true);
+      broadcastPositionedSfx(world, session.netId, "audio/terraform.wav");
+      const itemName2 = stripGtColors(ctx.itemsDb.get(extra.itemId)?.name || "Item");
+      const msg = extra.price === 0 ? `\`7[\`\`${session.account.name} disabled the Vending Machine.\`\`\`7]\`\`` : extra.price < 0 ? `\`7[\`\`${session.account.name} changed the price of \`2${itemName2}\`\` to \`6${Math.abs(extra.price)} per World Lock.\`\`\`7]\`\`` : `\`7[\`\`${session.account.name} changed the price of \`2${itemName2}\`\` to \`5${extra.price} World Locks each.\`\`\`7]\`\``;
+      OnTalkBubble(session, session.netId, msg, 0, false);
       broadcastConsoleMessage(world, msg);
       return true;
     }
@@ -35091,12 +35607,26 @@ function handleVendingDialogReturn(ctx, session, kv) {
     OnConsoleMessage(session, "`4Vending price or stock changed!``");
     return true;
   }
-  if (!Number.isFinite(buyCount) || buyCount <= 0) return true;
+  if (Math.abs(tx * 32 - session.x) > 24 || Math.abs(ty * 32 - session.y) > 24) {
+    OnTalkBubble(session, session.netId, "Get closer!", 0, false);
+    return true;
+  }
+  if (!Number.isFinite(buyCount)) return true;
+  if (buyCount < 0) {
+    OnTalkBubble(session, session.netId, "NEGATIVE, DOES NOT COMPUTE", 0, false);
+    return true;
+  }
+  if (buyCount === 0) return true;
   const isPerLock = extra.price < 0;
   const itemsPerLock = Math.abs(extra.price);
-  const actualItems = isPerLock ? buyCount * itemsPerLock : buyCount;
-  const totalCostWls = isPerLock ? buyCount : buyCount * extra.price;
-  if (actualItems > extra.count) {
+  if (isPerLock && buyCount < itemsPerLock) {
+    OnTalkBubble(session, session.netId, "You have to buy at least 1 World Lock's worth.", 0, true);
+    OnConsoleMessage(session, "You have to buy at least 1 World Lock's worth.");
+    return true;
+  }
+  const totalCostWls = isPerLock ? Math.floor(buyCount / itemsPerLock) : buyCount * extra.price;
+  const actualItems = isPerLock ? totalCostWls * itemsPerLock : buyCount;
+  if (actualItems <= 0 || actualItems > extra.count) {
     OnTalkBubble(session, session.netId, "There aren't enough available to fulfill your order!", 0, true);
     OnConsoleMessage(session, "There aren't enough available to fulfill your order!");
     return true;
@@ -35148,6 +35678,7 @@ function handleVendingDialogReturn(ctx, session, kv) {
   for (const p of world.peers) p.peer.sendPacket(0, upd, true);
   const purchaseMsg = `\`7[\`\`\`9${session.account.name} bought ${actualItems} ${itemName} for ${totalCostWls} World Locks.\`\`\`7]\`\``;
   broadcastConsoleMessage(world, purchaseMsg);
+  logCctvEvent(world, session, "bought", `${actualItems} ${itemName} for ${totalCostWls} World Locks`);
   return true;
 }
 
@@ -35547,6 +36078,1383 @@ function handleTelephoneLockeDialogReturn(ctx, session, dlgName, kv) {
   return false;
 }
 
+// server/database/recipes.ts
+var GTPS3_COMBINER_RECIPES = [
+  { ingredients: [[914, 5], [924, 4], [920, 2]], result: [926, 5] },
+  { ingredients: [[914, 6], [924, 3], [918, 4]], result: [1114, 1] },
+  { ingredients: [[914, 15], [920, 4], [918, 2]], result: [978, 4] },
+  { ingredients: [[917, 10], [924, 3], [918, 3]], result: [772, 1] },
+  { ingredients: [[917, 2], [920, 4], [918, 3]], result: [904, 1] },
+  { ingredients: [[924, 20], [920, 4], [918, 5]], result: [922, 1] },
+  { ingredients: [[914, 20], [916, 10], [922, 1]], result: [1162, 1] },
+  { ingredients: [[914, 10], [920, 2], [922, 1]], result: [1746, 5] },
+  { ingredients: [[914, 20], [918, 15], [922, 10]], result: [1542, 1] },
+  { ingredients: [[916, 8], [924, 4], [922, 1]], result: [2588, 1] },
+  { ingredients: [[916, 1], [918, 1], [922, 1]], result: [1866, 10] },
+  { ingredients: [[924, 3], [920, 3], [922, 3]], result: [908, 1] },
+  { ingredients: [[924, 4], [918, 3], [922, 1]], result: [1310, 1] },
+  { ingredients: [[920, 200], [918, 200], [922, 200]], result: [910, 1] },
+  { ingredients: [[914, 10], [922, 10], [1962, 10]], result: [4582, 1] },
+  { ingredients: [[916, 9], [924, 5], [1962, 1]], result: [4552, 1] },
+  { ingredients: [[6970, 50], [7006, 50], [6986, 50]], result: [6948, 1] },
+  // Heart of Gaia
+  { ingredients: [[7156, 20], [6986, 5], [7154, 5]], result: [7150, 1] },
+  { ingredients: [[7006, 10], [6970, 5], [6988, 5]], result: [7008, 1] },
+  { ingredients: [[6828, 2], [186, 100], [6972, 20]], result: [6934, 1] },
+  { ingredients: [[6834, 2], [186, 100], [6960, 2]], result: [6936, 1] },
+  { ingredients: [[6250, 2], [186, 100], [6978, 20]], result: [6930, 1] },
+  { ingredients: [[6940, 2], [186, 100], [6976, 2]], result: [6944, 1] },
+  { ingredients: [[6236, 1], [6962, 1], [6992, 5]], result: [6918, 1] },
+  { ingredients: [[6238, 1], [6960, 5], [7012, 1]], result: [6920, 1] },
+  { ingredients: [[6988, 100], [7010, 15], [6976, 50]], result: [6946, 1] },
+  // Unstable Tesseract
+  { ingredients: [[6244, 1], [260, 100], [6962, 2]], result: [6928, 1] },
+  { ingredients: [[6256, 1], [260, 100], [6994, 10]], result: [6932, 1] },
+  { ingredients: [[6238, 1], [260, 100], [6960, 2]], result: [6926, 1] },
+  { ingredients: [[7308, 1], [260, 100], [7012, 10]], result: [7306, 1] },
+  { ingredients: [[6926, 1], [6972, 1], [7010, 1]], result: [6922, 1] },
+  { ingredients: [[6240, 1], [6972, 1], [6992, 10]], result: [6924, 1] },
+  { ingredients: [[7158, 20], [7160, 3], [6978, 3]], result: [7152, 1] },
+  { ingredients: [[6994, 100], [6978, 100], [6964, 100]], result: [6950, 1] },
+  { ingredients: [[6980, 100], [6998, 100], [7016, 100]], result: [6952, 1] },
+  { ingredients: [[6984, 75], [7018, 75], [6968, 75]], result: [6954, 1] }
+];
+var GTPS3_FISHING_LOOT = {
+  2914: [846, 344, 8964, 3e3, 3e3, 3034, 3034, 3038, 3038, 3028, 3012],
+  3012: [3e3, 3e3, 3030, 3030, 3038, 3038, 3036, 3036, 846, 444, 8966, 344, 3028, 3022, 3014, 3e3, 3e3],
+  3014: [3030, 3030, 3026, 3026, 3038, 3038, 3e3, 3e3, 3032, 3032, 344, 444, 846, 8966, 8964, 3016],
+  3016: [846, 3026, 3026, 3038, 3038, 3032, 3032, 3036, 3036, 444, 1522, 8256, 8964, 3184, 1542, 3018],
+  3018: [5636, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 3020],
+  3020: [5636, 1542, 3022, 1520, 1522, 3028, 3038, 3038, 3026, 3026, 3030, 3036, 3036, 3030, 7744, 3034],
+  5526: [3584, 8254, 5542, 5538, 5620, 5622, 5612, 5526, 5580, 3020, 11734],
+  5528: [5636, 3584, 5574, 8968, 5552, 5548, 5618, 5624, 5602, 5528, 5614, 8252, 11052, 5616, 3020]
+};
+var GTPS3_GEIGER_REWARDS = [
+  6416,
+  3196,
+  2206,
+  1500,
+  1498,
+  2806,
+  2804,
+  8270,
+  8272,
+  8274,
+  2244,
+  2246,
+  2242,
+  3792,
+  3306,
+  4676,
+  4678,
+  4680,
+  4682,
+  4652,
+  4650,
+  4648,
+  4646,
+  11186,
+  10086
+];
+function findCombinerRecipe(drops) {
+  if (drops.length !== 3) return null;
+  const dropMap = /* @__PURE__ */ new Map();
+  for (const d of drops) {
+    dropMap.set(d.itemId, (dropMap.get(d.itemId) || 0) + d.count);
+  }
+  for (const recipe of GTPS3_COMBINER_RECIPES) {
+    let matches = true;
+    for (const [ingId, reqCount] of recipe.ingredients) {
+      const avail = dropMap.get(ingId) || 0;
+      if (avail < reqCount) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches && recipe.ingredients.length === drops.length) {
+      return recipe;
+    }
+  }
+  return null;
+}
+var CRYSTAL_RAW = [
+  [2, 0, 0, 3, 0, 2254, 1],
+  [1, 1, 0, 3, 0, 2262, 1],
+  [2, 3, 0, 0, 0, 2942, 1],
+  [0, 0, 2, 3, 0, 2258, 1],
+  [0, 1, 1, 3, 0, 2264, 1],
+  [0, 3, 2, 0, 0, 2944, 1],
+  [0, 2, 0, 3, 0, 2256, 1],
+  [1, 0, 1, 3, 0, 2260, 1],
+  [3, 0, 2, 0, 0, 2940, 1],
+  [0, 0, 0, 0, 5, 2212, 1],
+  [2, 0, 2, 1, 0, 2972, 1],
+  [2, 1, 2, 0, 0, 2268, 1],
+  [0, 2, 0, 1, 2, 2266, 1],
+  [2, 0, 0, 0, 3, 2754, 1],
+  [1, 0, 0, 3, 1, 2756, 1],
+  [0, 3, 0, 2, 0, 2706, 1],
+  [1, 1, 1, 0, 2, 3180, 1],
+  [0, 0, 0, 2, 3, 4124, 1],
+  [3, 0, 0, 2, 0, 5268, 1],
+  [3, 1, 0, 1, 0, 5266, 1],
+  [0, 0, 0, 1, 4, 6848, 1],
+  [0, 0, 3, 2, 0, 6820, 1],
+  [0, 2, 3, 0, 0, 2272, 3],
+  [2, 0, 3, 0, 0, 2276, 5],
+  [0, 2, 1, 2, 0, 2252, 1],
+  [3, 0, 1, 1, 0, 2274, 1],
+  [1, 2, 2, 0, 0, 2270, 10],
+  [2, 1, 1, 1, 0, 2590, 5],
+  [2, 1, 1, 1, 0, 2812, 1],
+  [2, 2, 0, 1, 0, 3424, 1],
+  [2, 2, 1, 0, 0, 3770, 3],
+  [3, 2, 0, 0, 0, 3526, 20],
+  [2, 2, 0, 0, 1, 3582, 1],
+  [2, 0, 2, 0, 1, 4762, 1],
+  [2, 1, 0, 2, 0, 5204, 1],
+  [1, 0, 2, 2, 0, 5106, 1],
+  [1, 1, 1, 2, 0, 5104, 1],
+  [1, 2, 1, 1, 0, 5272, 10],
+  [1, 3, 1, 0, 1, 5274, 1],
+  [1, 1, 1, 3, 0, 5270, 1],
+  [1, 3, 1, 0, 0, 5280, 10],
+  [3, 0, 0, 1, 1, 392, 1],
+  [4, 0, 4, 5, 5, 12304, 1]
+];
+var GTPS3_CRYSTAL_RECIPES = CRYSTAL_RAW.map(([r, g, b, w, bk, resId, resCnt]) => ({
+  requirements: { 2242: r, 2244: g, 2246: b, 2248: w, 2250: bk },
+  result: [resId, resCnt]
+}));
+var GTPS3_GRINDER_RECIPES = {
+  326: { count: 30, prize: 4586 },
+  4422: { count: 20, prize: 4610 },
+  2564: { count: 20, prize: 4610 },
+  2566: { count: 20, prize: 4610 },
+  5372: { count: 20, prize: 4610 },
+  6956: { count: 1, prize: 6958 },
+  6972: { count: 5, prize: 6974 },
+  7002: { count: 12, prize: 7004 },
+  7050: { count: 20, prize: 7054 },
+  4668: { count: 50, prize: 4670 },
+  7012: { count: 1, prize: 7014 },
+  440: { count: 100, prize: 6314 },
+  880: { count: 50, prize: 4562 },
+  5348: { count: 100, prize: 5416 },
+  5350: { count: 100, prize: 5416 },
+  5352: { count: 100, prize: 5416 },
+  5354: { count: 100, prize: 5416 },
+  4578: { count: 1, prize: 4580 },
+  7460: { count: 25, prize: 7462 },
+  192: { count: 50, prize: 4564 },
+  1004: { count: 50, prize: 4564 },
+  4982: { count: 100, prize: 4984 },
+  4584: { count: 100, prize: 4570 },
+  712: { count: 1, prize: 4570 },
+  960: { count: 1, prize: 4570 },
+  2734: { count: 50, prize: 4764 },
+  6988: { count: 10, prize: 6990 },
+  4566: { count: 100, prize: 4568 },
+  6998: { count: 2, prize: 7e3 },
+  3404: { count: 20, prize: 4572 },
+  3836: { count: 20, prize: 4572 },
+  3406: { count: 10, prize: 4572 },
+  954: { count: 100, prize: 4572 },
+  10268: { count: 3, prize: 10272 }
+};
+
+// server/action/dialog_return/world_blocks.ts
+var DISPLAY_SHELF_IDS2 = /* @__PURE__ */ new Set([3794, 10190, 10552]);
+var DONATION_BOX_IDS = /* @__PURE__ */ new Set([1452, 10784]);
+var MAILBOX_IDS = /* @__PURE__ */ new Set([656, 1006]);
+var BULLETIN_BOARD_IDS = /* @__PURE__ */ new Set([658, 3524]);
+var STORAGE_BOX_IDS = /* @__PURE__ */ new Set([4516, 6286, 6288, 6290, 8878]);
+var CAMERA_IDS = /* @__PURE__ */ new Set([1436, 8246, 10258]);
+var BOOMBOX_IDS = /* @__PURE__ */ new Set([62, 2282]);
+var MANNEQUIN_IDS2 = /* @__PURE__ */ new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+var AUTO_ACTION_IDS = /* @__PURE__ */ new Set([6950, 6952]);
+var GRINDER_IDS = /* @__PURE__ */ new Set([4582, 12196]);
+var CRYSTAL_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
+function getStorageBoxCapacity(itemId) {
+  if (itemId === 6288) return 40;
+  if (itemId === 6290) return 90;
+  return 20;
+}
+function isUntradeable(def) {
+  return !def || def.id === 18 || def.id === 32 || def.id === 1424 || def.id === 5816 || def.id === 6336 || def.id === 8430 || (def.flags & 16) !== 0;
+}
+function broadcastTileUpdate(world, tx, ty, tile) {
+  const pkt = makeTileUpdatePacket(tx, ty, tile, Date.now());
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+}
+function sendFlyEffect(target, world, tx, ty, itemId, broadcast = false) {
+  const pkt = buildTankPacket({
+    type: PACKET_ITEM_EFFECT,
+    netId: target.netId,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16,
+    punchX: itemId,
+    punchY: target.netId,
+    value: 500
+  });
+  if (broadcast) {
+    for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+  } else {
+    target.peer.sendPacket(0, pkt, true);
+  }
+}
+function hasOwnerAccess(session, world, tile) {
+  const uid = session.account.userId;
+  if (session.account.rank === "developer" || world.ownerUserId === uid) return true;
+  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0) {
+    const lt = world.tiles[tile.parentIndex];
+    return lt?.extra?.kind === "lock" && lt.extra.ownerUserId === uid;
+  }
+  return world.ownerUserId === 0;
+}
+function canAdminAccess(session, world, tile) {
+  const uid = session.account.userId;
+  if (hasOwnerAccess(session, world, tile)) return true;
+  const wl = getWorldLockTile(world);
+  if (wl?.extra?.kind === "lock" && wl.extra.adminIds.includes(uid)) return true;
+  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0) {
+    const lt = world.tiles[tile.parentIndex];
+    if (lt?.extra?.kind === "lock" && lt.extra.adminIds.includes(uid)) return true;
+  }
+  return false;
+}
+function cleanName2(def) {
+  return def ? stripGtColors(def.name) : "Item";
+}
+function hasInvRoom(session, itemId, count = 1) {
+  let cap = 0;
+  for (const s of session.account.inventory) {
+    if (s.itemId === itemId && s.count > 0 && s.count < 200) cap += 200 - s.count;
+  }
+  const usedSlots = session.account.inventory.filter((s) => s.count > 0).length;
+  const freeSlots = Math.max(0, session.account.backpackSize - usedSlots);
+  return cap + freeSlots * 200 >= count;
+}
+function useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId) {
+  if (tile.fg !== 2946) return false;
+  if (world.ownerUserId === 0 && (tile.flags & TILE_FLAG_LOCKED) === 0) {
+    OnTalkBubble(session, session.netId, "This area must be locked to put your item on display!", 0, true);
+    return true;
+  }
+  if (!hasOwnerAccess(session, world, tile)) {
+    OnTalkBubble(session, session.netId, "Only the block's owner can place items in it.", 0, true);
+    return true;
+  }
+  if (tile.extra?.kind !== "display") tile.extra = { kind: "display", itemId: 0 };
+  if (tile.extra.itemId !== 0) {
+    OnTalkBubble(session, session.netId, "Remove what's in there first!", 0, true);
+    return true;
+  }
+  const def = ctx.itemsDb.get(itemId);
+  if (isUntradeable(def)) {
+    OnTalkBubble(session, session.netId, "You can't display untradeable items!", 0, true);
+    return true;
+  }
+  if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+  tile.extra = { kind: "display", itemId };
+  ctx.dirty = true;
+  broadcastTileUpdate(world, tx, ty, tile);
+  OnTalkBubble(session, session.netId, `You put \`5${cleanName2(def)}\`\` on display!`, 0, true);
+  return true;
+}
+function openDisplayBlockDialog(ctx, session, world, tile, tx, ty) {
+  if (tile.extra?.kind !== "display") tile.extra = { kind: "display", itemId: 0 };
+  const displayedId = tile.extra.itemId;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${fgName}\`\``, tile.fg).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty).addTextbox(
+    displayedId ? `A ${cleanName2(ctx.itemsDb.get(displayedId))} is on display here.` : "The Display Block is empty. Use an item on it to display the item!"
+  );
+  const canTake = displayedId !== 0 && hasOwnerAccess(session, world, tile);
+  OnDialogRequest(
+    session,
+    dlg.endDialog("displayblock", canTake ? "Leave it" : "Okay", canTake ? "Pick it up" : "")
+  );
+}
+function openDisplayShelfDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnTalkBubble(session, session.netId, "`4Only builders with access can manage this Display Shelf.``", 0, true);
+    return;
+  }
+  if (tile.extra?.kind !== "displayShelf") {
+    tile.extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
+  }
+  const ex = tile.extra;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const slotLine = (pickerKey, label, itemId) => itemId ? `add_item_picker|${pickerKey}|${label}: \`2${cleanName2(ctx.itemsDb.get(itemId))}\`\`|Select any item to display|` : `add_item_picker|${pickerKey}|\`4Display an item\`\`|Select any item to display|`;
+  const canTake = ex.s1 !== 0 || ex.s2 !== 0 || ex.s3 !== 0 || ex.s4 !== 0;
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    "add_spacer|small|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    slotLine("replace2", "Item 1", ex.s2),
+    slotLine("replace1", "Item 2", ex.s1),
+    slotLine("replace3", "Item 3", ex.s3),
+    slotLine("replace4", "Item 4", ex.s4)
+  ];
+  if (canTake) lines.push("add_button|remove|Take All Items|noflags|0|0|");
+  lines.push("end_dialog|dispshelf|Okay||");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function useItemOnDonationBox(ctx, session, tile, tx, ty, itemId) {
+  if (!DONATION_BOX_IDS.has(tile.fg)) return false;
+  if (tile.extra?.kind !== "donation") tile.extra = { kind: "donation", donates: [] };
+  const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+  if (!invSlot) return true;
+  const def = ctx.itemsDb.get(itemId);
+  if (isUntradeable(def)) {
+    OnTalkBubble(session, session.netId, "`7[```4You can't place that in the box, you need it!`7]``", 0, false);
+    return true;
+  }
+  if ((def?.rarity ?? 0) <= 1) {
+    OnTalkBubble(session, session.netId, "`7[```4This box only accepts items rarity 2+ or greater`7]``", 0, false);
+    return true;
+  }
+  if (tile.extra.donates.length >= 20) {
+    OnTalkBubble(session, session.netId, "You aren't able to fit another gift inside, it's jammed full.", 0, false);
+    return true;
+  }
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  session.lastChoosenItem = itemId;
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `${cleanName2(def)}\`\``, itemId).addTextbox("How many to put in the box as a gift? (Note: You will `4LOSE`` the items you give!)").addTextInput("count", "Count:", String(invSlot.count), 5).addTextInput("sign_text", "Optional Note:", "", 128).addSpacer("small").addButton("give", "`4Give the item(s)``").addSpacer("small").addButton("cancel", "`wCancel``").endDialog("give_item", "", "");
+  OnDialogRequest(session, dlg);
+  return true;
+}
+function openDonationBoxDialog(ctx, session, world, tile, tx, ty) {
+  if (tile.extra?.kind !== "donation") tile.extra = { kind: "donation", donates: [] };
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  const donates = tile.extra.donates;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const isOwner = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`
+  ];
+  if (isOwner) {
+    if (donates.length === 0) {
+      lines.push("add_textbox|The box is currently empty.|left|");
+    } else {
+      lines.push(`add_textbox|You have \`w${donates.length}\`\` gift waiting:|left|`);
+      donates.forEach((d, idx) => {
+        const dName = cleanName2(ctx.itemsDb.get(d.itemId));
+        const note = d.text ? `\`#- "${d.text}"\`\`` : "";
+        lines.push(`add_checkbox|gift_${idx}|${dName} (\`w${d.count}\`\`) from \`w${d.name}\`\`${note}|0`);
+      });
+      lines.push("add_spacer|small|");
+      lines.push("add_button|clear_selected|`4Retrieve Selected Gifts``|noflags|0|0|");
+      lines.push("add_button|takeall|`4Retrieve All Gifts``|noflags|0|0|");
+    }
+  } else {
+    lines.push(
+      donates.length > 0 ? `add_textbox|You see \`w${donates.length}\`\` gift in the box!|left|` : "add_textbox|The box is currently empty.|left|"
+    );
+    lines.push("add_textbox|Want to leave a gift for the owner?|left|");
+  }
+  if (donates.length >= 20) {
+    lines.push("add_textbox|This box already has `w20`` gifts in it, can't add more until you clear them.|left|");
+  } else {
+    lines.push("add_spacer|small|");
+    lines.push("add_item_picker|itemid|`wGive Gift`` (Min rarity: `52``)|Choose an item to give|");
+  }
+  lines.push("end_dialog|donation_box_edit|Cancel||");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty) {
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  const isMailbox = MAILBOX_IDS.has(tile.fg);
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const isOwner = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
+  const settings = (world.bulletinSettings || []).find((s) => s.x === tx && s.y === ty);
+  const publicCanAdd = settings ? settings.publicCanAdd : true;
+  const hideNames = settings ? settings.hideNames : false;
+  const entries = (world.bulletin || []).filter((b) => b.x === tx && b.y === ty);
+  const ownCount = entries.filter((e) => e.name === session.account.name).length;
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    "add_spacer|small|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`
+  ];
+  const entryLines = [];
+  entries.forEach((e, idx) => {
+    if (!isMailbox) {
+      if (hideNames) {
+        entryLines.push(`add_label|small|\`2${e.text}\`\`|left|`);
+      } else if (isOwner) {
+        entryLines.push(`add_label_with_icon_button|small|${e.name}: \`2${e.text}\`\`|left|660|edit${idx + 1}|`);
+      } else {
+        entryLines.push(`add_label_with_icon|small|${e.name}: \`2${e.text}\`\`|left|660|`);
+      }
+    } else {
+      entryLines.push(`add_label_with_icon|small|\`#"${e.text}" - \`w${e.name}\`\`|left|660|`);
+      entryLines.push("add_spacer|small|");
+    }
+  });
+  if (!isMailbox) {
+    lines.push(entries.length === 0 ? `add_textbox|The ${fgName} is empty.|left|` : entryLines.join("\n"));
+    if (isOwner) {
+      lines.push("add_textbox|Add to conversation?|left|");
+      lines.push("add_text_input|sign_text|||128|");
+      lines.push("add_spacer|small|");
+      lines.push("add_button|send|`2Add``|noflags|0|0|");
+      lines.push("add_spacer|small|");
+      lines.push("add_label_with_icon|big|`wOwner Options|left|242|");
+      lines.push("add_spacer|small|");
+      lines.push("add_textbox|To remove an individual comment, press the icon to the left of it.|left|");
+      lines.push("add_spacer|small|");
+      if (entries.length > 0) lines.push("add_button|clear|`4Clear Board``|noflags|0|0|");
+      lines.push(`add_checkbox|checkbox_locked|Public can add|${publicCanAdd ? 1 : 0}`);
+      lines.push(`add_checkbox|checkbox_hide|Hide names|${hideNames ? 1 : 0}`);
+      lines.push("end_dialog|bulletin_edit|Cancel|OK|");
+    } else {
+      if (publicCanAdd) {
+        if (ownCount >= 3) {
+          lines.push("add_textbox|You already have `03`` posts up, take a break!|left|");
+        } else {
+          lines.push("add_textbox|Add to conversation?|left|");
+          lines.push("add_text_input|sign_text|||128|");
+          lines.push("add_spacer|small|");
+          lines.push("add_button|send|`2Add``|noflags|0|0|");
+        }
+      }
+      lines.push("end_dialog|bulletin_edit|Cancel||");
+    }
+  } else {
+    if (isOwner) {
+      if (entries.length === 0) {
+        lines.push("add_textbox|Your mailbox is currently empty.|left|");
+      } else {
+        lines.push(`add_textbox|You have \`w${entries.length}\`\` letters:|left|`);
+        lines.push("add_spacer|small|");
+        lines.push(entryLines.join("\n"));
+        lines.push("add_spacer|small|");
+        lines.push("add_button|clear|`4Empty Mailbox``|noflags|0|0|");
+      }
+      if (entries.length >= 20) {
+        lines.push("add_textbox|This mailbox already has `w20`` letters in it.  Try again later.|left|");
+      } else {
+        lines.push("add_textbox|Write a letter to yourself?|left|");
+        lines.push("add_text_input|sign_text|||128|");
+        lines.push("add_spacer|small|");
+        lines.push("add_button|send|`2Send Letter``|noflags|0|0|");
+      }
+    } else {
+      if (entries.length >= 20) {
+        lines.push("add_textbox|This mailbox already has `w20`` letters in it.  Try again later.|left|");
+      } else if (ownCount >= 3) {
+        lines.push("add_textbox|You've already crammed `w3 ``of your letters into the mailbox, better wait.|left|");
+      } else {
+        lines.push("add_textbox|Want to leave a message for the owner?|left|");
+        lines.push("add_text_input|sign_text|||128|");
+        lines.push("add_spacer|small|");
+        lines.push("add_button|send|`2Send Letter``|noflags|0|0|");
+      }
+    }
+    lines.push("end_dialog|bulletin_edit|Cancel||");
+  }
+  lines.push("add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function renderStorageBoxDialog(ctx, session, world, tile, tx, ty) {
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const boxCap = getStorageBoxCapacity(tile.fg);
+  const stored = (world.storageItems || []).filter((s) => s.x === tx && s.y === ty);
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`
+  ];
+  if (stored.length > 0) {
+    lines.push("add_spacer|small|");
+    lines.push("text_scaling_string|aaaaaaaaaaaaaaa|");
+    stored.forEach((entry, idx) => {
+      const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+      lines.push(`add_button_with_icon|itm${idx + 1}|${iName}|frame|${entry.itemId}|${entry.count}|`);
+    });
+    lines.push("add_button_with_icon||END_LIST|noflags|0||");
+  }
+  lines.push(`add_textbox|\`w${stored.length}/${boxCap}\`\` items stored.|left|`);
+  if (stored.length < boxCap) {
+    lines.push("add_spacer|small|");
+    lines.push("add_item_picker|itemid|`wDeposit Item``|Choose an item to store|");
+  }
+  if (tile.fg === 8878) {
+    const pw = tile.extra?.kind === "storage" ? tile.extra.password || "" : "";
+    lines.push(`add_textbox|This Safe Vault is ${pw ? "`2" : "not `4"}password protected\`\`!|left|`);
+    lines.push("add_spacer|small|");
+    lines.push("add_textbox|Change your password.|left|");
+    lines.push("add_button|change_password|`wUpdate Password``|noflags|0|0|");
+  }
+  lines.push("end_dialog|storageboxxtreme|Exit||");
+  lines.push("add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function openStorageBoxDialog(ctx, session, world, tile, tx, ty) {
+  if (!canAdminAccess(session, world, tile)) {
+    OnTalkBubble(session, session.netId, "`4Only world owner or admins can access this storage!``", 0, true);
+    return;
+  }
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  if (tile.extra?.kind !== "storage") tile.extra = { kind: "storage" };
+  if (tile.fg === 8878 && tile.extra.password) {
+    const lines = [
+      "set_default_color|`o",
+      "add_label_with_icon|big|`wSafe Vault``|left|8878|",
+      `embed_data|tilex|${tx}`,
+      `embed_data|tiley|${ty}`,
+      "add_textbox|Please enter your password to access the Safe Vault.|left|",
+      `add_text_input_password|storage_password||${session.account.rank === "developer" ? tile.extra.password : ""}|12|`,
+      "add_button|check_password|`wEnter Password``|noflags|0|0|",
+      "add_button|show_recoveryanswer|`wRecover Password``|noflags|0|0|",
+      "end_dialog|storageboxpassword|Exit||",
+      "add_quick_exit|"
+    ];
+    OnDialogRequest(session, lines.join("\n"));
+    return;
+  }
+  renderStorageBoxDialog(ctx, session, world, tile, tx, ty);
+}
+function openCameraDialog(ctx, session, world, tile, tx, ty) {
+  if (!canAdminAccess(session, world, tile)) return;
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  world.cctvSettings = world.cctvSettings || [];
+  let s = world.cctvSettings.find((c) => c.x === tx && c.y === ty);
+  if (!s) {
+    s = {
+      x: tx,
+      y: ty,
+      showTaking: false,
+      showDropping: false,
+      showEnter: true,
+      showExit: false,
+      hideOwner: false,
+      hideAdmins: false,
+      hideNoAccess: false,
+      showVend: false
+    };
+    world.cctvSettings.push(s);
+    ctx.dirty = true;
+  }
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const logs = (world.cctvLogs || []).filter((l) => l.x === tx && l.y === ty);
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    "add_spacer|small|"
+  ];
+  if (logs.length === 0) {
+    lines.push("add_textbox|The camera log is empty.|left|");
+  } else {
+    for (const entry of logs) {
+      lines.push(`add_label_with_icon|small|${entry.log}\`\`|left|${entry.icon}|`);
+    }
+    lines.push("add_spacer|small|");
+  }
+  lines.push(
+    `add_checkbox|checkbox_showpick|Show Item Taking|${s.showTaking ? 1 : 0}`,
+    `add_checkbox|checkbox_itemdrop|Show Item Dropping|${s.showDropping ? 1 : 0}`,
+    `add_checkbox|checkbox_showenter|Show People Entering|${s.showEnter ? 1 : 0}`,
+    `add_checkbox|checkbox_showexit|Show People Exiting|${s.showExit ? 1 : 0}`,
+    `add_checkbox|checkbox_noshowowner|Don't Show Owner|${s.hideOwner ? 1 : 0}`,
+    `add_checkbox|checkbox_noshowadmin|Don't Show Admins|${s.hideAdmins ? 1 : 0}`,
+    `add_checkbox|checkbox_noshowother|Don't Show People Without Access|${s.hideNoAccess ? 1 : 0}`,
+    `add_checkbox|checkbox_vendlogs|Show Vending Machine Logs|${s.showVend ? 1 : 0}`
+  );
+  if (logs.length > 0) lines.push("add_button|clear|`4Clear Log``|noflags|0|0|");
+  lines.push("end_dialog|camera_edit||OK|");
+  lines.push("add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function openToggleableDialog(ctx, session, world, tile, tx, ty) {
+  const id = tile.fg || tile.bg;
+  const def = ctx.itemsDb.get(id);
+  if (!def) return;
+  const fgName = cleanName2(def);
+  const canEdit = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
+  const isBoombox = BOOMBOX_IDS.has(id);
+  const dlgName = isBoombox ? "boombox_edit" : "switcheroo_edit";
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wEdit ${fgName}\`\`|left|${id}|`
+  ];
+  if (!canEdit) {
+    lines.push("add_textbox|This object has additional properties to edit if in a locked area.|left|");
+  } else {
+    const publicLabel = def.actionType === 9 ? "Is open to public" : "Usable by public";
+    lines.push(`add_checkbox|checkbox_public|${publicLabel}|${(tile.flags & TILE_FLAG_PUBLIC) !== 0 ? 1 : 0}`);
+    if (isBoombox) {
+      lines.push(`add_checkbox|checkbox_silence|Silenced|${(tile.flags & TILE_FLAG_HAS_WLS) !== 0 ? 1 : 0}`);
+    }
+  }
+  lines.push(`embed_data|tilex|${tx}`, `embed_data|tiley|${ty}`, `end_dialog|${dlgName}|Cancel|OK|`);
+  OnDialogRequest(session, lines.join("\n"));
+}
+function mannequinSlotField(clothingType) {
+  switch (clothingType) {
+    case 0:
+      return "hair";
+    case 1:
+      return "shirt";
+    case 2:
+      return "pants";
+    case 3:
+      return "feet";
+    case 4:
+      return "face";
+    case 5:
+      return "hand";
+    case 6:
+      return "back";
+    case 7:
+      return "mask";
+    case 8:
+      return "neck";
+    default:
+      return null;
+  }
+}
+function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
+  if (!MANNEQUIN_IDS2.has(tile.fg)) return false;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  if (world.ownerUserId === 0 && (tile.flags & TILE_FLAG_LOCKED) === 0) {
+    OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to use an unlocked ${fgName}!\`\`]\`\``, 0, false);
+    return true;
+  }
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) {
+    return true;
+  }
+  const def = ctx.itemsDb.get(itemId);
+  if (!def || !def.isClothing) {
+    OnTalkBubble(session, session.netId, `\`5[\`2That would just be weird.  Try putting clothes on your ${fgName} instead!\`\`]\`\``, 0, false);
+    return true;
+  }
+  if (isUntradeable(def)) {
+    OnTalkBubble(session, session.netId, `\`5[\`2You cannot place ${cleanName2(def)} on ${fgName}!\`\`]\`\``, 0, false);
+    return true;
+  }
+  const field = mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType);
+  if (!field) {
+    OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to place ${cleanName2(def)} on ${fgName}!\`\`]\`\``, 0, false);
+    return true;
+  }
+  if (tile.extra?.kind !== "mannequin") {
+    tile.extra = { kind: "mannequin", label: "", skinColor: session.account.skinColor, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  }
+  if (tile.extra[field] === itemId) {
+    OnTalkBubble(session, session.netId, "`5[`2You giggle as you swap two identical items``]``", 0, false);
+    return true;
+  }
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${cleanName2(def)}\`\``, itemId).addTextbox(`Do you really want to put your ${cleanName2(def)} on the ${fgName}?`).embedData("tilex", tx).embedData("tiley", ty).embedData("put", itemId).endDialog("mannequin_edit", "No", "Yes");
+  OnDialogRequest(session, dlg);
+  return true;
+}
+function openMannequinDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnTalkBubble(session, session.netId, "`4Only builders with access can edit this Mannequin.``", 0, true);
+    return;
+  }
+  if (tile.extra?.kind !== "mannequin") {
+    tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  }
+  const mq = tile.extra;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const worn = [mq.face, mq.shirt, mq.pants, mq.feet, mq.mask, mq.hand, mq.back, mq.hair, mq.neck].filter((id) => id > 0);
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wEdit ${fgName}\`\`|left|${tile.fg}|`,
+    "add_textbox|To dress, select a clothing item then use on the mannequin. To remove clothes, punch it or select which item to remove.<CR><CR>It will go into your backpack if you have room.|"
+  ];
+  for (const wid of worn) {
+    lines.push(`add_checkbox|checkbox_${wid}|${cleanName2(ctx.itemsDb.get(wid))}|0|`);
+  }
+  if (worn.length > 0) {
+    lines.push("add_spacer|small|");
+    lines.push("add_button|clear_selected|`4Remove Selected Items``|noflags|0|0|");
+    lines.push("add_button|clear|`4Remove All Items``|noflags|0|0|");
+  }
+  lines.push(
+    "add_textbox|<CR><CR>What would you like to write on its sign?``|left|",
+    `add_text_input|sign_text||${mq.label || ""}|128|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    "end_dialog|mannequin_edit|Cancel|OK|"
+  );
+  OnDialogRequest(session, lines.join("\n"));
+}
+function openAutoActionBlockDialog(ctx, session, world, tile, tx, ty) {
+  if (tile.extra?.kind !== "autoAction") tile.extra = { kind: "autoAction", fuel: 0, targetItemId: 0, enabled: false };
+  const ex = tile.extra;
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const isOwner = hasOwnerAccess(session, world, tile);
+  const lines = [
+    `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
+    "add_spacer|small|",
+    "add_smalltext|The device will consume 2300 Gems/hr while active!|left|",
+    `add_smalltext|Current Fuel = \`w${ex.fuel}/8,000\`\`|left|`
+  ];
+  if (!isOwner) {
+    lines.push("end_dialog|autoactionblock|Close||", "add_quick_exit|");
+    OnDialogRequest(session, lines.join("\n"));
+    return;
+  }
+  if (ex.fuel < 8e3) {
+    lines.push("add_smalltext|Refuel this with gems!|left|");
+    lines.push("add_text_input|refillfuel|Add Gems:|0|5|");
+    lines.push("add_button|addfuel|`wAdd Gems``|noflags|0|0|");
+  }
+  lines.push("add_spacer|small|");
+  lines.push(
+    `add_smalltext|${ex.targetItemId === 0 ? "No block type selected!" : `Target block is: \`2${cleanName2(ctx.itemsDb.get(ex.targetItemId))}\`\``}|left|`
+  );
+  lines.push("add_item_picker|selecttarget|`wChoose Target Item``|Choose the target item!|");
+  lines.push("add_spacer|small|", `embed_data|tilex|${tx}`, `embed_data|tiley|${ty}`, "end_dialog|autoactionblock|Close|OK|", "add_quick_exit|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function useItemOnGrinder(ctx, session, tile, tx, ty, itemId) {
+  if (!GRINDER_IDS.has(tile.fg)) return false;
+  const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+  if (!slot) return true;
+  const recipe = GTPS3_GRINDER_RECIPES[itemId];
+  if (!recipe) {
+    OnTalkBubble(session, session.netId, "`5[`2That's not grindable``]``", 0, false);
+    return true;
+  }
+  if (slot.count < recipe.count) {
+    OnTalkBubble(session, session.netId, `\`5[\`2I need ${recipe.count} of those to grind them!\`\`]\`\``, 0, false);
+    return true;
+  }
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  session.lastWrenchB = tile.fg;
+  session.lastChoosenItem = itemId;
+  const def = ctx.itemsDb.get(itemId);
+  const maxTimes = Math.floor(slot.count / recipe.count);
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wGrind ${cleanName2(def)}\`\``, itemId).addTextbox(
+    `You have ${slot.count} ${cleanName2(def)}. It takes ${recipe.count} per grind. How many times will you grind (max ${maxTimes})?`
+  ).addTextbox("`4Beware:`` If you don't have room in your inventory for the resulting items, they will drop on the floor.").addTextInput("count", "", String(maxTimes), 5).endDialog("grinder", "Cancel", "OK");
+  OnDialogRequest(session, dlg);
+  return true;
+}
+function openGrinderDialog(ctx, session, tile) {
+  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${fgName}\`\``, tile.fg).addTextbox("Use items on here to try to grind them up into tasty food. Only certain things can be ground up.").addTextbox("You might be surprised what you can grind!").endDialog("grinder", "Thanks for the info!", "");
+  OnDialogRequest(session, dlg);
+}
+function useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId) {
+  if (!CRYSTAL_IDS.has(tile.fg) || !CRYSTAL_IDS.has(itemId)) return false;
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) return true;
+  if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+  if (tile.extra?.kind !== "crystal") {
+    tile.extra = { kind: "crystal", crystals: { [tile.fg]: 1 } };
+  }
+  tile.extra.crystals[itemId] = (tile.extra.crystals[itemId] || 0) + 1;
+  ctx.dirty = true;
+  const summary = [2242, 2244, 2246, 2248, 2250].map((cid, idx) => `${tile.fg === cid ? tile.extra.crystals[cid] || 1 : tile.extra.crystals[cid] || 0}x \`$${["R", "G", "B", "W", "Bk"][idx]}\`\``).join(", ");
+  OnTalkBubble(session, session.netId, `Mixed! (${summary})`, 0, true);
+  broadcastPositionedSfx(world, session.netId, "audio/crystal.wav");
+  return true;
+}
+function openCrystalExchangeDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return;
+  if (tile.extra?.kind !== "crystal") tile.extra = { kind: "crystal", crystals: { [tile.fg]: 1 } };
+  const counts = { 2242: 0, 2244: 0, 2246: 0, 2248: 0, 2250: 0, ...tile.extra.crystals };
+  if (!counts[tile.fg]) counts[tile.fg] = 1;
+  const summary = [2242, 2244, 2246, 2248, 2250].map((cid, idx) => `${counts[cid]}x \`$${["R", "G", "B", "W", "B"][idx]}\`\``).join(", ");
+  const available = GTPS3_CRYSTAL_RECIPES.filter(
+    (r) => Object.entries(r.requirements).every(([cid, need]) => (counts[Number(cid)] || 0) >= need)
+  );
+  const lines = [
+    "set_default_color|`o",
+    "add_label_with_icon|big|`wCrystal Shattering``|left|5104|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    `add_label_with_icon|small|This crystal is currently mixed with ${summary}.|left|5274|`
+  ];
+  if (available.length === 0) {
+    lines.push("add_textbox|No recipes are available. Mix more various crystals to see available recipes.|left|");
+  } else {
+    lines.push("add_spacer|small|");
+    for (const r of available) {
+      lines.push(`add_button|${r.result[0]}|\`$Craft ${cleanName2(ctx.itemsDb.get(r.result[0]))}\`\`|noflags|0|0|`);
+    }
+  }
+  lines.push("end_dialog|crystal_exchange|Cancel||");
+  OnDialogRequest(session, lines.join("\n"));
+}
+function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
+  const world = session.world;
+  if (!world) return false;
+  const btn = kv.buttonClicked || "";
+  const tx = Number.parseInt(kv.tilex ?? String(session.lastWrenchX ?? -1), 10);
+  const ty = Number.parseInt(kv.tiley ?? String(session.lastWrenchY ?? -1), 10);
+  const validTile = Number.isSafeInteger(tx) && Number.isSafeInteger(ty) && tx >= 0 && tx < world.width && ty >= 0 && ty < world.height;
+  const tile = validTile ? world.tiles[ty * world.width + tx] : void 0;
+  if (dlgName === "displayblock" && tile && tile.fg === 2946) {
+    if (!hasOwnerAccess(session, world, tile) || tile.extra?.kind !== "display" || tile.extra.itemId === 0) return true;
+    const itemId = tile.extra.itemId;
+    if (ctx.giveInventoryItem(session, itemId, 1, true) > 0) {
+      const def = ctx.itemsDb.get(itemId);
+      tile.extra = { kind: "display", itemId: 0 };
+      ctx.dirty = true;
+      broadcastTileUpdate(world, tx, ty, tile);
+      OnTalkBubble(session, session.netId, `You removed \`5${cleanName2(def)}\`\` from the Display Block.`, 0, false);
+    } else {
+      OnTalkBubble(session, session.netId, "You don't have room to pick that up!", 0, false);
+    }
+    return true;
+  }
+  if (dlgName === "dispshelf" && tile && DISPLAY_SHELF_IDS2.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    if (tile.extra?.kind !== "displayShelf") tile.extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
+    const ex = tile.extra;
+    const slots = [
+      ["replace1", "s1"],
+      ["replace2", "s2"],
+      ["replace3", "s3"],
+      ["replace4", "s4"]
+    ];
+    if (btn === "remove") {
+      for (const [, field] of slots) {
+        if (ex[field] !== 0) {
+          if (ctx.giveInventoryItem(session, ex[field], 1, true) > 0) {
+            OnConsoleMessage(session, `Picked up 1 ${cleanName2(ctx.itemsDb.get(ex[field]))}.`);
+            ex[field] = 0;
+          } else {
+            OnTalkBubble(session, session.netId, `No room to take ${cleanName2(ctx.itemsDb.get(ex[field]))}.`, 0, false);
+            break;
+          }
+        }
+      }
+      ctx.dirty = true;
+      broadcastTileUpdate(world, tx, ty, tile);
+      return true;
+    }
+    for (const [pickerKey, field] of slots) {
+      if (!kv[pickerKey]) continue;
+      const newId = Number.parseInt(kv[pickerKey], 10);
+      if (!Number.isSafeInteger(newId) || newId <= 0) continue;
+      const def = ctx.itemsDb.get(newId);
+      if (isUntradeable(def)) {
+        OnTalkBubble(session, session.netId, "You can't display untradeable items.", 0, false);
+        return true;
+      }
+      if (ex[field] !== 0) {
+        if (ctx.giveInventoryItem(session, ex[field], 1, true) > 0) {
+          OnConsoleMessage(session, `Picked up 1 ${cleanName2(ctx.itemsDb.get(ex[field]))}.`);
+          ex[field] = 0;
+        } else {
+          OnTalkBubble(session, session.netId, `No room to take ${cleanName2(ctx.itemsDb.get(ex[field]))}.`, 0, false);
+          return true;
+        }
+      }
+      if (ctx.consumeInventoryItem(session, newId, 1, true)) {
+        ex[field] = newId;
+        OnConsoleMessage(session, `Put ${cleanName2(def)} on display.`);
+      }
+    }
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "donation_box_edit" && tile && DONATION_BOX_IDS.has(tile.fg)) {
+    if (tile.extra?.kind !== "donation") tile.extra = { kind: "donation", donates: [] };
+    if (kv.itemid) {
+      const itemId = Number.parseInt(kv.itemid, 10);
+      if (itemId > 0) useItemOnDonationBox(ctx, session, tile, tx, ty, itemId);
+      return true;
+    }
+    if ((btn === "takeall" || btn === "clear_selected") && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      let took = false;
+      let fullInv = false;
+      const remaining = [];
+      tile.extra.donates.forEach((d, idx) => {
+        const selected = btn === "takeall" || kv[`gift_${idx}`] === "1";
+        if (!selected) {
+          remaining.push(d);
+          return;
+        }
+        if (hasInvRoom(session, d.itemId, d.count) && ctx.giveInventoryItem(session, d.itemId, d.count, true) === d.count) {
+          took = true;
+          const dName = cleanName2(ctx.itemsDb.get(d.itemId));
+          broadcastConsoleMessage(
+            world,
+            `\`7[\`\`${session.account.name} receives \`5${d.count}\`\` \`w${dName}\`\` from \`w${d.name}\`\`, how nice!\`7]\`\``
+          );
+        } else {
+          fullInv = true;
+          remaining.push(d);
+        }
+      });
+      tile.extra.donates = remaining;
+      if (remaining.length === 0) tile.flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      ctx.dirty = true;
+      broadcastTileUpdate(world, tx, ty, tile);
+      if (fullInv) OnTalkBubble(session, session.netId, "I don't have enough room in my backpack to get the item(s) from the box!", 0, false);
+      else if (took) OnTalkBubble(session, session.netId, "`2Box emptied.``", 0, false);
+    }
+    return true;
+  }
+  if (dlgName === "give_item" && tile && DONATION_BOX_IDS.has(tile.fg)) {
+    if (btn !== "give") return true;
+    const itemId = session.lastChoosenItem || 0;
+    const count = Number.parseInt(kv.count || "0", 10);
+    const note = (kv.sign_text || "").replace(/[|\r\n]/g, "").slice(0, 128);
+    if (tile.extra?.kind !== "donation") tile.extra = { kind: "donation", donates: [] };
+    if (tile.extra.donates.length >= 20) return true;
+    const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+    const def = ctx.itemsDb.get(itemId);
+    if (!slot || count <= 0 || count > slot.count || isUntradeable(def)) {
+      OnTalkBubble(session, session.netId, slot && count > slot.count ? "You don't have that to give!" : "`7[```4You can't place that in the box, you need it!`7]``", 0, false);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, count, true)) return true;
+    tile.extra.donates.push({ itemId, count, name: session.account.name, text: note });
+    tile.flags |= TILE_FLAG_EXTRA_VISUAL;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    const msg = `\`7[\`\`\`5[\`\`\`w${session.account.name}\`\` places \`5${count}\`\` \`2${cleanName2(def)}\`\` into the ${cleanName2(ctx.itemsDb.get(tile.fg))}\`5]\`\`\`7]\`\``;
+    broadcastConsoleMessage(world, msg);
+    OnTalkBubble(session, session.netId, msg, 0, false);
+    return true;
+  }
+  if (dlgName === "bulletin_edit" && tile && (MAILBOX_IDS.has(tile.fg) || BULLETIN_BOARD_IDS.has(tile.fg))) {
+    const isMailbox = MAILBOX_IDS.has(tile.fg);
+    const isOwner = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
+    world.bulletin = world.bulletin || [];
+    world.bulletinSettings = world.bulletinSettings || [];
+    if (btn === "clear" && isOwner) {
+      world.bulletin = world.bulletin.filter((b) => !(b.x === tx && b.y === ty));
+      tile.flags &= ~TILE_FLAG_EXTRA_VISUAL;
+      ctx.dirty = true;
+      broadcastTileUpdate(world, tx, ty, tile);
+      OnTalkBubble(session, session.netId, isMailbox ? "`2Mailbox emptied.``" : "`2Text cleared.``", 0, false);
+      return true;
+    }
+    if (btn.startsWith("edit") && isOwner) {
+      const idxNum = Number.parseInt(btn.slice(4), 10);
+      const list = world.bulletin.filter((b) => b.x === tx && b.y === ty);
+      const target = list[idxNum - 1];
+      if (target) {
+        session.lastChoosenNr = idxNum;
+        session.lastWrenchX = tx;
+        session.lastWrenchY = ty;
+        OnDialogRequest(
+          session,
+          `set_default_color|\`o
+add_label_with_icon|small|Remove\`\` "\`w${target.text}"\`\` from your board?|left|${tile.fg}|
+end_dialog|remove_bulletin|Cancel|OK|`
+        );
+      }
+      return true;
+    }
+    if (btn === "send") {
+      const text = (kv.sign_text || "").replace(/[|\r\n]/g, "").trim();
+      if (text.length <= 2 || text.length >= 100) {
+        OnTalkBubble(session, session.netId, "That's not interesting enough to post.", 0, false);
+        return true;
+      }
+      const settings = world.bulletinSettings.find((s) => s.x === tx && s.y === ty);
+      const publicCanAdd = settings ? settings.publicCanAdd : true;
+      if (!isOwner && !isMailbox && !publicCanAdd) return true;
+      const existing = world.bulletin.filter((b) => b.x === tx && b.y === ty);
+      if (!isOwner && existing.filter((b) => b.name === session.account.name).length >= 3) return true;
+      if (existing.length >= 20) {
+        const firstIdx = world.bulletin.findIndex((b) => b.x === tx && b.y === ty);
+        if (firstIdx !== -1) world.bulletin.splice(firstIdx, 1);
+      }
+      world.bulletin.push({ x: tx, y: ty, name: session.account.name, text });
+      if (isMailbox) tile.flags |= TILE_FLAG_EXTRA_VISUAL;
+      ctx.dirty = true;
+      broadcastTileUpdate(world, tx, ty, tile);
+      OnTalkBubble(session, session.netId, isMailbox ? "`2You place your letter in the mailbox.``" : "`2Bulletin posted.``", 0, false);
+      return true;
+    }
+    if (!isMailbox && isOwner && (kv.checkbox_locked !== void 0 || kv.checkbox_hide !== void 0)) {
+      let s = world.bulletinSettings.find((c) => c.x === tx && c.y === ty);
+      if (!s) {
+        s = { x: tx, y: ty, publicCanAdd: true, hideNames: false };
+        world.bulletinSettings.push(s);
+      }
+      if (kv.checkbox_locked !== void 0) s.publicCanAdd = kv.checkbox_locked === "1";
+      if (kv.checkbox_hide !== void 0) s.hideNames = kv.checkbox_hide === "1";
+      ctx.dirty = true;
+    }
+    return true;
+  }
+  if (dlgName === "remove_bulletin" && validTile) {
+    const idxNum = session.lastChoosenNr || 0;
+    let count = 0;
+    world.bulletin = (world.bulletin || []).filter((b) => {
+      if (b.x !== tx || b.y !== ty) return true;
+      count++;
+      return count !== idxNum;
+    });
+    ctx.dirty = true;
+    OnTalkBubble(session, session.netId, "`2Bulletin removed.``", 0, false);
+    return true;
+  }
+  if (dlgName === "storageboxxtreme" && tile && STORAGE_BOX_IDS.has(tile.fg)) {
+    if (!canAdminAccess(session, world, tile)) return true;
+    world.storageItems = world.storageItems || [];
+    const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+    if (kv.itemid) {
+      const itemId = Number.parseInt(kv.itemid, 10);
+      const def = ctx.itemsDb.get(itemId);
+      const untradeableOnly = tile.fg === 4516;
+      if (!untradeableOnly && isUntradeable(def)) {
+        OnTalkBubble(session, session.netId, "You can't store Untradeable items there!", 0, false);
+        return true;
+      }
+      if (untradeableOnly && !isUntradeable(def)) {
+        OnTalkBubble(session, session.netId, "You can't store Tradeable items there!", 0, false);
+        return true;
+      }
+      const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+      if (!slot) return true;
+      session.lastChoosenItem = itemId;
+      OnDialogRequest(
+        session,
+        `set_default_color|\`o
+add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|
+add_textbox|You have ${slot.count} ${cleanName2(def)}. How many to store?|left|
+add_text_input|itemcount||${slot.count}|3|
+add_spacer|small|
+add_button|do_add|Store Items|noflags|0|0|
+end_dialog|storageboxxtreme|Cancel||`
+      );
+      return true;
+    }
+    if (btn === "do_add") {
+      const itemId = session.lastChoosenItem || 0;
+      const count = Number.parseInt(kv.itemcount || "0", 10);
+      const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+      if (!slot || count <= 0 || count > slot.count) {
+        OnTalkBubble(session, session.netId, "You don't have that many!", 0, false);
+        return true;
+      }
+      const existing = world.storageItems.filter((s) => s.x === tx && s.y === ty);
+      const mergeTarget = existing.find((s) => s.itemId === itemId && s.count + count <= 200);
+      if (!mergeTarget && existing.length >= getStorageBoxCapacity(tile.fg)) {
+        OnTalkBubble(session, session.netId, "Storage box is full!", 0, false);
+        return true;
+      }
+      if (!ctx.consumeInventoryItem(session, itemId, count, true)) return true;
+      if (mergeTarget) {
+        mergeTarget.count += count;
+      } else {
+        world.storageItems.push({ x: tx, y: ty, itemId, count });
+      }
+      const iName = cleanName2(ctx.itemsDb.get(itemId));
+      OnTalkBubble(session, session.netId, `Stored \`w${count} ${iName}\`\` in ${fgName}.`, 0, false);
+      OnConsoleMessage(session, `Stored \`w${count} ${iName}\`\` in the ${fgName}.`);
+      ctx.dirty = true;
+      renderStorageBoxDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    if (btn.startsWith("itm")) {
+      const nr = Number.parseInt(btn.slice(3), 10);
+      const list = world.storageItems.filter((s) => s.x === tx && s.y === ty);
+      const entry = list[nr - 1];
+      if (entry) {
+        session.lastChoosenNr = nr;
+        const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+        OnDialogRequest(
+          session,
+          `set_default_color|\`o
+add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|
+add_textbox|You have \`w${entry.count} ${iName}\`\` stored.|left|
+add_textbox|Withdraw how many?|left|
+add_text_input|itemcount||${entry.count}|3|
+add_spacer|small|
+add_button|do_take|Remove Items|noflags|0|0|
+add_button|cancel|Back|noflags|0|0|
+end_dialog|storageboxxtreme|Exit||`
+        );
+      }
+      return true;
+    }
+    if (btn === "do_take") {
+      const nr = session.lastChoosenNr || 0;
+      const take = Number.parseInt(kv.itemcount || "0", 10);
+      const list = world.storageItems.filter((s) => s.x === tx && s.y === ty);
+      const entry = list[nr - 1];
+      if (!entry || take <= 0 || take > entry.count) return true;
+      if (!hasInvRoom(session, entry.itemId, take) || ctx.giveInventoryItem(session, entry.itemId, take, true) < take) {
+        OnTalkBubble(session, session.netId, "You don't have enough room in your backpack!", 0, false);
+        return true;
+      }
+      entry.count -= take;
+      if (entry.count <= 0) {
+        world.storageItems = world.storageItems.filter((s) => s !== entry);
+      }
+      const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+      sendFlyEffect(session, world, tx, ty, entry.itemId);
+      OnTalkBubble(session, session.netId, `Removed \`w${take} ${iName}\`\` in ${fgName}.`, 0, true);
+      OnConsoleMessage(session, `Removed \`w${take} ${iName}\`\` in the ${fgName}.`);
+      ctx.dirty = true;
+      return true;
+    }
+    if (btn === "cancel") {
+      renderStorageBoxDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    if (btn === "change_password" && tile.fg === 8878) {
+      OnDialogRequest(
+        session,
+        `set_default_color|\`o
+add_label_with_icon|big|\`wSafe Vault\`\`|left|8878|
+embed_data|tilex|${tx}
+embed_data|tiley|${ty}
+add_smalltext|Enter your \`2password\`\` and \`2recovery answer\`\` (max 12 alphanumeric characters).|left|
+add_textbox|Enter a new password.|left|
+add_text_input_password|storage_newpassword|||18|
+add_textbox|Enter a recovery answer.|left|
+add_text_input|storage_recoveryanswer|||12|
+add_button|set_password|Update Password|noflags|0|0|
+end_dialog|storageboxpassword|Exit||
+add_quick_exit|`
+      );
+      return true;
+    }
+    return true;
+  }
+  if (dlgName === "storageboxpassword" && tile && tile.fg === 8878) {
+    if (!hasOwnerAccess(session, world, tile)) return true;
+    if (tile.extra?.kind !== "storage") tile.extra = { kind: "storage" };
+    if (btn === "set_password") {
+      const pw = (kv.storage_newpassword || "").trim();
+      const rec = (kv.storage_recoveryanswer || "").trim();
+      if (!/^[A-Za-z0-9]{1,12}$/.test(pw) || !/^[A-Za-z0-9]{1,12}$/.test(rec)) {
+        OnTalkBubble(session, session.netId, "`4Password & recovery answer must be 1-12 alphanumeric characters!``", 0, true);
+        return true;
+      }
+      tile.extra.password = pw;
+      tile.extra.recoveryAnswer = rec;
+      ctx.dirty = true;
+      OnTalkBubble(session, session.netId, "`2Your password has been updated!``", 0, true);
+      return true;
+    }
+    if (btn === "check_password") {
+      const pw = (kv.storage_password || "").trim();
+      if (pw === (tile.extra.password || "")) {
+        renderStorageBoxDialog(ctx, session, world, tile, tx, ty);
+      } else {
+        OnTalkBubble(session, session.netId, "`4The password you entered did not match!``", 0, true);
+      }
+      return true;
+    }
+    if (btn === "show_recoveryanswer") {
+      OnDialogRequest(
+        session,
+        `set_default_color|\`o
+add_label_with_icon|big|\`wSafe Vault\`\`|left|8878|
+embed_data|tilex|${tx}
+embed_data|tiley|${ty}
+add_textbox|Enter your recovery answer to remove the password.|left|
+add_text_input|recovery_input|||12|
+add_button|verify_recovery|Recover|noflags|0|0|
+end_dialog|storageboxpassword|Exit||`
+      );
+      return true;
+    }
+    if (btn === "verify_recovery") {
+      if ((kv.recovery_input || "").trim() === (tile.extra.recoveryAnswer || "") && tile.extra.recoveryAnswer) {
+        tile.extra.password = "";
+        ctx.dirty = true;
+        OnTalkBubble(session, session.netId, "`2Password cleared! Opening Safe Vault.``", 0, true);
+        renderStorageBoxDialog(ctx, session, world, tile, tx, ty);
+      } else {
+        OnTalkBubble(session, session.netId, "`4Recovery answer did not match!``", 0, true);
+      }
+      return true;
+    }
+    return true;
+  }
+  if (dlgName === "camera_edit" && tile && CAMERA_IDS.has(tile.fg)) {
+    if (!canAdminAccess(session, world, tile)) return true;
+    world.cctvSettings = world.cctvSettings || [];
+    let s = world.cctvSettings.find((c) => c.x === tx && c.y === ty);
+    if (!s) {
+      s = { x: tx, y: ty, showTaking: false, showDropping: false, showEnter: true, showExit: false, hideOwner: false, hideAdmins: false, hideNoAccess: false, showVend: false };
+      world.cctvSettings.push(s);
+    }
+    if (btn === "clear") {
+      world.cctvLogs = (world.cctvLogs || []).filter((l) => !(l.x === tx && l.y === ty));
+      ctx.dirty = true;
+      OnTalkBubble(session, session.netId, "`2Camera log cleared.``", 0, false);
+      return true;
+    }
+    if (kv.checkbox_showpick !== void 0) s.showTaking = kv.checkbox_showpick === "1";
+    if (kv.checkbox_itemdrop !== void 0) s.showDropping = kv.checkbox_itemdrop === "1";
+    if (kv.checkbox_showenter !== void 0) s.showEnter = kv.checkbox_showenter === "1";
+    if (kv.checkbox_showexit !== void 0) s.showExit = kv.checkbox_showexit === "1";
+    if (kv.checkbox_noshowowner !== void 0) s.hideOwner = kv.checkbox_noshowowner === "1";
+    if (kv.checkbox_noshowadmin !== void 0) s.hideAdmins = kv.checkbox_noshowadmin === "1";
+    if (kv.checkbox_noshowother !== void 0) s.hideNoAccess = kv.checkbox_noshowother === "1";
+    if (kv.checkbox_vendlogs !== void 0) s.showVend = kv.checkbox_vendlogs === "1";
+    ctx.dirty = true;
+    return true;
+  }
+  if ((dlgName === "boombox_edit" || dlgName === "switcheroo_edit") && tile) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    if (kv.checkbox_public !== void 0) {
+      if (kv.checkbox_public === "1") tile.flags |= TILE_FLAG_PUBLIC;
+      else tile.flags &= ~TILE_FLAG_PUBLIC;
+    }
+    if (kv.checkbox_silence !== void 0) {
+      if (kv.checkbox_silence === "1") tile.flags |= TILE_FLAG_HAS_WLS;
+      else tile.flags &= ~TILE_FLAG_HAS_WLS;
+    }
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "mannequin_edit" && tile && MANNEQUIN_IDS2.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    if (tile.extra?.kind !== "mannequin") {
+      tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    }
+    const mq = tile.extra;
+    if (kv.put) {
+      const putId = Number.parseInt(kv.put, 10);
+      const def = ctx.itemsDb.get(putId);
+      const field = def ? mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType) : null;
+      if (!def || !def.isClothing || isUntradeable(def) || !field || mq[field] === putId) return true;
+      const oldId = mq[field];
+      if (oldId !== 0 && (!hasInvRoom(session, oldId, 1) || ctx.giveInventoryItem(session, oldId, 1, true) === 0)) {
+        OnTalkBubble(session, session.netId, "`5[`2You don't have inventory space!``]``", 0, false);
+        return true;
+      }
+      if (!ctx.consumeInventoryItem(session, putId, 1, true)) return true;
+      mq[field] = putId;
+      mq.skinColor = session.account.skinColor;
+      ctx.dirty = true;
+      broadcastPositionedSfx(world, session.netId, "audio/change_clothes.wav");
+      broadcastTileUpdate(world, tx, ty, tile);
+      return true;
+    }
+    const clearAll = btn === "clear";
+    const slotFields = [
+      "face",
+      "shirt",
+      "pants",
+      "feet",
+      "mask",
+      "hand",
+      "back",
+      "hair",
+      "neck"
+    ];
+    for (const f of slotFields) {
+      const cid = mq[f];
+      if (!cid) continue;
+      if (clearAll || kv[`checkbox_${cid}`] === "1") {
+        if (ctx.giveInventoryItem(session, cid, 1, true) > 0) {
+          mq[f] = 0;
+        } else {
+          OnTalkBubble(session, session.netId, "`5[`2You don't have inventory space!``]``", 0, false);
+          break;
+        }
+      }
+    }
+    if (kv.sign_text !== void 0) {
+      mq.label = kv.sign_text.replace(/[|\r\n`%]/g, "").slice(0, 128);
+    }
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "autoactionblock" && tile && AUTO_ACTION_IDS.has(tile.fg)) {
+    if (!hasOwnerAccess(session, world, tile)) return true;
+    if (tile.extra?.kind !== "autoAction") tile.extra = { kind: "autoAction", fuel: 0, targetItemId: 0, enabled: false };
+    const ex = tile.extra;
+    if (kv.refillfuel && ex.fuel < 8e3) {
+      const req = Math.max(0, Number.parseInt(kv.refillfuel, 10) || 0);
+      const add = Math.min(req, session.account.gems, 8e3 - ex.fuel);
+      if (add > 0) {
+        session.account.gems -= add;
+        ex.fuel += add;
+        OnSetBux(session);
+      }
+    }
+    if (kv.selecttarget) {
+      const tid = Number.parseInt(kv.selecttarget, 10);
+      if (tid > 0) ex.targetItemId = tid;
+    }
+    ex.enabled = ex.fuel > 0 && ex.targetItemId > 0;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "grinder" && tile && GRINDER_IDS.has(tile.fg)) {
+    const itemId = session.lastChoosenItem || 0;
+    const recipe = GTPS3_GRINDER_RECIPES[itemId];
+    const times = Number.parseInt(kv.count || "0", 10);
+    const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
+    if (!recipe || !slot || times <= 0 || times * recipe.count > slot.count) return true;
+    if (!ctx.consumeInventoryItem(session, itemId, times * recipe.count, true)) return true;
+    const inName = cleanName2(ctx.itemsDb.get(itemId));
+    const outName = cleanName2(ctx.itemsDb.get(recipe.prize));
+    const msg = `Ground up ${times * recipe.count} ${inName} into ${times} ${outName}!`;
+    OnConsoleMessage(session, msg);
+    OnTalkBubble(session, session.netId, msg, 0, true);
+    sendFlyEffect(session, world, tx, ty, recipe.prize);
+    const pPkt = makeParticleEffectPacket(221, tx * 32 + 16, ty * 32 + 16, itemId, 221);
+    session.peer.sendPacket(0, pPkt, true);
+    if (!hasInvRoom(session, recipe.prize, times) || ctx.giveInventoryItem(session, recipe.prize, times, true) < times) {
+      spawnOrMergeWorldDrop(world, recipe.prize, times, session.x, session.y, -1);
+    }
+    ctx.dirty = true;
+    return true;
+  }
+  if (dlgName === "crystal_exchange" && tile && CRYSTAL_IDS.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    const targetId = Number.parseInt(btn, 10);
+    if (!targetId) return true;
+    if (tile.extra?.kind !== "crystal") return true;
+    const counts = { 2242: 0, 2244: 0, 2246: 0, 2248: 0, 2250: 0, ...tile.extra.crystals };
+    if (!counts[tile.fg]) counts[tile.fg] = 1;
+    const recipe = GTPS3_CRYSTAL_RECIPES.find(
+      (r) => r.result[0] === targetId && Object.entries(r.requirements).every(([cid, need]) => (counts[Number(cid)] || 0) >= need)
+    );
+    if (!recipe) return true;
+    const pPkt = makeParticleEffectPacket(97, tx * 32 + 16, ty * 32 + 16, tile.fg, 97);
+    for (const p of world.peers) p.peer.sendPacket(0, pPkt, true);
+    OnTalkBubble(session, session.netId, `The crystal shatters and drops ${cleanName2(ctx.itemsDb.get(recipe.result[0]))}!`, 0, true);
+    spawnOrMergeWorldDrop(world, recipe.result[0], recipe.result[1], tx * 32 + 6, ty * 32 + 6, -1);
+    tile.fg = 0;
+    tile.extra = void 0;
+    tile.flags = 0;
+    tile.damage = 0;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  return false;
+}
+
 // server/action/dialog_return/index.ts
 function handleDialogReturn(ctx, session, kv) {
   const dlg = (kv.dialog_name || "").trim();
@@ -35580,6 +37488,9 @@ function handleDialogReturn(ctx, session, kv) {
   }
   if (dlg === "item_finder") {
     handleFindItemDialogReturn(ctx, session, kv);
+    return;
+  }
+  if (handleWorldBlockDialogReturn(ctx, session, dlg, kv)) {
     return;
   }
   if (handleTileEditDialogReturn(ctx, session, dlg, kv)) {
@@ -35791,6 +37702,40 @@ function handleAdminCommand(ctx, session, cmd, parts, argStr) {
     OnConsoleMessage(session, `Gave ${added}x ${stripGtColors(def.name)} to ${target.account.name}.`);
     return true;
   }
+  if (cmd === "nick") {
+    if (!hasPermission(session.account, "moderate")) {
+      OnConsoleMessage(session, "Moderator permission required.");
+      return true;
+    }
+    const newNick = argStr.replace(/[|\r\n\0]/g, "").trim();
+    if (!newNick || newNick.toLowerCase() === session.account.name.toLowerCase()) {
+      session.account.nickname = void 0;
+      OnConsoleMessage(session, `Your name changed back to ${session.account.name}`);
+    } else {
+      session.account.nickname = newNick.slice(0, 24);
+      OnConsoleMessage(session, `Your name changed to ${session.account.nickname}`);
+    }
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    broadcastNameChanged(session);
+    return true;
+  }
+  if (cmd === "invis") {
+    if (!hasPermission(session.account, "moderate")) {
+      OnConsoleMessage(session, "Moderator permission required.");
+      return true;
+    }
+    const nextInvis = !session.invis;
+    session.invis = nextInvis;
+    OnConsoleMessage(session, nextInvis ? "`oYou are now ninja, invisible at all." : "`oYou are once again visible to mortals.");
+    const pkt = makeVariantPacket(["OnInvis", { type: "i32", value: nextInvis ? 1 : 0 }], session.netId);
+    if (session.world) {
+      for (const p of session.world.peers) p.peer.sendPacket(0, pkt, true);
+    } else {
+      session.peer.sendPacket(0, pkt, true);
+    }
+    return true;
+  }
   return false;
 }
 
@@ -35936,26 +37881,55 @@ netID|${session.netId}`
     openCheatsMenu(session);
     return true;
   }
-  if (cmd === "msg" || cmd === "tell" || cmd === "w") {
-    const targetName = parts[1] || "";
-    const msgBody = sanitizeChatText(parts.slice(2).join(" "), 120);
-    if (!targetName || !msgBody) {
-      OnConsoleMessage(session, "`4Usage: /msg <player> <message>``");
-      return true;
+  if (cmd === "msg" || cmd === "tell" || cmd === "w" || cmd === "r") {
+    const USAGE_MSG = "Usage: /msg <`$full or first part of a name``> <`$your message``> - This will send a private message to someone anywhere in the universe.  If you don't include a message, you can just see if he/she is online or not.";
+    const USAGE_R = "Usage: /r <`$your message``> - This will send a private message to the last person who sent you a message. Use /msg to talk to somebody new!";
+    let username;
+    let msgBody;
+    if (cmd === "r") {
+      username = session.lastMsg || "";
+      if (!argStr || !username) {
+        OnConsoleMessage(session, USAGE_R);
+        return true;
+      }
+      msgBody = sanitizeChatText(argStr, 120);
+    } else {
+      username = parts[1] || "";
+      if (!username) {
+        OnConsoleMessage(session, USAGE_MSG);
+        return true;
+      }
+      msgBody = sanitizeChatText(parts.slice(2).join(" "), 120);
     }
-    const target = ctx.findOnlineSessionByName(targetName);
+    const lower = username.toLowerCase();
+    const online = [...ctx.sessions];
+    let target = online.find((p) => p.account.name.toLowerCase() === lower);
+    if (!target && username.length >= 5) target = online.find((p) => p.account.name.toLowerCase().startsWith(lower));
     if (!target) {
-      OnConsoleMessage(session, "`4Player is not online!``");
+      OnConsoleMessage(
+        session,
+        username.length < 5 ? `\`6>> \`$${username}\`\` is not online right now (you need to enter at least 5 letters if you meant a longer name!).\`\`` : `\`6>> No one online who has a name starting with \`$${username}\`\`.\`\``
+      );
       return true;
     }
+    const tname = target.account.name;
+    if (!msgBody) {
+      OnConsoleMessage(session, `\`6>> \`$${tname}\`\` is online now.\`\``);
+      return true;
+    }
+    if (hasPermission(target.account, "moderate")) {
+      OnConsoleMessage(session, `CT:[MSG]_\`6>> (Sent to \`$${tname}\`\`)\`\` (\`4Note: \`\`Message a mod \`4ONLY ONCE\`\` about an issue. Mods don't fix scams or replace items, they punish players who break the \`5/rules\`\`.  For issues related to account recovery or purchasing, contact support at \`5http://privategt.com\`\`)`);
+    } else {
+      OnConsoleMessage(session, `CT:[MSG]_\`6>> (Sent to \`$${tname}\`\`)\`\``);
+    }
+    target.lastMsg = session.account.name;
+    target.lastMsgWorld = session.world?.name || "";
     OnConsoleMessage(
       target,
-      `CP:0_PL:4_OID:_CT:[MSG]_ \`c>> From (\`w${session.account.name}\`c) in [\`$${session.world?.name || "LOBBY"}\`c] > \`$${msgBody}\`\``,
+      `CP:0_PL:0_OID:_CT:[MSG]_>> \`c>> from (\`\`\`c\`w${session.account.name}\`\`\`\`\`c) in [\`$${session.world?.name || "EXIT"}\`\`] > \`\`\`$${msgBody}\`\``,
       chatPortrait(session, ctx.itemsDb)
     );
     OnPlayPositioned(target, "audio/pay_time.wav");
-    if (hasPermission(target.account, "moderate")) OnConsoleMessage(session, "`4Note:`` Message a moderator only once about an issue. Moderators do not replace scammed items.");
-    OnConsoleMessage(session, `\`c>> Sent to (\`w${target.account.name}\`c): \`$${msgBody}\`\``, chatPortrait(target, ctx.itemsDb));
     return true;
   }
   if (cmd === "youtube" || cmd === "yt") {
@@ -36031,6 +38005,90 @@ netID|${session.netId}`
       session,
       `\`o[Status] Name: \`w${acct.name}\`o | World: \`w${worldName}\`o | Gems: \`2${acct.gems || 0}\`o | Backpack: \`w${acct.inventory.filter((i) => i.count > 0).length}/${acct.backpackSize}\`o | Online: \`2${ctx.sessions.size}\`o players.\`\``
     );
+    return true;
+  }
+  if (cmd === "home" || cmd === "gethome") {
+    const home = session.account.homeWorld;
+    if (!home) {
+      OnConsoleMessage(session, "`4You don't have a home world yet. Enter one and type `2/sethome``4.``");
+      return true;
+    }
+    if (cmd === "gethome") {
+      OnConsoleMessage(session, `\`2Your home world is \`w${home}\`2.\`\``);
+      return true;
+    }
+    OnConsoleMessage(session, `Magically warping to your home world \`5${home}\`\`...`);
+    OnPlayPositioned(session, "audio/door_open.wav");
+    ctx.joinWorld(session, home);
+    return true;
+  }
+  if (cmd === "sethome") {
+    const world = session.world;
+    if (!world) {
+      OnConsoleMessage(session, "`4Enter a world first.``");
+      return true;
+    }
+    session.account.homeWorld = world.name;
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    OnConsoleMessage(session, `\`2Your home world is now \`w${world.name}\`2.\`\``);
+    return true;
+  }
+  if (cmd === "go") {
+    if (!argStr) {
+      OnConsoleMessage(session, "`4Usage: /go <world_name>``");
+      return true;
+    }
+    OnConsoleMessage(session, `Magically warping to world \`5${argStr.toUpperCase()}\`\`...`);
+    OnPlayPositioned(session, "audio/door_open.wav");
+    ctx.joinWorld(session, argStr);
+    return true;
+  }
+  if (cmd === "rgo") {
+    const dest = session.lastMsgWorld || "";
+    if (dest && session.world && dest === session.world.name) {
+      OnConsoleMessage(session, "You magically appear at the world you were already in.  Great job!");
+      return true;
+    }
+    if (!dest) {
+      OnTextOverlay(session, "Unable to track down the location of the last broadcast!");
+      return true;
+    }
+    OnTextOverlay(session, `Moving to where \`w/${session.lastMsg}\`\` sent that last \`5/msg\`\` from... (\`2${dest}\`\`) ...`);
+    OnPlayPositioned(session, "audio/object_spawn.wav");
+    ctx.joinWorld(session, dest);
+    return true;
+  }
+  if (cmd === "mods") {
+    const staff = [...ctx.sessions].filter((p) => hasPermission(p.account, "moderate")).map((p) => displayName(p));
+    OnConsoleMessage(
+      session,
+      staff.length ? `\`2Online staff:\`\` ${staff.join(", ")}` : "There are no staff members online right now."
+    );
+    return true;
+  }
+  if (cmd === "backpack" || cmd === "bp") {
+    openBackpackMenu(ctx, session);
+    return true;
+  }
+  if (cmd === "roles") {
+    const p = progression(session.account);
+    const placed = p.counters.blocks_placed || 0;
+    const harvested = p.counters.trees_harvested || 0;
+    const broken = p.counters.blocks_broken || 0;
+    const dlg = [
+      "add_label_with_icon|big|`wRole Quests``|left|982|",
+      "add_spacer|small|",
+      "add_textbox|`9Punch, Build, Grow, and more to track your Role Progress!``|left|",
+      "add_spacer|small|",
+      `add_smalltext|- Builder (Blocks Placed): \`w${placed}\`\`|left|`,
+      `add_smalltext|- Farmer (Trees Harvested): \`w${harvested}\`\`|left|`,
+      `add_smalltext|- Breaker (Blocks Broken): \`w${broken}\`\`|left|`,
+      `add_smalltext|- Level: \`w${p.level}\`\`|left|`,
+      "end_dialog|rolequestspage||Back|",
+      "add_quick_exit|"
+    ].join("\n");
+    OnDialogRequest(session, dlg);
     return true;
   }
   return false;
@@ -36174,6 +38232,38 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
     convertPlacedLock(ctx, session, world, tx, ty);
     return true;
   }
+  if (cmd === "unaccess") {
+    if (!world) return true;
+    const dlg = [
+      "set_default_color|`o",
+      "add_label_with_icon|small|Remove Your Access From World|left|242|",
+      "add_textbox|Are you sure you want to remove yourself from all locks in this world?|left|",
+      "add_textbox|Any locks you placed will still be owned by you, but you will be removed from any other locks that you have access on.|left|",
+      "add_spacer|small|",
+      "end_dialog|unaccess|No|Yes|"
+    ].join("\n");
+    OnDialogRequest(session, dlg);
+    return true;
+  }
+  if (cmd === "top") {
+    const list = [...ctx.worlds.values()].sort((a, b) => b.peers.size - a.peers.size).slice(0, 15);
+    const lines = [
+      "set_default_color|`o",
+      "add_label_with_icon|big|`oWorld Rankings``|left|394|",
+      "add_spacer|small|",
+      "add_textbox|World Rankings are based on active players online.|"
+    ];
+    list.forEach((w, idx) => {
+      lines.push(`add_button|warp_to_${w.name}|#${idx + 1}: \`8${w.name}\`\` (${w.peers.size} online)|noflags|0|0|`);
+    });
+    lines.push("end_dialog|top|Close||");
+    OnDialogRequest(session, lines.join("\n"));
+    return true;
+  }
+  if (cmd === "billboard") {
+    openBillboardDialog(ctx, session);
+    return true;
+  }
   return false;
 }
 
@@ -36181,7 +38271,7 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
 function dispatchCommand(ctx, session, rawWithoutSlash) {
   const parts = rawWithoutSlash.trim().split(/\s+/);
   const typed = (parts[0] || "").toLowerCase();
-  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "trade", "sb", "bc", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
+  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "r", "rgo", "trade", "sb", "bc", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
   const aliases = { k: "kick", p: "pull", b: "ban", ub: "unban", u: "unban" };
   const candidates = names.filter((n) => n.startsWith(typed));
   const cmd = names.includes(typed) ? typed : aliases[typed] || (candidates.length === 1 ? candidates[0] : typed);
@@ -36226,13 +38316,21 @@ function handleInput(ctx, session, rawText) {
   if (trimmed.startsWith("/")) {
     const echo = sanitizeChatText(trimmed, 120).replace(/[\x00-\x1f\x7f`]/g, "");
     session.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|log
-msg|\`6${echo}\`\`
+msg|${/^\/(msg|r)(\s|$)/i.test(trimmed) ? "CT:[MSG]_ " : ""}\`6${echo}\`\`
 `), true);
     dispatchCommand(ctx, session, trimmed.slice(1));
     return;
   }
   const world = session.world;
   if (!world) return;
+  if (world.royalSilence && world.ownerUserId !== session.account.userId && !hasPermission(session.account, "moderate")) {
+    const wl = getWorldLockTile(world);
+    const isAdmin = wl?.extra?.kind === "lock" && wl.extra.adminIds.includes(session.account.userId);
+    if (!isAdmin) {
+      OnTalkBubble(session, session.netId, "`4The Royal Owner has silenced peasants in this world!``", 0, true);
+      return;
+    }
+  }
   const clean = sanitizeChatText(trimmed, 120);
   if (!clean) return;
   if (session.brb || session.iconState === 1) {
@@ -36777,107 +38875,8 @@ function handleItemActivateObject(ctx, session, uid) {
   ctx.savePlayersNow();
   const collectPkt = makeItemCollectPacket(session.netId, obj.uid);
   for (const p of world.peers) p.peer.sendPacket(0, collectPkt, true);
+  logCctvEvent(world, session, "took", `${taken} ${itemName}`);
   OnConsoleMessage(session, `Collected \`w${taken} ${itemName}\`\`.`);
-}
-
-// server/database/recipes.ts
-var GTPS3_COMBINER_RECIPES = [
-  { ingredients: [[914, 5], [924, 4], [920, 2]], result: [926, 5] },
-  { ingredients: [[914, 6], [924, 3], [918, 4]], result: [1114, 1] },
-  { ingredients: [[914, 15], [920, 4], [918, 2]], result: [978, 4] },
-  { ingredients: [[917, 10], [924, 3], [918, 3]], result: [772, 1] },
-  { ingredients: [[917, 2], [920, 4], [918, 3]], result: [904, 1] },
-  { ingredients: [[924, 20], [920, 4], [918, 5]], result: [922, 1] },
-  { ingredients: [[914, 20], [916, 10], [922, 1]], result: [1162, 1] },
-  { ingredients: [[914, 10], [920, 2], [922, 1]], result: [1746, 5] },
-  { ingredients: [[914, 20], [918, 15], [922, 10]], result: [1542, 1] },
-  { ingredients: [[916, 8], [924, 4], [922, 1]], result: [2588, 1] },
-  { ingredients: [[916, 1], [918, 1], [922, 1]], result: [1866, 10] },
-  { ingredients: [[924, 3], [920, 3], [922, 3]], result: [908, 1] },
-  { ingredients: [[924, 4], [918, 3], [922, 1]], result: [1310, 1] },
-  { ingredients: [[920, 200], [918, 200], [922, 200]], result: [910, 1] },
-  { ingredients: [[914, 10], [922, 10], [1962, 10]], result: [4582, 1] },
-  { ingredients: [[916, 9], [924, 5], [1962, 1]], result: [4552, 1] },
-  { ingredients: [[6970, 50], [7006, 50], [6986, 50]], result: [6948, 1] },
-  // Heart of Gaia
-  { ingredients: [[7156, 20], [6986, 5], [7154, 5]], result: [7150, 1] },
-  { ingredients: [[7006, 10], [6970, 5], [6988, 5]], result: [7008, 1] },
-  { ingredients: [[6828, 2], [186, 100], [6972, 20]], result: [6934, 1] },
-  { ingredients: [[6834, 2], [186, 100], [6960, 2]], result: [6936, 1] },
-  { ingredients: [[6250, 2], [186, 100], [6978, 20]], result: [6930, 1] },
-  { ingredients: [[6940, 2], [186, 100], [6976, 2]], result: [6944, 1] },
-  { ingredients: [[6236, 1], [6962, 1], [6992, 5]], result: [6918, 1] },
-  { ingredients: [[6238, 1], [6960, 5], [7012, 1]], result: [6920, 1] },
-  { ingredients: [[6988, 100], [7010, 15], [6976, 50]], result: [6946, 1] },
-  // Unstable Tesseract
-  { ingredients: [[6244, 1], [260, 100], [6962, 2]], result: [6928, 1] },
-  { ingredients: [[6256, 1], [260, 100], [6994, 10]], result: [6932, 1] },
-  { ingredients: [[6238, 1], [260, 100], [6960, 2]], result: [6926, 1] },
-  { ingredients: [[7308, 1], [260, 100], [7012, 10]], result: [7306, 1] },
-  { ingredients: [[6926, 1], [6972, 1], [7010, 1]], result: [6922, 1] },
-  { ingredients: [[6240, 1], [6972, 1], [6992, 10]], result: [6924, 1] },
-  { ingredients: [[7158, 20], [7160, 3], [6978, 3]], result: [7152, 1] },
-  { ingredients: [[6994, 100], [6978, 100], [6964, 100]], result: [6950, 1] },
-  { ingredients: [[6980, 100], [6998, 100], [7016, 100]], result: [6952, 1] },
-  { ingredients: [[6984, 75], [7018, 75], [6968, 75]], result: [6954, 1] }
-];
-var GTPS3_FISHING_LOOT = {
-  2914: [846, 344, 8964, 3e3, 3e3, 3034, 3034, 3038, 3038, 3028, 3012],
-  3012: [3e3, 3e3, 3030, 3030, 3038, 3038, 3036, 3036, 846, 444, 8966, 344, 3028, 3022, 3014, 3e3, 3e3],
-  3014: [3030, 3030, 3026, 3026, 3038, 3038, 3e3, 3e3, 3032, 3032, 344, 444, 846, 8966, 8964, 3016],
-  3016: [846, 3026, 3026, 3038, 3038, 3032, 3032, 3036, 3036, 444, 1522, 8256, 8964, 3184, 1542, 3018],
-  3018: [5636, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 846, 3036, 3036, 3034, 3034, 3032, 3032, 3024, 3020],
-  3020: [5636, 1542, 3022, 1520, 1522, 3028, 3038, 3038, 3026, 3026, 3030, 3036, 3036, 3030, 7744, 3034],
-  5526: [3584, 8254, 5542, 5538, 5620, 5622, 5612, 5526, 5580, 3020, 11734],
-  5528: [5636, 3584, 5574, 8968, 5552, 5548, 5618, 5624, 5602, 5528, 5614, 8252, 11052, 5616, 3020]
-};
-var GTPS3_GEIGER_REWARDS = [
-  6416,
-  3196,
-  2206,
-  1500,
-  1498,
-  2806,
-  2804,
-  8270,
-  8272,
-  8274,
-  2244,
-  2246,
-  2242,
-  3792,
-  3306,
-  4676,
-  4678,
-  4680,
-  4682,
-  4652,
-  4650,
-  4648,
-  4646,
-  11186,
-  10086
-];
-function findCombinerRecipe(drops) {
-  if (drops.length !== 3) return null;
-  const dropMap = /* @__PURE__ */ new Map();
-  for (const d of drops) {
-    dropMap.set(d.itemId, (dropMap.get(d.itemId) || 0) + d.count);
-  }
-  for (const recipe of GTPS3_COMBINER_RECIPES) {
-    let matches = true;
-    for (const [ingId, reqCount] of recipe.ingredients) {
-      const avail = dropMap.get(ingId) || 0;
-      if (avail < reqCount) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches && recipe.ingredients.length === drops.length) {
-      return recipe;
-    }
-  }
-  return null;
 }
 
 // server/gamePacket/player_moving.ts
@@ -37015,6 +39014,94 @@ function lockedMessage(ctx, world, tile, tx, ty, mode = "place", uid = 0) {
   const name = (ctx.findAccountByUserId(id)?.name || "someone").replace(/[^A-Za-z0-9_]/g, "");
   return "That area is owned by `w" + name + "``";
 }
+var DYE_SPEC = {
+  3822: [65535, 16, -16, -16, false],
+  3824: [16711935, -16, 16, -16, false],
+  3826: [4278190335, -16, -16, 16, false],
+  3828: [255, -16, -16, -16, false],
+  3830: [4294967295, 32, 32, 32, true],
+  5458: [65535, 16, -16, -16, false],
+  5460: [16711935, -16, 16, -16, false],
+  5462: [4278190335, -16, -16, 16, false],
+  5464: [255, -16, -16, -16, false],
+  5466: [4294967295, 32, 32, 32, true],
+  6760: [65535, 32, -16, -16, false],
+  6762: [16711935, -16, 32, -16, false],
+  6764: [4278190335, -16, -16, 32, false],
+  6766: [255, -32, -32, -32, false],
+  6768: [4294967295, 32, 32, 32, true]
+};
+function useDyeItem(ctx, session, world, itemId, tx, ty, playerTileX, playerTileY) {
+  const isHair = HAIR_DYE_ITEMS2.has(itemId);
+  const kind = isHair ? "hair" : itemId >= 6760 ? "lenses" : "drops";
+  const spec = DYE_SPEC[itemId];
+  if (!spec) return false;
+  const pTileX = Math.floor(playerTileX);
+  const pTileY = Math.floor(playerTileY);
+  if (Math.abs(tx - pTileX) > 1 || Math.abs(ty - pTileY) > 1) {
+    OnTalkBubble(session, session.netId, "(Must be used on yourself)", 0, true);
+    return true;
+  }
+  const pTile = world.tiles[pTileY * world.width + pTileX];
+  const cTile = world.tiles[ty * world.width + tx];
+  const hasFixture = isHair ? pTile?.fg === 230 || pTile?.fg === 6158 || cTile?.fg === 230 || cTile?.fg === 6158 : pTile?.fg === 5468 || pTile?.fg === 7740 || cTile?.fg === 5468 || cTile?.fg === 7740;
+  if (!hasFixture) {
+    OnTalkBubble(
+      session,
+      session.netId,
+      isHair ? "You'll make a huge mess if you do that outside the Bathtub!" : "You'd better do that in front of a bathroom mirror or you'll poke your eye out!",
+      0,
+      true
+    );
+    return true;
+  }
+  const [targetColorRaw, baseDr, baseDg, baseDb, isCleaner] = spec;
+  const targetColor = targetColorRaw >>> 0;
+  const curRaw = kind === "hair" ? session.account.hairColor : kind === "drops" ? session.account.eyeColor : session.account.pupilColor;
+  const cur = (curRaw && curRaw !== 0 ? curRaw : 4294967295) >>> 0;
+  if (cur === targetColor) {
+    const alreadyMsg = kind === "hair" ? isCleaner ? "Your hair is already clean!" : "Your hair is already that color!" : kind === "drops" ? isCleaner ? "Your eyes are already clean!" : "Your eyes are already that color!" : isCleaner ? "Your lenses are already clean!" : "Your pupils are already that color!";
+    OnTalkBubble(session, session.netId, alreadyMsg, 0, true);
+    return true;
+  }
+  let dr = baseDr, dg = baseDg, db = baseDb;
+  if (kind === "lenses" && !isCleaner && cur === 4294967295) {
+    dr *= 9;
+    dg *= 9;
+    db *= 9;
+  }
+  const a = cur & 255 || 255;
+  const r = Math.max(0, Math.min(255, (cur >>> 8 & 255) + dr));
+  const g = Math.max(0, Math.min(255, (cur >>> 16 & 255) + dg));
+  const b = Math.max(0, Math.min(255, (cur >>> 24 & 255) + db));
+  const nextColor = (b << 24 | g << 16 | r << 8 | a) >>> 0;
+  if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+  if (kind === "hair") {
+    session.account.hairColor = nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
+    const actPkt = makeVariantPacket(["OnAction", "/shower"], session.netId);
+    for (const p of world.peers) p.peer.sendPacket(0, actPkt, true);
+    OnTalkBubble(session, session.netId, isCleaner ? "Your hair got cleaner!" : "You dyed your hair!", 0, true);
+  } else if (kind === "drops") {
+    session.account.eyeColor = nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+    OnTalkBubble(session, session.netId, isCleaner ? "Your eyes got cleaner!" : "You used eye drops!", 0, true);
+  } else {
+    session.account.pupilColor = isCleaner && nextColor === 4294967295 ? 0 : nextColor;
+    broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+    OnTalkBubble(
+      session,
+      session.netId,
+      isCleaner ? "Your lenses got cleaner!" : "You put in some contact lenses!",
+      0,
+      true
+    );
+  }
+  ctx.dirty = true;
+  ctx.savePlayersNow();
+  ctx.sendCharacterState(session);
+  return true;
+}
 function handleTileActivateRequest(ctx, session, tank) {
   const world = session.world;
   if (!world) return;
@@ -37130,11 +39217,60 @@ function handleTileChangeRequest(ctx, session, tank) {
       }
     }
     if (tile.fg === 2978 || tile.fg === 9268) {
-      if (canModifyWorldTile(session, world, tile, tx, ty)) {
+      if (Math.abs(tx * 32 - session.x) > 24 || Math.abs(ty * 32 - session.y) > 24) {
+        OnTalkBubble(session, session.netId, "Get closer!", 0, true);
+        return;
+      }
+      if (canManageVending(session, world, tile)) {
         openVendingOwnerDialog(ctx, session, world, tile, tx, ty);
       } else {
         openVendingBuyerDialog(ctx, session, world, tile, tx, ty);
       }
+      return;
+    }
+    if (tile.fg === 2946) {
+      openDisplayBlockDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (DISPLAY_SHELF_IDS2.has(tile.fg)) {
+      openDisplayShelfDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (DONATION_BOX_IDS.has(tile.fg)) {
+      openDonationBoxDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (MAILBOX_IDS.has(tile.fg) || BULLETIN_BOARD_IDS.has(tile.fg)) {
+      openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (STORAGE_BOX_IDS.has(tile.fg)) {
+      openStorageBoxDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (CAMERA_IDS.has(tile.fg)) {
+      openCameraDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (MANNEQUIN_IDS2.has(tile.fg)) {
+      openMannequinDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (AUTO_ACTION_IDS.has(tile.fg)) {
+      openAutoActionBlockDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (GRINDER_IDS.has(tile.fg)) {
+      openGrinderDialog(ctx, session, tile);
+      return;
+    }
+    if (CRYSTAL_IDS.has(tile.fg)) {
+      openCrystalExchangeDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    const wrenchTargetDef = tile.fg ? ctx.itemsDb.get(tile.fg) : void 0;
+    if (BOOMBOX_IDS.has(tile.fg) || wrenchTargetDef?.actionType === 9 || wrenchTargetDef?.actionType === 12 || wrenchTargetDef?.actionType === 31 || wrenchTargetDef?.actionType === 36) {
+      openToggleableDialog(ctx, session, world, tile, tx, ty);
       return;
     }
     if (tile.fg === 6016) {
@@ -37385,6 +39521,31 @@ function handleTileChangeRequest(ctx, session, tank) {
         OnTalkBubble(session, session.netId, `Empty this ${stripGtColors(bDef.name)} before breaking!`, 0, true);
         return false;
       }
+      if (bId === 2946 && bt.extra?.kind === "display" && bt.extra.itemId > 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove what's in there first!", 0, true);
+        return false;
+      }
+      if (DISPLAY_SHELF_IDS2.has(bId) && bt.extra?.kind === "displayShelf" && (bt.extra.s1 || bt.extra.s2 || bt.extra.s3 || bt.extra.s4)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove all items from the Display Shelf before breaking!", 0, true);
+        return false;
+      }
+      if (DONATION_BOX_IDS.has(bId) && bt.extra?.kind === "donation" && bt.extra.donates.length > 0) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Empty the Donation Box before breaking!", 0, true);
+        return false;
+      }
+      if (STORAGE_BOX_IDS.has(bId) && (world.storageItems || []).some((s) => s.x === bx && s.y === by)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, `Empty this ${stripGtColors(bDef.name)} before breaking!`, 0, true);
+        return false;
+      }
+      if (MANNEQUIN_IDS2.has(bId) && bt.extra?.kind === "mannequin" && (bt.extra.hair || bt.extra.shirt || bt.extra.pants || bt.extra.feet || bt.extra.face || bt.extra.hand || bt.extra.back || bt.extra.mask || bt.extra.neck)) {
+        OnPlayPositioned(session, "audio/punch_locked.wav");
+        OnTalkBubble(session, session.netId, "Remove clothes from the Mannequin before breaking!", 0, true);
+        return false;
+      }
       if (bt.fg !== 0 && bt.extra?.kind === "seed") {
         const growSec = Math.max(1, bDef.growTime || 15);
         const ageSec = (now - bt.extra.plantedAtMs) / 1e3;
@@ -37493,10 +39654,23 @@ function handleTileChangeRequest(ctx, session, tank) {
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
+  if (HAIR_DYE_ITEMS2.has(itemId) || EYE_ITEMS2.has(itemId)) {
+    useDyeItem(ctx, session, world, itemId, tx, ty, playerTileX, playerTileY);
+    return;
+  }
+  if (def.actionType === 8) {
+    OnConsoleMessage(session, "This consumable is not implemented yet. Your item was not consumed.");
+    return;
+  }
   if (def.isClothing) {
+    if (tile.fg && useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId)) return;
     toggleWearableItem(ctx, session, itemId);
     return;
   }
+  if (tile.fg && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
+  if (tile.fg && useItemOnDonationBox(ctx, session, tile, tx, ty, itemId)) return;
+  if (tile.fg && useItemOnGrinder(ctx, session, tile, tx, ty, itemId)) return;
+  if (tile.fg && useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId)) return;
   if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) {
     OnPlayPositioned(session, "audio/punch_locked.wav");
     OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "place", session.account.userId), 0, true);
@@ -37605,91 +39779,6 @@ function handleTileChangeRequest(ctx, session, tank) {
       OnEmoticonDataChanged(session, true);
       return;
     }
-    if (HAIR_DYE_ITEMS2.has(itemId) || EYE_ITEMS2.has(itemId)) {
-      const kind = HAIR_DYE_ITEMS2.has(itemId) ? "hair" : itemId >= 6760 ? "lenses" : "drops";
-      const pTileX = Math.floor(playerTileX);
-      const pTileY = Math.floor(playerTileY);
-      const pTile = world.tiles[pTileY * world.width + pTileX];
-      const hasFixture = kind === "hair" ? tile.fg === 230 || tile.fg === 6158 || pTile && (pTile.fg === 230 || pTile.fg === 6158) : tile.fg === 5468 || tile.fg === 7740 || pTile && (pTile.fg === 5468 || pTile.fg === 7740);
-      if (!hasFixture) {
-        OnTalkBubble(
-          session,
-          session.netId,
-          kind === "hair" ? "You'll make a huge mess if you do that outside the Bathtub!" : "You'd better do that in front of a bathroom mirror or you'll poke your eye out!",
-          0,
-          true
-        );
-        return;
-      }
-      const dyeSpec = {
-        3822: [65535, 16, -16, -16, false],
-        3824: [16711935, -16, 16, -16, false],
-        3826: [4278190335, -16, -16, 16, false],
-        3828: [255, -16, -16, -16, false],
-        3830: [4294967295, 32, 32, 32, true],
-        5458: [65535, 16, -16, -16, false],
-        5460: [16711935, -16, 16, -16, false],
-        5462: [4278190335, -16, -16, 16, false],
-        5464: [255, -16, -16, -16, false],
-        5466: [4294967295, 32, 32, 32, true],
-        6760: [65535, 32, -16, -16, false],
-        6762: [16711935, -16, 32, -16, false],
-        6764: [4278190335, -16, -16, 32, false],
-        6766: [255, -32, -32, -32, false],
-        6768: [4294967295, 32, 32, 32, true]
-      };
-      const spec = dyeSpec[itemId];
-      if (!spec) return;
-      const [targetColorRaw, baseDr, baseDg, baseDb, isCleaner] = spec;
-      const targetColor = targetColorRaw >>> 0;
-      const curRaw = kind === "hair" ? session.account.hairColor : kind === "drops" ? session.account.eyeColor : session.account.pupilColor;
-      const cur = (curRaw && curRaw !== 0 ? curRaw : 4294967295) >>> 0;
-      if (cur === targetColor) {
-        const alreadyMsg = kind === "hair" ? isCleaner ? "Your hair is already clean!" : "Your hair is already that color!" : kind === "drops" ? isCleaner ? "Your eyes are already clean!" : "Your eyes are already that color!" : isCleaner ? "Your lenses are already clean!" : "Your pupils are already that color!";
-        OnTalkBubble(session, session.netId, alreadyMsg, 0, true);
-        return;
-      }
-      let dr = baseDr;
-      let dg = baseDg;
-      let db = baseDb;
-      if (kind === "lenses" && !isCleaner && cur === 4294967295) {
-        dr *= 9;
-        dg *= 9;
-        db *= 9;
-      }
-      const a = cur & 255 || 255;
-      const r = Math.max(0, Math.min(255, (cur >>> 8 & 255) + dr));
-      const g = Math.max(0, Math.min(255, (cur >>> 16 & 255) + dg));
-      const b = Math.max(0, Math.min(255, (cur >>> 24 & 255) + db));
-      const nextColor = (b << 24 | g << 16 | r << 8 | a) >>> 0;
-      ctx.consumeInventoryItem(session, itemId, 1, true);
-      if (kind === "hair") {
-        session.account.hairColor = nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
-        const actPkt = makeVariantPacket(["OnAction", "/shower"], session.netId);
-        for (const p of world.peers) p.peer.sendPacket(0, actPkt, true);
-        OnTalkBubble(session, session.netId, isCleaner ? "Your hair got cleaner!" : "You dyed your hair!", 0, true);
-      } else if (kind === "drops") {
-        session.account.eyeColor = nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
-        OnTalkBubble(session, session.netId, isCleaner ? "Your eyes got cleaner!" : "You used eye drops!", 0, true);
-      } else {
-        session.account.pupilColor = nextColor === 4294967295 && isCleaner ? 0 : nextColor;
-        broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
-        OnTalkBubble(
-          session,
-          session.netId,
-          isCleaner ? "Your lenses got cleaner!" : "You put in some contact lenses!",
-          0,
-          true
-        );
-      }
-      ctx.dirty = true;
-      ctx.savePlayersNow();
-      ctx.sendCharacterState(session);
-      broadcastSetClothing(world, session, ctx.itemsDb, true);
-      return;
-    }
     if (tile.fg !== 0) return;
     if (def.collisionType === 1) {
       const px = tx * 32;
@@ -37727,6 +39816,17 @@ function handleTileChangeRequest(ctx, session, tank) {
       } else if (AREA_LOCK_IDS.has(itemId) && (prevFlags & TILE_FLAG_LOCKED) !== 0) {
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, "You can't place a lock over an area that's already locked!", 0, true);
+        return;
+      }
+    }
+    if (world.ownerUserId === 0 && session.account.rank !== "developer" && (itemId === 2978 || itemId === 9268 || itemId === 5638 || itemId === 6946 || itemId === 6948 || itemId === 6950 || itemId === 6952)) {
+      OnTalkBubble(session, session.netId, "This item can only be used in World-Locked worlds!", 0, true);
+      return;
+    }
+    if (CAMERA_IDS.has(itemId)) {
+      const camCount = world.tiles.filter((t) => CAMERA_IDS.has(t.fg)).length;
+      if (camCount >= 8) {
+        OnTalkBubble(session, session.netId, `You can only have 8 ${stripGtColors(def.name)} in a world.`, 0, true);
         return;
       }
     }
@@ -37781,7 +39881,7 @@ function handleTileChangeRequest(ctx, session, tank) {
         speedy: 0,
         powerups: 0
       };
-      extra = { kind: "xenonite", powers: [0, 0, 0, 0] };
+      extra = void 0;
       needsFullTileUpdate = true;
       for (const p of world.peers) ctx.sendCharacterState(p);
     } else if (itemId === 6016) {
@@ -37795,6 +39895,51 @@ function handleTileChangeRequest(ctx, session, tank) {
       needsFullTileUpdate = true;
     } else if (WEATHER_STUFF_SPECIAL_IDS.has(itemId)) {
       extra = { kind: "weatherStuff", itemId: itemId === 5958 ? 2 : 0, gravity: 50, spin: false, invert: false };
+      needsFullTileUpdate = true;
+    } else if (itemId === 2946) {
+      extra = { kind: "display", itemId: 0 };
+      needsFullTileUpdate = true;
+    } else if (DISPLAY_SHELF_IDS2.has(itemId)) {
+      extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
+      needsFullTileUpdate = true;
+    } else if (DONATION_BOX_IDS.has(itemId)) {
+      extra = { kind: "donation", donates: [] };
+      needsFullTileUpdate = true;
+    } else if (MAILBOX_IDS.has(itemId)) {
+      extra = { kind: "mailbox" };
+      needsFullTileUpdate = true;
+    } else if (BULLETIN_BOARD_IDS.has(itemId)) {
+      extra = { kind: "bulletin" };
+      needsFullTileUpdate = true;
+    } else if (STORAGE_BOX_IDS.has(itemId)) {
+      extra = { kind: "storage" };
+      needsFullTileUpdate = true;
+    } else if (MANNEQUIN_IDS2.has(itemId)) {
+      extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      needsFullTileUpdate = true;
+    } else if (CRYSTAL_IDS.has(itemId)) {
+      extra = { kind: "crystal", crystals: { [itemId]: 1 } };
+      needsFullTileUpdate = true;
+    } else if (AUTO_ACTION_IDS.has(itemId)) {
+      extra = { kind: "autoAction", fuel: 0, targetItemId: 0, enabled: false };
+      needsFullTileUpdate = true;
+    } else if (CAMERA_IDS.has(itemId)) {
+      extra = { kind: "camera" };
+      world.cctvSettings = world.cctvSettings || [];
+      if (!world.cctvSettings.some((c) => c.x === tx && c.y === ty)) {
+        world.cctvSettings.push({
+          x: tx,
+          y: ty,
+          showTaking: false,
+          showDropping: false,
+          showEnter: true,
+          showExit: false,
+          hideOwner: false,
+          hideAdmins: false,
+          hideNoAccess: false,
+          showVend: false
+        });
+      }
       needsFullTileUpdate = true;
     }
     tile.extra = extra;
@@ -37899,6 +40044,14 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
   if (targetId === 2072) {
     world.xenonite = void 0;
     for (const p of world.peers) ctx.sendCharacterState(p);
+  }
+  if (CAMERA_IDS.has(targetId) && world.cctvSettings) {
+    world.cctvSettings = world.cctvSettings.filter((c) => !(c.x === tx && c.y === ty));
+    if (world.cctvLogs) world.cctvLogs = world.cctvLogs.filter((l) => !(l.x === tx && l.y === ty));
+  }
+  if ((MAILBOX_IDS.has(targetId) || BULLETIN_BOARD_IDS.has(targetId)) && world.bulletin) {
+    world.bulletin = world.bulletin.filter((b) => !(b.x === tx && b.y === ty));
+    if (world.bulletinSettings) world.bulletinSettings = world.bulletinSettings.filter((s) => !(s.x === tx && s.y === ty));
   }
   if (tile.fg !== 0) {
     tile.fg = 0;
@@ -38352,6 +40505,469 @@ function patchItemAppearance(input) {
   return result;
 }
 
+// server/client/dye-appearance.ts
+var OP_I32_CONST = 65;
+var OP_I64_CONST = 66;
+var OP_F32_CONST = 67;
+var OP_LOCAL_GET = 32;
+var OP_LOCAL_SET = 33;
+var OP_LOCAL_TEE = 34;
+var OP_GLOBAL_GET = 35;
+var OP_GLOBAL_SET = 36;
+var OP_I32_LOAD = 40;
+var OP_I32_STORE = 54;
+var OP_I64_STORE = 55;
+var OP_I32_EQZ = 69;
+var OP_I32_EQ = 70;
+var OP_I32_LT_U = 73;
+var OP_I32_ADD = 106;
+var OP_I32_MUL = 108;
+var OP_I32_AND = 113;
+var OP_I32_SHR_U = 118;
+var OP_CALL = 16;
+var OP_LOOP = 3;
+var OP_IF = 4;
+var OP_ELSE = 5;
+var OP_BR_IF = 13;
+var OP_END = 11;
+var BLOCK_VOID = 64;
+var BLOCK_I32 = 127;
+function readVarUint(buf, pos) {
+  let value = 0;
+  let shift = 0;
+  while (true) {
+    const byte = buf[pos++];
+    value |= (byte & 127) << shift;
+    if ((byte & 128) === 0) return [value >>> 0, pos];
+    shift += 7;
+  }
+}
+function encodeVarUint(value) {
+  const out = [];
+  let v = value >>> 0;
+  while (true) {
+    const byte = v & 127;
+    v >>>= 7;
+    out.push(v !== 0 ? byte | 128 : byte);
+    if (v === 0) return out;
+  }
+}
+function encodeVarInt(value) {
+  const out = [];
+  let v = value | 0;
+  while (true) {
+    const byte = v & 127;
+    v >>= 7;
+    const done = v === 0 && (byte & 64) === 0 || v === -1 && (byte & 64) !== 0;
+    out.push(done ? byte : byte | 128);
+    if (done) return out;
+  }
+}
+function findSequence(buf, needle) {
+  outer: for (let i = 0; i <= buf.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (buf[i + j] !== needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+function patchGlobalSection(payload) {
+  const [count, afterCount] = readVarUint(payload, 0);
+  const extraGlobal = new Uint8Array([127, 1, OP_I32_CONST, 0, OP_END]);
+  const newCountBytes = encodeVarUint(count + 1);
+  const rest = payload.subarray(afterCount);
+  const out = new Uint8Array(newCountBytes.length + rest.length + extraGlobal.length);
+  out.set(newCountBytes, 0);
+  out.set(rest, newCountBytes.length);
+  out.set(extraGlobal, newCountBytes.length + rest.length);
+  return { next: out, newGlobalIndex: count };
+}
+var DYE_TABLE_BYTES = 8192;
+function encodeDyeSlotAddr(baseExpr, pupilGlobalIdx) {
+  const gIdx = encodeVarUint(pupilGlobalIdx);
+  return [
+    OP_GLOBAL_GET,
+    ...gIdx,
+    ...baseExpr,
+    OP_I32_CONST,
+    4,
+    OP_I32_SHR_U,
+    OP_I32_CONST,
+    ...encodeVarInt(511),
+    OP_I32_AND,
+    OP_I32_CONST,
+    16,
+    OP_I32_MUL,
+    OP_I32_ADD
+  ];
+}
+function build4565Prelude(pupilGlobalIdx) {
+  const gIdx = encodeVarUint(pupilGlobalIdx);
+  const call310 = encodeVarUint(310);
+  const statePtrExpr = [OP_LOCAL_GET, 0, OP_I32_CONST, ...encodeVarInt(516), OP_I32_ADD];
+  return [
+    // if (pkt[44] != 0) *(NetAvatar + 564) = pkt[44]; (hairColor on AvatarPacketRenderer + 48)
+    OP_LOCAL_GET,
+    1,
+    OP_I32_LOAD,
+    2,
+    ...encodeVarUint(44),
+    OP_LOCAL_TEE,
+    2,
+    OP_I32_EQZ,
+    OP_IF,
+    BLOCK_VOID,
+    OP_ELSE,
+    OP_LOCAL_GET,
+    0,
+    OP_LOCAL_GET,
+    2,
+    OP_I32_STORE,
+    2,
+    ...encodeVarUint(564),
+    OP_END,
+    // Lazy-init 8192-byte [statePtr, pupilColor, eyeColor, 0] direct-mapped table in new global
+    OP_GLOBAL_GET,
+    ...gIdx,
+    OP_I32_EQZ,
+    OP_IF,
+    BLOCK_VOID,
+    OP_I32_CONST,
+    ...encodeVarInt(DYE_TABLE_BYTES),
+    OP_CALL,
+    ...call310,
+    OP_LOCAL_TEE,
+    2,
+    OP_GLOBAL_SET,
+    ...gIdx,
+    OP_I32_CONST,
+    0,
+    OP_LOCAL_SET,
+    3,
+    OP_LOOP,
+    BLOCK_VOID,
+    OP_LOCAL_GET,
+    2,
+    OP_LOCAL_GET,
+    3,
+    OP_I32_ADD,
+    OP_I64_CONST,
+    0,
+    OP_I64_STORE,
+    3,
+    0,
+    OP_LOCAL_GET,
+    3,
+    OP_I32_CONST,
+    8,
+    OP_I32_ADD,
+    OP_LOCAL_TEE,
+    3,
+    OP_I32_CONST,
+    ...encodeVarInt(DYE_TABLE_BYTES),
+    OP_I32_LT_U,
+    OP_BR_IF,
+    0,
+    OP_END,
+    OP_END,
+    // local[2] = slotAddr for statePtr = local[0] + 516
+    ...encodeDyeSlotAddr(statePtrExpr, pupilGlobalIdx),
+    OP_LOCAL_TEE,
+    2,
+    ...statePtrExpr,
+    OP_I32_STORE,
+    2,
+    0,
+    // slot[4] = pkt[8] (pupil / lensColor)
+    OP_LOCAL_GET,
+    2,
+    OP_LOCAL_GET,
+    1,
+    OP_I32_LOAD,
+    2,
+    ...encodeVarUint(8),
+    OP_I32_STORE,
+    2,
+    4,
+    // slot[8] = pkt[48] (sclera / eyeDropColor)
+    OP_LOCAL_GET,
+    2,
+    OP_LOCAL_GET,
+    1,
+    OP_I32_LOAD,
+    2,
+    ...encodeVarUint(48),
+    OP_I32_STORE,
+    2,
+    8,
+    // Clear temps before original body runs
+    OP_I32_CONST,
+    0,
+    OP_LOCAL_SET,
+    2,
+    OP_I32_CONST,
+    0,
+    OP_LOCAL_SET,
+    3
+  ];
+}
+function build1942SlotTintExpr(pupilGlobalIdx, slotFieldOffset) {
+  const gIdx = encodeVarUint(pupilGlobalIdx);
+  const call366 = encodeVarUint(366);
+  const slotAddr = encodeDyeSlotAddr([OP_LOCAL_GET, 6], pupilGlobalIdx);
+  return [
+    OP_GLOBAL_GET,
+    ...gIdx,
+    OP_I32_EQZ,
+    OP_IF,
+    BLOCK_I32,
+    OP_LOCAL_GET,
+    3,
+    OP_ELSE,
+    ...slotAddr,
+    OP_I32_LOAD,
+    2,
+    0,
+    OP_LOCAL_GET,
+    6,
+    OP_I32_EQ,
+    OP_IF,
+    BLOCK_I32,
+    ...slotAddr,
+    OP_I32_LOAD,
+    2,
+    ...encodeVarUint(slotFieldOffset),
+    OP_I32_EQZ,
+    OP_IF,
+    BLOCK_I32,
+    OP_LOCAL_GET,
+    3,
+    OP_ELSE,
+    OP_LOCAL_GET,
+    3,
+    ...slotAddr,
+    OP_I32_LOAD,
+    2,
+    ...encodeVarUint(slotFieldOffset),
+    OP_F32_CONST,
+    0,
+    0,
+    128,
+    63,
+    OP_CALL,
+    ...call366,
+    OP_END,
+    OP_ELSE,
+    OP_LOCAL_GET,
+    3,
+    OP_END,
+    OP_END
+  ];
+}
+function patchFunc4565(body, pupilGlobalIdx) {
+  if (body[0] !== 2 || body[1] !== 2 || body[2] !== 127 || body[3] !== 4 || body[4] !== 125) {
+    throw new Error("[dye-appearance] Unexpected Func #4565 locals signature");
+  }
+  const prelude = build4565Prelude(pupilGlobalIdx);
+  const out = new Uint8Array(5 + prelude.length + (body.length - 5));
+  out.set(body.subarray(0, 5), 0);
+  out.set(prelude, 5);
+  out.set(body.subarray(5), 5 + prelude.length);
+  return out;
+}
+function patchFunc1942(body, pupilGlobalIdx) {
+  const scleraSig = [
+    65,
+    4,
+    65,
+    1,
+    32,
+    5,
+    65,
+    216,
+    0,
+    106,
+    32,
+    5,
+    65,
+    208,
+    0,
+    106,
+    65,
+    2,
+    32,
+    3,
+    // <-- offset +18..+19
+    67,
+    0,
+    0,
+    0,
+    0,
+    32,
+    5,
+    65,
+    200,
+    0,
+    106,
+    32,
+    4,
+    65,
+    0,
+    16,
+    194,
+    2
+  ];
+  const sIdx = findSequence(body, scleraSig);
+  if (sIdx < 0) throw new Error("[dye-appearance] Func #1942 sclera pattern not found");
+  const eyeExpr = build1942SlotTintExpr(pupilGlobalIdx, 8);
+  const sTarget = sIdx + 18;
+  const mid = new Uint8Array(body.length - 2 + eyeExpr.length);
+  mid.set(body.subarray(0, sTarget), 0);
+  mid.set(eyeExpr, sTarget);
+  mid.set(body.subarray(sTarget + 2), sTarget + eyeExpr.length);
+  const pupilSig = [
+    65,
+    5,
+    65,
+    1,
+    32,
+    5,
+    65,
+    64,
+    107,
+    32,
+    5,
+    65,
+    56,
+    106,
+    65,
+    2,
+    32,
+    3,
+    // <-- offset +16..+17
+    67,
+    0,
+    0,
+    0,
+    0,
+    32,
+    5,
+    65,
+    48,
+    106,
+    32,
+    4,
+    65,
+    0,
+    16,
+    194,
+    2
+  ];
+  const pIdx = findSequence(mid, pupilSig);
+  if (pIdx < 0) throw new Error("[dye-appearance] Func #1942 pupil pattern not found");
+  const pupilExpr = build1942SlotTintExpr(pupilGlobalIdx, 4);
+  const pTarget = pIdx + 16;
+  const out = new Uint8Array(mid.length - 2 + pupilExpr.length);
+  out.set(mid.subarray(0, pTarget), 0);
+  out.set(pupilExpr, pTarget);
+  out.set(mid.subarray(pTarget + 2), pTarget + pupilExpr.length);
+  return out;
+}
+function countImportedFuncs(importPayload) {
+  let pos = 0;
+  const [count, next] = readVarUint(importPayload, pos);
+  pos = next;
+  let funcs = 0;
+  for (let i = 0; i < count; i++) {
+    const [mLen, p1] = readVarUint(importPayload, pos);
+    pos = p1 + mLen;
+    const [nLen, p2] = readVarUint(importPayload, pos);
+    pos = p2 + nLen;
+    const kind = importPayload[pos++];
+    if (kind === 0) {
+      funcs++;
+      const [, p3] = readVarUint(importPayload, pos);
+      pos = p3;
+    } else if (kind === 1) {
+      pos++;
+      const flags = importPayload[pos++];
+      const [, p3] = readVarUint(importPayload, pos);
+      pos = p3;
+      if (flags & 1) {
+        const [, p4] = readVarUint(importPayload, pos);
+        pos = p4;
+      }
+    } else if (kind === 2) {
+      const flags = importPayload[pos++];
+      const [, p3] = readVarUint(importPayload, pos);
+      pos = p3;
+      if (flags & 1) {
+        const [, p4] = readVarUint(importPayload, pos);
+        pos = p4;
+      }
+    } else if (kind === 3) {
+      pos += 2;
+    }
+  }
+  return funcs;
+}
+function patchDyeAppearance(input) {
+  let pos = 8;
+  let importedFuncs = 308;
+  let pupilGlobalIdx = 12;
+  const sections = [];
+  while (pos < input.length) {
+    const id = input[pos++];
+    const [size, start] = readVarUint(input, pos);
+    const end = start + size;
+    const payload = input.subarray(start, end);
+    pos = end;
+    if (id === 2) {
+      importedFuncs = countImportedFuncs(payload);
+      sections.push({ id, payload });
+    } else if (id === 6) {
+      const { next, newGlobalIndex } = patchGlobalSection(payload);
+      pupilGlobalIdx = newGlobalIndex;
+      sections.push({ id, payload: next });
+    } else if (id === 10) {
+      const [fnCount, bodyStart] = readVarUint(payload, 0);
+      let cur = bodyStart;
+      const bodies = [];
+      for (let i = 0; i < fnCount; i++) {
+        const [bodyLen, bStart] = readVarUint(payload, cur);
+        let body = payload.subarray(bStart, bStart + bodyLen);
+        const fid = importedFuncs + i;
+        if (fid === 1942) {
+          body = patchFunc1942(body, pupilGlobalIdx);
+        } else if (fid === 4565) {
+          body = patchFunc4565(body, pupilGlobalIdx);
+        }
+        bodies.push(body);
+        cur = bStart + bodyLen;
+      }
+      const chunks = [...encodeVarUint(fnCount)];
+      for (const body of bodies) {
+        chunks.push(...encodeVarUint(body.length));
+        for (let j = 0; j < body.length; j++) chunks.push(body[j]);
+      }
+      sections.push({ id, payload: new Uint8Array(chunks) });
+    } else {
+      sections.push({ id, payload });
+    }
+  }
+  const totalBody = [0, 97, 115, 109, 1, 0, 0, 0];
+  for (const sec of sections) {
+    totalBody.push(sec.id, ...encodeVarUint(sec.payload.length));
+    for (let j = 0; j < sec.payload.length; j++) totalBody.push(sec.payload[j]);
+  }
+  const output = new Uint8Array(totalBody);
+  if (!WebAssembly.validate(output)) {
+    throw new Error("[dye-appearance] Patched WASM failed WebAssembly.validate()");
+  }
+  return output;
+}
+
 // server/client/portrait-exports.ts
 var PORTRAIT_EXPORTS = { portraitDraw: 588, portraitResources: 835, portraitApply: 1514, portraitDestroy: 549 };
 function leb3(n) {
@@ -38469,7 +41085,7 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     newBytes.copy(output, offset);
   }
   if (!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
-  return extendChatPortraitExports(patchItemAppearance(hideTickerSetting(output)));
+  return extendChatPortraitExports(Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(output)))));
 }
 
 // server/https/routes.ts

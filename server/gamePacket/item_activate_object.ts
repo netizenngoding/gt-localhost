@@ -1,4 +1,5 @@
 import { recordProgress } from "../progression/service";
+import { logCctvEvent } from "../database/world";
 import { makeItemCollectPacket, makeItemModifyObjectPacket } from "../proton/packet";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -92,5 +93,6 @@ export function handleItemActivateObject(
 
   const collectPkt = makeItemCollectPacket(session.netId, obj.uid);
   for (const p of world.peers) p.peer.sendPacket(0, collectPkt, true);
+  logCctvEvent(world, session, "took", `${taken} ${itemName}`);
   OnConsoleMessage(session, `Collected \`w${taken} ${itemName}\`\`.`);
 }

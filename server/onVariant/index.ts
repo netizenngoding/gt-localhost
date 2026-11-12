@@ -15,3 +15,4 @@ export * from "./RequestWorldSelectMenu";
 export * from "./RequestGazette";
 export * from "./OnSetIconState";
 export * from "./OnEmoticonDataChanged";
+export * from "./OnBillboardChange";

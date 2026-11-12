@@ -91,3 +91,98 @@ export function findCombinerRecipe(
   }
   return null;
 }
+
+export interface CrystalRecipe {
+  requirements: Record<number, number>; // itemId (2242..2250) -> count
+  result: [itemId: number, count: number];
+}
+
+// 44 Crystal Shattering recipes from GTPS3 Base.h:15-59
+const CRYSTAL_RAW: Array<[number, number, number, number, number, number, number]> = [
+  [2, 0, 0, 3, 0, 2254, 1],
+  [1, 1, 0, 3, 0, 2262, 1],
+  [2, 3, 0, 0, 0, 2942, 1],
+  [0, 0, 2, 3, 0, 2258, 1],
+  [0, 1, 1, 3, 0, 2264, 1],
+  [0, 3, 2, 0, 0, 2944, 1],
+  [0, 2, 0, 3, 0, 2256, 1],
+  [1, 0, 1, 3, 0, 2260, 1],
+  [3, 0, 2, 0, 0, 2940, 1],
+  [0, 0, 0, 0, 5, 2212, 1],
+  [2, 0, 2, 1, 0, 2972, 1],
+  [2, 1, 2, 0, 0, 2268, 1],
+  [0, 2, 0, 1, 2, 2266, 1],
+  [2, 0, 0, 0, 3, 2754, 1],
+  [1, 0, 0, 3, 1, 2756, 1],
+  [0, 3, 0, 2, 0, 2706, 1],
+  [1, 1, 1, 0, 2, 3180, 1],
+  [0, 0, 0, 2, 3, 4124, 1],
+  [3, 0, 0, 2, 0, 5268, 1],
+  [3, 1, 0, 1, 0, 5266, 1],
+  [0, 0, 0, 1, 4, 6848, 1],
+  [0, 0, 3, 2, 0, 6820, 1],
+  [0, 2, 3, 0, 0, 2272, 3],
+  [2, 0, 3, 0, 0, 2276, 5],
+  [0, 2, 1, 2, 0, 2252, 1],
+  [3, 0, 1, 1, 0, 2274, 1],
+  [1, 2, 2, 0, 0, 2270, 10],
+  [2, 1, 1, 1, 0, 2590, 5],
+  [2, 1, 1, 1, 0, 2812, 1],
+  [2, 2, 0, 1, 0, 3424, 1],
+  [2, 2, 1, 0, 0, 3770, 3],
+  [3, 2, 0, 0, 0, 3526, 20],
+  [2, 2, 0, 0, 1, 3582, 1],
+  [2, 0, 2, 0, 1, 4762, 1],
+  [2, 1, 0, 2, 0, 5204, 1],
+  [1, 0, 2, 2, 0, 5106, 1],
+  [1, 1, 1, 2, 0, 5104, 1],
+  [1, 2, 1, 1, 0, 5272, 10],
+  [1, 3, 1, 0, 1, 5274, 1],
+  [1, 1, 1, 3, 0, 5270, 1],
+  [1, 3, 1, 0, 0, 5280, 10],
+  [3, 0, 0, 1, 1, 392, 1],
+  [4, 0, 4, 5, 5, 12304, 1],
+];
+
+export const GTPS3_CRYSTAL_RECIPES: CrystalRecipe[] = CRYSTAL_RAW.map(([r, g, b, w, bk, resId, resCnt]) => ({
+  requirements: { 2242: r, 2244: g, 2246: b, 2248: w, 2250: bk },
+  result: [resId, resCnt],
+}));
+
+// Food Grinder recipes from GTPS3 Base.h:1737-1837
+export const GTPS3_GRINDER_RECIPES: Readonly<Record<number, { count: number; prize: number }>> = {
+  326: { count: 30, prize: 4586 },
+  4422: { count: 20, prize: 4610 },
+  2564: { count: 20, prize: 4610 },
+  2566: { count: 20, prize: 4610 },
+  5372: { count: 20, prize: 4610 },
+  6956: { count: 1, prize: 6958 },
+  6972: { count: 5, prize: 6974 },
+  7002: { count: 12, prize: 7004 },
+  7050: { count: 20, prize: 7054 },
+  4668: { count: 50, prize: 4670 },
+  7012: { count: 1, prize: 7014 },
+  440: { count: 100, prize: 6314 },
+  880: { count: 50, prize: 4562 },
+  5348: { count: 100, prize: 5416 },
+  5350: { count: 100, prize: 5416 },
+  5352: { count: 100, prize: 5416 },
+  5354: { count: 100, prize: 5416 },
+  4578: { count: 1, prize: 4580 },
+  7460: { count: 25, prize: 7462 },
+  192: { count: 50, prize: 4564 },
+  1004: { count: 50, prize: 4564 },
+  4982: { count: 100, prize: 4984 },
+  4584: { count: 100, prize: 4570 },
+  712: { count: 1, prize: 4570 },
+  960: { count: 1, prize: 4570 },
+  2734: { count: 50, prize: 4764 },
+  6988: { count: 10, prize: 6990 },
+  4566: { count: 100, prize: 4568 },
+  6998: { count: 2, prize: 7000 },
+  3404: { count: 20, prize: 4572 },
+  3836: { count: 20, prize: 4572 },
+  3406: { count: 10, prize: 4572 },
+  954: { count: 100, prize: 4572 },
+  10268: { count: 3, prize: 10272 },
+};

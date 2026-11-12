@@ -1,5 +1,6 @@
 import { hideTickerSetting } from "./hide-ticker-setting";
 import { patchItemAppearance } from "./item-appearance";
+import { patchDyeAppearance } from "./dye-appearance";
 import { extendChatPortraitExports } from "./portrait-exports";
 import crypto from "node:crypto";
 // Exact audited client. Never apply offsets to an unrecognized upstream revision.
@@ -79,5 +80,5 @@ export function patchClient(input:Buffer,hideWarning:boolean, autofillLabel = "A
    newBytes.copy(output, offset);
  }
  if(!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
- return extendChatPortraitExports(patchItemAppearance(hideTickerSetting(output)));
+ return extendChatPortraitExports(Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(output)))));
 }

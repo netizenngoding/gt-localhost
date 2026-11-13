@@ -18,7 +18,8 @@ const GEM_ITEM_ID = 112;
 export function handleItemActivateObject(
   ctx: ServerContext,
   session: PlayerSession,
-  uid: number
+  uid: number,
+  forceDistance = false
 ): void {
   const world = session.world;
   if (!world) return;
@@ -27,7 +28,7 @@ export function handleItemActivateObject(
   if (idx === -1) return;
   const obj = world.objects[idx];
 
-  if (Math.hypot(session.x - obj.x, session.y - obj.y) > 160) return;
+  if (!forceDistance && Math.hypot(session.x - obj.x, session.y - obj.y) > 160) return;
 
   // 1. Gems pickup
   if (obj.itemId === GEM_ITEM_ID) {

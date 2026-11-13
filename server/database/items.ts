@@ -543,3 +543,45 @@ export class ItemDatabase {
     return results;
   }
 }
+
+export const ITEM_FLAG_MULTI_FACING = 0x0001;
+export const ITEM_FLAG_WRENCHABLE   = 0x0002;
+export const ITEM_FLAG_PERMANENT    = 0x0004;
+export const ITEM_FLAG_DROPLESS     = 0x0008;
+export const ITEM_FLAG_NO_SEED      = 0x0010;
+export const ITEM_FLAG_NO_SELF      = 0x0020;
+export const ITEM_FLAG_NO_SHADOW    = 0x0040;
+export const ITEM_FLAG_WORLD_LOCK   = 0x0080;
+export const ITEM_FLAG_BETA         = 0x0100;
+export const ITEM_FLAG_AUTO_PICKUP  = 0x0200;
+export const ITEM_FLAG_MOD          = 0x0400;
+export const ITEM_FLAG_RANDOM_GROW  = 0x0800;
+export const ITEM_FLAG_PUBLIC       = 0x1000;
+export const ITEM_FLAG_FOREGROUND   = 0x2000;
+export const ITEM_FLAG_HOLIDAY      = 0x4000;
+export const ITEM_FLAG_UNTRADABLE   = 0x8000;
+
+export function isUntradeable(def?: ItemDef): boolean {
+  if (!def) return false;
+  return (
+    def.id === 18 || // Fist
+    def.id === 32 || // Wrench
+    def.id === 1424 || // World Key / Phone Booth
+    def.id === 5816 || // Growpass
+    def.id === 6336 ||
+    def.id === 8430 ||
+    def.id === 11550 || // Blood Dragon Lock
+    (def.flags & ITEM_FLAG_UNTRADABLE) !== 0
+  );
+}
+
+export function isUndestroyable(def?: ItemDef): boolean {
+  if (!def) return false;
+  return (
+    def.id === 18 || // Fist
+    def.id === 32 || // Wrench
+    def.id === 6336 ||
+    (def.flags & ITEM_FLAG_PERMANENT) !== 0 ||
+    (def.flags & ITEM_FLAG_UNTRADABLE) !== 0
+  );
+}

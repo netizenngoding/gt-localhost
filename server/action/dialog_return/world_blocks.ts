@@ -1,5 +1,5 @@
 import type { ServerContext } from "../../database/context";
-import type { ItemDef } from "../../database/items";
+import { type ItemDef, isUntradeable } from "../../database/items";
 import type { PlayerSession } from "../../database/peer";
 import { GTPS3_CRYSTAL_RECIPES, GTPS3_GRINDER_RECIPES } from "../../database/recipes";
 import { canModifyWorldTile, getWorldLockTile, spawnOrMergeWorldDrop, type WorldInstance } from "../../database/world";
@@ -33,7 +33,7 @@ export const BULLETIN_BOARD_IDS = new Set([658, 3524]);
 export const STORAGE_BOX_IDS = new Set([4516, 6286, 6288, 6290, 8878]);
 export const CAMERA_IDS = new Set([1436, 8246, 10258]);
 export const BOOMBOX_IDS = new Set([62, 2282]);
-export const MANNEQUIN_IDS = new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+export const MANNEQUIN_IDS = new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13000]);
 export const AUTO_ACTION_IDS = new Set([6950, 6952]);
 export const GRINDER_IDS = new Set([4582, 12196]);
 export const CRYSTAL_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
@@ -42,19 +42,6 @@ function getStorageBoxCapacity(itemId: number): number {
   if (itemId === 6288) return 40;
   if (itemId === 6290) return 90;
   return 20;
-}
-
-function isUntradeable(def?: ItemDef): boolean {
-  return (
-    !def ||
-    def.id === 18 ||
-    def.id === 32 ||
-    def.id === 1424 ||
-    def.id === 5816 ||
-    def.id === 6336 ||
-    def.id === 8430 ||
-    (def.flags & 0x0010) !== 0
-  );
 }
 
 function broadcastTileUpdate(world: WorldInstance, tx: number, ty: number, tile: WorldTile): void {
@@ -143,10 +130,6 @@ export function useItemOnDisplayBlock(
     return true;
   }
   const def = ctx.itemsDb.get(itemId);
-  if (isUntradeable(def)) {
-    OnTalkBubble(session, session.netId, "You can't display untradeable items!", 0, true);
-    return true;
-  }
   if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
   tile.extra = { kind: "display", itemId };
   ctx.dirty = true;
@@ -685,10 +668,6 @@ export function useClothingOnMannequin(
     OnTalkBubble(session, session.netId, `\`5[\`2That would just be weird.  Try putting clothes on your ${fgName} instead!\`\`]\`\``, 0, false);
     return true;
   }
-  if (isUntradeable(def)) {
-    OnTalkBubble(session, session.netId, `\`5[\`2You cannot place ${cleanName(def)} on ${fgName}!\`\`]\`\``, 0, false);
-    return true;
-  }
   const field = mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType);
   if (!field) {
     OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to place ${cleanName(def)} on ${fgName}!\`\`]\`\``, 0, false);
@@ -989,10 +968,6 @@ export function handleWorldBlockDialogReturn(
       const newId = Number.parseInt(kv[pickerKey], 10);
       if (!Number.isSafeInteger(newId) || newId <= 0) continue;
       const def = ctx.itemsDb.get(newId);
-      if (isUntradeable(def)) {
-        OnTalkBubble(session, session.netId, "You can't display untradeable items.", 0, false);
-        return true;
-      }
       if (ex[field] !== 0) {
         if (ctx.giveInventoryItem(session, ex[field], 1, true) > 0) {
           OnConsoleMessage(session, `Picked up 1 ${cleanName(ctx.itemsDb.get(ex[field]))}.`);
@@ -1365,7 +1340,7 @@ export function handleWorldBlockDialogReturn(
       const putId = Number.parseInt(kv.put, 10);
       const def = ctx.itemsDb.get(putId);
       const field = def ? mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType) : null;
-      if (!def || !def.isClothing || isUntradeable(def) || !field || mq[field] === putId) return true;
+      if (!def || !def.isClothing || !field || mq[field] === putId) return true;
       const oldId = mq[field];
       if (oldId !== 0 && (!hasInvRoom(session, oldId, 1) || ctx.giveInventoryItem(session, oldId, 1, true) === 0)) {
         OnTalkBubble(session, session.netId, "`5[`2You don't have inventory space!``]``", 0, false);

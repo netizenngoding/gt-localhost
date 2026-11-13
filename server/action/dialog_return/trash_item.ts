@@ -2,7 +2,8 @@ import { isSuperSupporter, recordProgress } from "../../progression/service";
 import { recycleValue } from "../../progression/recycling";
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
-import { OnConsoleMessage, OnSetBux } from "../../onVariant";
+import { isUndestroyable } from "../../database/items";
+import { OnConsoleMessage, OnPlayPositioned, OnSetBux, OnTextOverlay } from "../../onVariant";
 import { stripGtColors } from "../../tools/string";
 
 /**
@@ -23,12 +24,17 @@ export function handleTrashItemReturn(
     return;
   }
 
+  const definition = ctx.itemsDb.get(itemId);
+  if (!definition || isUndestroyable(definition)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You'd be sorry if you lost that!");
+    return;
+  }
+
   const amt = Math.min(200, rawAmt);
   const slot = session.account.inventory.find((s) => s.itemId === itemId);
   if (!slot || slot.count < amt) return;
 
-  const definition = ctx.itemsDb.get(itemId);
-  if (!definition || (definition.flags & 0x80) !== 0) return;
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
 
   const reward = isSuperSupporter(session.account) ? recycleValue(itemId, amt) : 0;

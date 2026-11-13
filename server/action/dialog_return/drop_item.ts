@@ -1,5 +1,6 @@
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
+import { isUntradeable } from "../../database/items";
 import { logCctvEvent, spawnOrMergeWorldDrop } from "../../database/world";
 import { OnPlayPositioned, OnTextOverlay } from "../../onVariant";
 import { stripGtColors } from "../../tools/string";
@@ -26,6 +27,13 @@ export function handleDropItemReturn(
     return;
   }
 
+  const def = ctx.itemsDb.get(itemId);
+  if (!def || isUntradeable(def)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You can't drop that.");
+    return;
+  }
+
   const amt = Math.min(200, rawAmt);
   const slot = session.account.inventory.find((s) => s.itemId === itemId);
   if (!slot || slot.count < amt) {
@@ -42,10 +50,22 @@ export function handleDropItemReturn(
   );
   const targetTile = world.tiles[playerTileY * world.width + targetTileX];
   const targetFgDef = targetTile && targetTile.fg ? ctx.itemsDb.get(targetTile.fg) : undefined;
-  if (targetFgDef && targetFgDef.collisionType === 1) {
-    OnPlayPositioned(session, "audio/punch_locked.wav");
-    OnTextOverlay(session, "You can't drop that here, face somewhere with open space.");
-    return;
+  if (targetFgDef) {
+    const isSolid = targetFgDef.collisionType === 1;
+    const isWhiteDoor = targetTile.fg === 6 || targetFgDef.actionType === 13;
+    const isEntrance = targetFgDef.isDoor || targetFgDef.actionType === 2 || targetFgDef.actionType === 13;
+    const isClosedToggle = targetFgDef.actionType === 21 && (targetTile.flags & 0x0040) === 0;
+
+    if (isSolid || isWhiteDoor || isEntrance || isClosedToggle) {
+      OnPlayPositioned(session, "audio/punch_locked.wav");
+      OnTextOverlay(
+        session,
+        isWhiteDoor
+          ? "You can't drop items on the white door."
+          : "You can't drop that here, face somewhere with open space."
+      );
+      return;
+    }
   }
 
   const dropX = targetTileX * 32 + 6;

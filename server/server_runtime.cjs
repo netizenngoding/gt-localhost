@@ -27150,6 +27150,21 @@ var MODS = [
     "effect": 0,
     "text": "",
     "speed": 420
+  },
+  // GTPS3 World.h:83 playmod 13 (Megaphone!): broadcast cooldown, 300s in practice.
+  {
+    id: "gtps3-megaphone",
+    item: 2480,
+    title: "Megaphone!",
+    seconds: 600,
+    flags: 0,
+    onAdd: "Broadcasting to ALL!",
+    onRemove: "You can broadcast once again.",
+    icon: 2480,
+    sound: "",
+    action: "",
+    effect: 0,
+    text: ""
   }
 ];
 var SIMPLE_FOODS = [
@@ -27646,13 +27661,16 @@ var LOCK_FALLBACK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 242, 1796, 4994,
 var DONATION_MAILBOX_IDS = /* @__PURE__ */ new Set([656, 1006, 1452, 10784]);
 var BULLETIN_STORAGE_IDS = /* @__PURE__ */ new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
 var DISPLAY_SHELF_IDS = /* @__PURE__ */ new Set([3794, 10190, 10552]);
-var MANNEQUIN_IDS = /* @__PURE__ */ new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+var MANNEQUIN_IDS = /* @__PURE__ */ new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13e3]);
 var CRYSTAL_BLOCK_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
+var PORTRAIT_IDS = /* @__PURE__ */ new Set([3818, 11196, 15950]);
+var PAINTING_EASEL_IDS = /* @__PURE__ */ new Set([3528]);
 function serializeSingleTile(tile, nowMs) {
   let flags = tile.flags & ~(TILE_FLAG_HAS_EXTRA | TILE_FLAG_SEED | TILE_FLAG_HAS_WLS);
   let extraBuf = null;
   let omitExtraFlag = false;
-  if (tile.extra) {
+  const badWeatherExtra = tile.extra?.kind === "weatherBg" && tile.fg !== 3694 && tile.fg !== 5e3 || tile.extra?.kind === "weatherStuff" && tile.fg !== 3832;
+  if (tile.extra && !badWeatherExtra) {
     if (tile.extra.kind === "door") {
       const lb = Buffer.from(tile.extra.label, "utf8");
       extraBuf = Buffer.allocUnsafe(1 + 2 + lb.length + 1);
@@ -27853,6 +27871,12 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf = Buffer.alloc(7);
       extraBuf[0] = 2;
       extraBuf.writeInt32LE(-1, 3);
+    } else if (PORTRAIT_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(25);
+      extraBuf[0] = 48;
+    } else if (PAINTING_EASEL_IDS.has(tile.fg)) {
+      extraBuf = Buffer.alloc(7);
+      extraBuf[0] = 35;
     }
   }
   if (extraBuf && !omitExtraFlag) {
@@ -31898,7 +31922,7 @@ function recomputeWorldWeather(world, itemsDb) {
   return nextWeather;
 }
 function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -1) {
-  if (totalCount <= 0 || itemId <= 0) return;
+  if (totalCount <= 0 || itemId <= 0) return void 0;
   if (itemId !== 112) {
     for (let ty = 0; ty < world.height; ty++) {
       for (let tx = 0; tx < world.width; tx++) {
@@ -31944,11 +31968,12 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
         for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
       }
     }
-    return;
+    return void 0;
   }
   let remaining = Math.floor(totalCount);
   const dropTileX = Math.floor((x + 8) / 32);
   const dropTileY = Math.floor((y + 8) / 32);
+  let lastAffected;
   for (const existing of world.objects) {
     if (remaining <= 0) break;
     if (existing.itemId !== itemId || existing.count >= 200) continue;
@@ -31960,6 +31985,7 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
     const addable = Math.min(remaining, 200 - existing.count);
     existing.count += addable;
     remaining -= addable;
+    lastAffected = existing;
     const modPkt = makeItemModifyObjectPacket(
       existing.uid,
       existing.itemId,
@@ -31974,10 +32000,13 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
     const chunk = Math.min(200, remaining);
     remaining -= chunk;
     const uid = ++world.lastObjectUid;
-    world.objects.push({ uid, itemId, x, y, count: chunk, flags: 0 });
+    const obj = { uid, itemId, x, y, count: chunk, flags: 0 };
+    world.objects.push(obj);
+    lastAffected = obj;
     const dropPkt = makeItemDropPacket(itemId, chunk, x, y, 0, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
+  return lastAffected;
 }
 
 // server/playmods/consume-audio.ts
@@ -33380,14 +33409,34 @@ var ItemDatabase = class _ItemDatabase {
       if (results.includes(item)) continue;
       if (!item.name || item.name.startsWith("null_") || item.name.includes("REVOKED")) continue;
       if (excludeSeeds && item.isSeed) continue;
-      const cleanName3 = item.name.replace(/`.|``/g, "").toLowerCase();
-      if (cleanName3.includes(q)) {
+      const cleanName4 = item.name.replace(/`.|``/g, "").toLowerCase();
+      if (cleanName4.includes(q)) {
         results.push(item);
       }
     }
     return results;
   }
 };
+var ITEM_FLAG_PERMANENT = 4;
+var ITEM_FLAG_DROPLESS = 8;
+var ITEM_FLAG_NO_SEED = 16;
+var ITEM_FLAG_AUTO_PICKUP = 512;
+var ITEM_FLAG_UNTRADABLE = 32768;
+function isUntradeable(def) {
+  if (!def) return false;
+  return def.id === 18 || // Fist
+  def.id === 32 || // Wrench
+  def.id === 1424 || // World Key / Phone Booth
+  def.id === 5816 || // Growpass
+  def.id === 6336 || def.id === 8430 || def.id === 11550 || // Blood Dragon Lock
+  (def.flags & ITEM_FLAG_UNTRADABLE) !== 0;
+}
+function isUndestroyable(def) {
+  if (!def) return false;
+  return def.id === 18 || // Fist
+  def.id === 32 || // Wrench
+  def.id === 6336 || (def.flags & ITEM_FLAG_PERMANENT) !== 0 || (def.flags & ITEM_FLAG_UNTRADABLE) !== 0;
+}
 
 // server/eventType/connect.ts
 function onPeerConnect(peer) {
@@ -33503,6 +33552,163 @@ function handleBuy(ctx, session, itemIdOrKey) {
   result(`Purchased ${product.name} for ${price} Gems.`);
 }
 
+// server/commands/broadcast.ts
+var MEGAPHONE_ID = "gtps3-megaphone";
+var MEGAPHONE_COOLDOWN_MS = 3e5;
+var GROWTOKEN = 1486;
+var lastSbWorld = "";
+var lastSdbWorld = "";
+var setGems = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+var isStaff = (s) => hasPermission(s.account, "moderate") || hasPermission(s.account, "debug");
+function sendSfx(s, file) {
+  s.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|play_sfx
+file|${file}
+delayMS|0`), true);
+}
+function megaphoneLeft(s) {
+  const mod = (s.account.playmods || []).find((m) => m.id === MEGAPHONE_ID && m.expiresAt > Date.now());
+  return mod ? Math.max(0, Math.ceil((mod.expiresAt - Date.now()) / 1e3)) : 0;
+}
+function addMegaphone(ctx, s) {
+  s.account.playmods ??= [];
+  s.account.playmods = s.account.playmods.filter((m) => m.id !== MEGAPHONE_ID);
+  s.account.playmods.push({ id: MEGAPHONE_ID, expiresAt: Date.now() + MEGAPHONE_COOLDOWN_MS });
+  ctx.dirty = true;
+  sendSfx(s, "audio/dialog_confirm.wav");
+  OnConsoleMessage(s, "Broadcasting to ALL! (`$Megaphone!`` mod added)");
+}
+function cooldownMessage(s) {
+  s.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|log
+msg|>> (${gtps3PlaymodTime(megaphoneLeft(s))}before you can broadcast again)
+`), true);
+}
+function sendUsageLog(s, msg) {
+  s.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|log
+msg|${msg}
+`), true);
+}
+function broadcastTo(ctx, packetFor, limit = Infinity) {
+  let sent = 0;
+  for (const p of ctx.sessions) {
+    if (p.radio) continue;
+    if (sent > limit) continue;
+    sent++;
+    packetFor(p);
+  }
+}
+var SDB_DIALOG = "set_default_color|`o\nadd_label_with_icon|big|`2Super Duper Broadcast|left|660|\nadd_textbox|Super Duper Broadcasts pop up a box with your message on every player's screen. The box even includes a button to visit your world! It costs 100 Growtokens to send.|left|\nadd_spacer|small|\nadd_smalltext|Enter up to 3 lines of text!|left|\nadd_text_input|sdb_1|||128|\nadd_text_input|sdb_2|||128|\nadd_text_input|sdb_3|||128||\nadd_spacer|small|\nend_dialog|sdbsend|Cancel|Send|";
+function handleBroadcastCommand(ctx, session, cmd, argStr) {
+  if (cmd === "broadcast" || cmd === "bc" || cmd === "sb") {
+    const isSb = cmd === "sb";
+    if (!argStr) {
+      if (isSb) {
+        const online = ctx.sessions.size;
+        sendUsageLog(session, `>> This lets you send a message to ${setGems(online)}\`\` random users online and make an annoying beep noise.  Costs \`$${setGems(online * 5)} Gems\`\` to use. Example:\`\` \`w/sb Hey guys, come to my world!`);
+      } else {
+        sendUsageLog(session, ">> This lets you send a message to `5100`` random users online.  Costs `$500 Gems`` to use.  Example:`` `w/broadcast Hey guys, come to my world!");
+      }
+      return true;
+    }
+    if (progression(session.account).level < 20) {
+      OnConsoleMessage(session, " >> You must be level 20 to broadcast!");
+      return true;
+    }
+    if (megaphoneLeft(session) > 0) {
+      cooldownMessage(session);
+      return true;
+    }
+    const cost = isSb ? ctx.sessions.size * 5 : 500;
+    if ((session.account.gems || 0) < cost) {
+      OnConsoleMessage(session, `>> You don't have \`$${setGems(cost)} Gems\`\`, you can't broadcast a message!`);
+      return true;
+    }
+    session.account.gems -= cost;
+    OnSetBux(session);
+    addMegaphone(ctx, session);
+    OnConsoleMessage(
+      session,
+      `\`#${isSb ? "Super-" : ""}Broadcast sent. Used \`$${setGems(cost)} Gems\`\`. (\`$${setGems(session.account.gems)}\`\` left)\`\` (5 mins before you can broadcast again)`
+    );
+    const text = sanitizeChatText(argStr, 120);
+    const jammed = false;
+    const worldName = session.world?.name || "EXIT";
+    if (!jammed && session.world) lastSbWorld = session.world.name;
+    const color = isStaff(session) ? "`^" : "`$";
+    const where = jammed ? "`4JAMMED!``" : worldName;
+    const who = displayName(session);
+    const line = isSb ? `CP:_PL:0_OID:_CT:[SB]_ \`5** from (\`0${who}\`\`\`5) in [\`\`\`$${where}\`\`\`5] ** : \`\`${color}${text}\`\`` : `CP:_PL:0_OID:_CT:[BC]_ \`p** from (\`0${who}\`\`\`p) in [\`\`\`$${where}\`\`\`p] ** : \`\`${color}${text}\`\``;
+    broadcastTo(ctx, (p) => OnConsoleMessage(p, line), isSb ? Infinity : 100);
+    ctx.dirty = true;
+    return true;
+  }
+  if (cmd === "cb") {
+    OnConsoleMessage(session, "`5/cb`` allows you to broadcast to a specific # of people.  Usage: `5/cb <people to hit> <message>``.  It will max out at the current people online.  `5/cb <person count>`` with no other parms will show the cost to send to that many people.");
+    return true;
+  }
+  if (cmd === "sdb") {
+    OnDialogRequest(session, SDB_DIALOG);
+    return true;
+  }
+  if (cmd === "radio") {
+    session.radio = !session.radio;
+    OnConsoleMessage(
+      session,
+      session.radio ? "Radio disabled, `4you now won't see`` public broadcasts." : "Radio enabled, `2you can now see`` public broadcasts."
+    );
+    return true;
+  }
+  if (cmd === "go") {
+    if (!lastSbWorld || session.world && lastSbWorld === session.world.name) {
+      OnTextOverlay(session, "Unable to track down the location of the last broadcast!");
+      return true;
+    }
+    OnTextOverlay(session, `Moving to location of the last broadcast (\`2${lastSbWorld}\`\`) ...`);
+    sendSfx(session, "audio/object_spawn.wav");
+    ctx.joinWorld(session, lastSbWorld);
+    return true;
+  }
+  return false;
+}
+function handleSdbDialogReturn(ctx, session, dlg, kv) {
+  if (dlg === "sdbrespond") {
+    if (lastSdbWorld) ctx.joinWorld(session, lastSdbWorld);
+    return true;
+  }
+  if (dlg !== "sdbsend") return false;
+  const lines = [1, 2, 3].map((i) => sanitizeChatText(kv[`sdb_${i}`] || "", 128).replace(/[\n\r]/g, " "));
+  if (!lines.some((l) => l)) {
+    OnTalkBubble(session, session.netId, "`5[`2I'm not wasting Growtokens on an empty broadcast!``]``", 0);
+    return true;
+  }
+  if (megaphoneLeft(session) > 0) {
+    cooldownMessage(session);
+    return true;
+  }
+  if (!session.world) return true;
+  if (!ctx.consumeInventoryItem(session, GROWTOKEN, 100)) return true;
+  addMegaphone(ctx, session);
+  const jammed = false;
+  const who = displayName(session);
+  const pkt = makeVariantPacket([
+    "OnSDBroadcast",
+    `${who}
+${jammed ? "`4JAMMED!``" : session.world.name}
+${lines[0]}
+${lines[1]}
+${lines[2]}`,
+    { type: "i32", value: jammed ? 0 : 1 }
+  ]);
+  if (!jammed) {
+    lastSdbWorld = session.world.name;
+    lastSbWorld = session.world.name;
+  }
+  for (const p of ctx.sessions) {
+    if (p.radio || !p.world) continue;
+    p.peer.sendPacket(0, pkt, true);
+  }
+  return true;
+}
+
 // server/action/dialog_return/drop_item.ts
 function handleDropItemReturn(ctx, session, kv) {
   const world = session.world;
@@ -33511,6 +33717,12 @@ function handleDropItemReturn(ctx, session, kv) {
   const itemId = parseInt((kv.itemID || "0").trim(), 10);
   const rawAmt = parseInt((kv.drop_count || "").trim(), 10);
   if (!itemId || itemId === 18 || itemId === 32 || !Number.isFinite(rawAmt) || rawAmt <= 0) {
+    return;
+  }
+  const def = ctx.itemsDb.get(itemId);
+  if (!def || isUntradeable(def)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You can't drop that.");
     return;
   }
   const amt = Math.min(200, rawAmt);
@@ -33527,10 +33739,19 @@ function handleDropItemReturn(ctx, session, kv) {
   );
   const targetTile = world.tiles[playerTileY * world.width + targetTileX];
   const targetFgDef = targetTile && targetTile.fg ? ctx.itemsDb.get(targetTile.fg) : void 0;
-  if (targetFgDef && targetFgDef.collisionType === 1) {
-    OnPlayPositioned(session, "audio/punch_locked.wav");
-    OnTextOverlay(session, "You can't drop that here, face somewhere with open space.");
-    return;
+  if (targetFgDef) {
+    const isSolid = targetFgDef.collisionType === 1;
+    const isWhiteDoor = targetTile.fg === 6 || targetFgDef.actionType === 13;
+    const isEntrance = targetFgDef.isDoor || targetFgDef.actionType === 2 || targetFgDef.actionType === 13;
+    const isClosedToggle = targetFgDef.actionType === 21 && (targetTile.flags & 64) === 0;
+    if (isSolid || isWhiteDoor || isEntrance || isClosedToggle) {
+      OnPlayPositioned(session, "audio/punch_locked.wav");
+      OnTextOverlay(
+        session,
+        isWhiteDoor ? "You can't drop items on the white door." : "You can't drop that here, face somewhere with open space."
+      );
+      return;
+    }
   }
   const dropX = targetTileX * 32 + 6;
   const dropY = playerTileY * 32 + 6;
@@ -33562,13 +33783,50 @@ var DEFAULT_FIND_SHOWCASE = [
   12,
   20
 ];
+var PAGE_SIZE = 32;
+var UNOBTAINABLE_IDS = /* @__PURE__ */ new Set([0, 6, 8]);
+function cleanName2(name) {
+  return stripGtColors(name).replace(/[|\r\n]/g, " ").replace(/\s+/g, " ").trim();
+}
+function isFindable(def) {
+  if (def.id <= 0 || UNOBTAINABLE_IDS.has(def.id)) return false;
+  const n = cleanName2(def.name || "");
+  if (!n) return false;
+  const l = n.toLowerCase();
+  if (l.startsWith("null_") || l === "null" || l.includes("revoked") || l === "blank") return false;
+  return true;
+}
+function smartSearch(ctx, query) {
+  const q = cleanName2(query).toLowerCase();
+  if (!q) return [];
+  const tokens = q.split(" ").filter(Boolean);
+  const scored = [];
+  const idQuery = /^\d+$/.test(q) ? Number(q) : -1;
+  for (const def of ctx.itemsDb.items.values()) {
+    if (!isFindable(def)) continue;
+    const name = cleanName2(def.name).toLowerCase();
+    let score = -1;
+    if (def.id === idQuery) score = 0;
+    else if (name === q) score = 1;
+    else if (tokens.every((t) => name.includes(t))) {
+      const words = name.split(" ");
+      if (name.startsWith(q)) score = 2;
+      else if (tokens.every((t) => words.some((w) => w.startsWith(t)))) score = 3;
+      else score = 4;
+    }
+    if (score >= 0) scored.push({ def, score });
+  }
+  scored.sort((a, b) => a.score - b.score || a.def.name.length - b.def.name.length || a.def.id - b.def.id);
+  return scored.map((s) => s.def);
+}
 function openItemFinderDialog(ctx, session, query, page = 0) {
   const q = query.trim();
   session.lastItemSearchQuery = q;
   session.lastFindItemIds = [];
-  page = Math.max(0, Math.min(500, Math.floor(page)));
-  const allMatches = q ? ctx.itemsDb.search(q, ctx.itemsDb.items.size) : DEFAULT_FIND_SHOWCASE.map((id) => ctx.itemsDb.get(id)).filter((d) => d !== void 0);
-  const matches = allMatches.slice(page * 32, (page + 1) * 32 + 1);
+  const allMatches = q ? smartSearch(ctx, q) : DEFAULT_FIND_SHOWCASE.map((id) => ctx.itemsDb.get(id)).filter((d) => d !== void 0 && isFindable(d));
+  const lastPage = Math.max(0, Math.ceil(allMatches.length / PAGE_SIZE) - 1);
+  page = Math.max(0, Math.min(lastPage, Math.floor(Number.isFinite(page) ? page : 0)));
+  const matches = allMatches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE + 1);
   const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wFound \`2${allMatches.length} items\`\``, 6016).addTextbox("Select items below.").addTextInput("search_q", "Item name or ID:", q.replace(/\|/g, ""), 40).addSpacer("small");
   if (matches.length > 0) {
     session.lastFindItemIds = matches.slice(0, 32).map((m) => m.id);
@@ -33581,7 +33839,7 @@ function openItemFinderDialog(ctx, session, query, page = 0) {
     if (page > 0) dlg.addButton(`findpage_${page - 1}`, "Previous");
     if (matches.length > 32) dlg.addButton(`findpage_${page + 1}`, "Next");
   } else {
-    dlg.addTextbox("`4No matching items found. Try another keyword!``");
+    dlg.addTextbox(`\`4No matching items found for \`w${q.replace(/[|\r\n`]/g, "")}\`4. Try another name or an item ID!\`\``);
   }
   dlg.addQuickExit();
   OnDialogRequest(session, dlg.endDialog("item_finder", "Close", "Search"));
@@ -33609,7 +33867,7 @@ function handleFindItemDialogReturn(ctx, session, kv) {
     session.lastFindItemIds = [];
     for (const id of ids) {
       const def = ctx.itemsDb.get(id);
-      if (!def || def.name.startsWith("null_")) continue;
+      if (!def || !isFindable(def)) continue;
       const added = ctx.giveInventoryItem(session, id, def.isClothing || def.isLock ? 1 : 50, true);
       if (added > 0) OnConsoleMessage(session, `Claimed ${added}x ${stripGtColors(def.name)} (#${id}).`);
       else OnConsoleMessage(session, `Could not claim ${stripGtColors(def.name)}: backpack or stack full.`);
@@ -33661,12 +33919,12 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     OnConsoleMessage(session, "`4This account already has a GrowID.``");
     return;
   }
-  const cleanName3 = sanitizeAccountName(rawName, 18);
-  if (rawName !== cleanName3 || cleanName3.length < 3 || cleanName3.length > 18) {
+  const cleanName4 = sanitizeAccountName(rawName, 18);
+  if (rawName !== cleanName4 || cleanName4.length < 3 || cleanName4.length > 18) {
     showGrowIdApplyModal(
       session,
       "GrowID name must be between 3 and 18 letters/numbers!",
-      cleanName3
+      cleanName4
     );
     return;
   }
@@ -33674,7 +33932,7 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     showGrowIdApplyModal(
       session,
       "Password must be between 8 and 18 characters!",
-      cleanName3
+      cleanName4
     );
     return;
   }
@@ -33682,17 +33940,17 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
     showGrowIdApplyModal(
       session,
       "Passwords do not match! Please re-enter both password fields.",
-      cleanName3
+      cleanName4
     );
     return;
   }
-  const lowerTarget = cleanName3.toLowerCase();
+  const lowerTarget = cleanName4.toLowerCase();
   const existing = ctx.accounts.get(lowerTarget);
   if (existing && existing.userId !== session.account.userId) {
     showGrowIdApplyModal(
       session,
-      `Sorry, the GrowID \`w${cleanName3}\`4 is already taken! Try another name.`,
-      cleanName3
+      `Sorry, the GrowID \`w${cleanName4}\`4 is already taken! Try another name.`,
+      cleanName4
     );
     return;
   }
@@ -33703,19 +33961,19 @@ function applyGrowIdUpgrade(ctx, session, rawName, rawPass, rawPassVerify) {
   if (session.account.deviceKey) {
     ctx.accountsByDevice.delete(session.account.deviceKey);
   }
-  session.account.name = cleanName3;
-  session.account.growId = cleanName3;
+  session.account.name = cleanName4;
+  session.account.growId = cleanName4;
   session.account.isGuest = false;
   session.account.passwordHash = hashPassword(rawPass);
   ctx.ranks.apply(session.account);
   ctx.accounts.set(lowerTarget, session.account);
   ctx.savePlayersNow();
-  SetHasGrowID(session, true, cleanName3, rawPass);
+  SetHasGrowID(session, true, cleanName4, rawPass);
   OnPlayPositioned(session, "audio/piano_nice.wav");
-  OnTextOverlay(session, `\`2GrowID \`w${cleanName3}\`2 Created!\`\``);
+  OnTextOverlay(session, `\`2GrowID \`w${cleanName4}\`2 Created!\`\``);
   OnConsoleMessage(
     session,
-    `\`2Account upgraded! Your new GrowID \`w${cleanName3}\`2 has been created and saved with all your items & clothes!\`\``
+    `\`2Account upgraded! Your new GrowID \`w${cleanName4}\`2 has been created and saved with all your items & clothes!\`\``
   );
   if (session.world) {
     broadcastNameChanged(session.world, session);
@@ -34350,7 +34608,7 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     if (kv.billboard_item) {
       const bid = Number.parseInt(kv.billboard_item, 10);
       const def = ctx.itemsDb.get(bid);
-      if (bid > 0 && def && (def.flags & 16) === 0 && !def.isLock) {
+      if (bid > 0 && def && !isUntradeable(def) && !def.isLock) {
         b.itemId = bid;
       } else {
         OnConsoleMessage(session, "Item can not be untradeable.");
@@ -34400,7 +34658,7 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
       const slot = session.account.inventory.find((s) => s.itemId === iid && s.count > 0);
       const def = ctx.itemsDb.get(iid);
       if (!slot || !def) return true;
-      if ((def.flags & 16) !== 0 || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
+      if (isUntradeable(def) || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
         OnTalkBubble(session, session.netId, "You can't store this item!", 0, false);
         return true;
       }
@@ -35209,11 +35467,15 @@ function handleTrashItemReturn(ctx, session, kv) {
   if (!itemId || itemId === 18 || itemId === 32 || !Number.isFinite(rawAmt) || rawAmt <= 0) {
     return;
   }
+  const definition = ctx.itemsDb.get(itemId);
+  if (!definition || isUndestroyable(definition)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You'd be sorry if you lost that!");
+    return;
+  }
   const amt = Math.min(200, rawAmt);
   const slot = session.account.inventory.find((s) => s.itemId === itemId);
   if (!slot || slot.count < amt) return;
-  const definition = ctx.itemsDb.get(itemId);
-  if (!definition || (definition.flags & 128) !== 0) return;
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
   const reward = isSuperSupporter(session.account) ? recycleValue(itemId, amt) : 0;
   session.account.gems += reward;
@@ -35412,7 +35674,7 @@ function handleVendingDialogReturn(ctx, session, kv) {
       const selectedDef = ctx.itemsDb.get(selectedId);
       const slot = session.account.inventory.find((s) => s.itemId === selectedId);
       if (slot && slot.count > 0) {
-        if (!selectedDef || selectedDef.isLock || selectedId === 242 || selectedId === 1796 || selectedId === 7188 || selectedId === 1424 || selectedId === 5816 || selectedDef.actionType === 64 || (selectedDef.flags & 128) !== 0) {
+        if (!selectedDef || selectedDef.isLock || selectedId === 242 || selectedId === 1796 || selectedId === 7188 || selectedId === 1424 || selectedId === 5816 || selectedDef.actionType === 64 || (selectedDef.flags & ITEM_FLAG_PERMANENT) !== 0 || isUntradeable(selectedDef)) {
           const rejectMsg = selectedDef?.isLock || selectedId === 1424 || selectedId === 5816 ? "No no no." : `Can't put that in a ${stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Vending Machine")}.`;
           OnTalkBubble(session, session.netId, rejectMsg, 0, true);
           OnConsoleMessage(session, rejectMsg);
@@ -36271,7 +36533,7 @@ var BULLETIN_BOARD_IDS = /* @__PURE__ */ new Set([658, 3524]);
 var STORAGE_BOX_IDS = /* @__PURE__ */ new Set([4516, 6286, 6288, 6290, 8878]);
 var CAMERA_IDS = /* @__PURE__ */ new Set([1436, 8246, 10258]);
 var BOOMBOX_IDS = /* @__PURE__ */ new Set([62, 2282]);
-var MANNEQUIN_IDS2 = /* @__PURE__ */ new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+var MANNEQUIN_IDS2 = /* @__PURE__ */ new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13e3]);
 var AUTO_ACTION_IDS = /* @__PURE__ */ new Set([6950, 6952]);
 var GRINDER_IDS = /* @__PURE__ */ new Set([4582, 12196]);
 var CRYSTAL_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
@@ -36279,9 +36541,6 @@ function getStorageBoxCapacity(itemId) {
   if (itemId === 6288) return 40;
   if (itemId === 6290) return 90;
   return 20;
-}
-function isUntradeable(def) {
-  return !def || def.id === 18 || def.id === 32 || def.id === 1424 || def.id === 5816 || def.id === 6336 || def.id === 8430 || (def.flags & 16) !== 0;
 }
 function broadcastTileUpdate(world, tx, ty, tile) {
   const pkt = makeTileUpdatePacket(tx, ty, tile, Date.now());
@@ -36323,7 +36582,7 @@ function canAdminAccess(session, world, tile) {
   }
   return false;
 }
-function cleanName2(def) {
+function cleanName3(def) {
   return def ? stripGtColors(def.name) : "Item";
 }
 function hasInvRoom(session, itemId, count = 1) {
@@ -36351,23 +36610,19 @@ function useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId) {
     return true;
   }
   const def = ctx.itemsDb.get(itemId);
-  if (isUntradeable(def)) {
-    OnTalkBubble(session, session.netId, "You can't display untradeable items!", 0, true);
-    return true;
-  }
   if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
   tile.extra = { kind: "display", itemId };
   ctx.dirty = true;
   broadcastTileUpdate(world, tx, ty, tile);
-  OnTalkBubble(session, session.netId, `You put \`5${cleanName2(def)}\`\` on display!`, 0, true);
+  OnTalkBubble(session, session.netId, `You put \`5${cleanName3(def)}\`\` on display!`, 0, true);
   return true;
 }
 function openDisplayBlockDialog(ctx, session, world, tile, tx, ty) {
   if (tile.extra?.kind !== "display") tile.extra = { kind: "display", itemId: 0 };
   const displayedId = tile.extra.itemId;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${fgName}\`\``, tile.fg).addSpacer("small").embedData("tilex", tx).embedData("tiley", ty).addTextbox(
-    displayedId ? `A ${cleanName2(ctx.itemsDb.get(displayedId))} is on display here.` : "The Display Block is empty. Use an item on it to display the item!"
+    displayedId ? `A ${cleanName3(ctx.itemsDb.get(displayedId))} is on display here.` : "The Display Block is empty. Use an item on it to display the item!"
   );
   const canTake = displayedId !== 0 && hasOwnerAccess(session, world, tile);
   OnDialogRequest(
@@ -36384,8 +36639,8 @@ function openDisplayShelfDialog(ctx, session, world, tile, tx, ty) {
     tile.extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
   }
   const ex = tile.extra;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
-  const slotLine = (pickerKey, label, itemId) => itemId ? `add_item_picker|${pickerKey}|${label}: \`2${cleanName2(ctx.itemsDb.get(itemId))}\`\`|Select any item to display|` : `add_item_picker|${pickerKey}|\`4Display an item\`\`|Select any item to display|`;
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
+  const slotLine = (pickerKey, label, itemId) => itemId ? `add_item_picker|${pickerKey}|${label}: \`2${cleanName3(ctx.itemsDb.get(itemId))}\`\`|Select any item to display|` : `add_item_picker|${pickerKey}|\`4Display an item\`\`|Select any item to display|`;
   const canTake = ex.s1 !== 0 || ex.s2 !== 0 || ex.s3 !== 0 || ex.s4 !== 0;
   const lines = [
     "set_default_color|`o",
@@ -36424,7 +36679,7 @@ function useItemOnDonationBox(ctx, session, tile, tx, ty, itemId) {
   session.lastWrenchY = ty;
   session.lastWrenchB = tile.fg;
   session.lastChoosenItem = itemId;
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `${cleanName2(def)}\`\``, itemId).addTextbox("How many to put in the box as a gift? (Note: You will `4LOSE`` the items you give!)").addTextInput("count", "Count:", String(invSlot.count), 5).addTextInput("sign_text", "Optional Note:", "", 128).addSpacer("small").addButton("give", "`4Give the item(s)``").addSpacer("small").addButton("cancel", "`wCancel``").endDialog("give_item", "", "");
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `${cleanName3(def)}\`\``, itemId).addTextbox("How many to put in the box as a gift? (Note: You will `4LOSE`` the items you give!)").addTextInput("count", "Count:", String(invSlot.count), 5).addTextInput("sign_text", "Optional Note:", "", 128).addSpacer("small").addButton("give", "`4Give the item(s)``").addSpacer("small").addButton("cancel", "`wCancel``").endDialog("give_item", "", "");
   OnDialogRequest(session, dlg);
   return true;
 }
@@ -36434,7 +36689,7 @@ function openDonationBoxDialog(ctx, session, world, tile, tx, ty) {
   session.lastWrenchY = ty;
   session.lastWrenchB = tile.fg;
   const donates = tile.extra.donates;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const isOwner = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
   const lines = [
     "set_default_color|`o",
@@ -36448,7 +36703,7 @@ function openDonationBoxDialog(ctx, session, world, tile, tx, ty) {
     } else {
       lines.push(`add_textbox|You have \`w${donates.length}\`\` gift waiting:|left|`);
       donates.forEach((d, idx) => {
-        const dName = cleanName2(ctx.itemsDb.get(d.itemId));
+        const dName = cleanName3(ctx.itemsDb.get(d.itemId));
         const note = d.text ? `\`#- "${d.text}"\`\`` : "";
         lines.push(`add_checkbox|gift_${idx}|${dName} (\`w${d.count}\`\`) from \`w${d.name}\`\`${note}|0`);
       });
@@ -36476,7 +36731,7 @@ function openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty) {
   session.lastWrenchY = ty;
   session.lastWrenchB = tile.fg;
   const isMailbox = MAILBOX_IDS.has(tile.fg);
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const isOwner = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
   const settings = (world.bulletinSettings || []).find((s) => s.x === tx && s.y === ty);
   const publicCanAdd = settings ? settings.publicCanAdd : true;
@@ -36571,7 +36826,7 @@ function openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty) {
   OnDialogRequest(session, lines.join("\n"));
 }
 function renderStorageBoxDialog(ctx, session, world, tile, tx, ty) {
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const boxCap = getStorageBoxCapacity(tile.fg);
   const stored = (world.storageItems || []).filter((s) => s.x === tx && s.y === ty);
   const lines = [
@@ -36584,7 +36839,7 @@ function renderStorageBoxDialog(ctx, session, world, tile, tx, ty) {
     lines.push("add_spacer|small|");
     lines.push("text_scaling_string|aaaaaaaaaaaaaaa|");
     stored.forEach((entry, idx) => {
-      const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+      const iName = cleanName3(ctx.itemsDb.get(entry.itemId));
       lines.push(`add_button_with_icon|itm${idx + 1}|${iName}|frame|${entry.itemId}|${entry.count}|`);
     });
     lines.push("add_button_with_icon||END_LIST|noflags|0||");
@@ -36655,7 +36910,7 @@ function openCameraDialog(ctx, session, world, tile, tx, ty) {
     world.cctvSettings.push(s);
     ctx.dirty = true;
   }
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const logs = (world.cctvLogs || []).filter((l) => l.x === tx && l.y === ty);
   const lines = [
     "set_default_color|`o",
@@ -36691,7 +36946,7 @@ function openToggleableDialog(ctx, session, world, tile, tx, ty) {
   const id = tile.fg || tile.bg;
   const def = ctx.itemsDb.get(id);
   if (!def) return;
-  const fgName = cleanName2(def);
+  const fgName = cleanName3(def);
   const canEdit = canModifyWorldTile(session, world, tile, tx, ty, "wrench");
   const isBoombox = BOOMBOX_IDS.has(id);
   const dlgName = isBoombox ? "boombox_edit" : "switcheroo_edit";
@@ -36737,7 +36992,7 @@ function mannequinSlotField(clothingType) {
 }
 function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
   if (!MANNEQUIN_IDS2.has(tile.fg)) return false;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   if (world.ownerUserId === 0 && (tile.flags & TILE_FLAG_LOCKED) === 0) {
     OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to use an unlocked ${fgName}!\`\`]\`\``, 0, false);
     return true;
@@ -36750,13 +37005,9 @@ function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
     OnTalkBubble(session, session.netId, `\`5[\`2That would just be weird.  Try putting clothes on your ${fgName} instead!\`\`]\`\``, 0, false);
     return true;
   }
-  if (isUntradeable(def)) {
-    OnTalkBubble(session, session.netId, `\`5[\`2You cannot place ${cleanName2(def)} on ${fgName}!\`\`]\`\``, 0, false);
-    return true;
-  }
   const field = mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType);
   if (!field) {
-    OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to place ${cleanName2(def)} on ${fgName}!\`\`]\`\``, 0, false);
+    OnTalkBubble(session, session.netId, `\`5[\`2It's not safe to place ${cleanName3(def)} on ${fgName}!\`\`]\`\``, 0, false);
     return true;
   }
   if (tile.extra?.kind !== "mannequin") {
@@ -36766,7 +37017,7 @@ function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
     OnTalkBubble(session, session.netId, "`5[`2You giggle as you swap two identical items``]``", 0, false);
     return true;
   }
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${cleanName2(def)}\`\``, itemId).addTextbox(`Do you really want to put your ${cleanName2(def)} on the ${fgName}?`).embedData("tilex", tx).embedData("tiley", ty).embedData("put", itemId).endDialog("mannequin_edit", "No", "Yes");
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${cleanName3(def)}\`\``, itemId).addTextbox(`Do you really want to put your ${cleanName3(def)} on the ${fgName}?`).embedData("tilex", tx).embedData("tiley", ty).embedData("put", itemId).endDialog("mannequin_edit", "No", "Yes");
   OnDialogRequest(session, dlg);
   return true;
 }
@@ -36779,7 +37030,7 @@ function openMannequinDialog(ctx, session, world, tile, tx, ty) {
     tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
   }
   const mq = tile.extra;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const worn = [mq.face, mq.shirt, mq.pants, mq.feet, mq.mask, mq.hand, mq.back, mq.hair, mq.neck].filter((id) => id > 0);
   const lines = [
     "set_default_color|`o",
@@ -36787,7 +37038,7 @@ function openMannequinDialog(ctx, session, world, tile, tx, ty) {
     "add_textbox|To dress, select a clothing item then use on the mannequin. To remove clothes, punch it or select which item to remove.<CR><CR>It will go into your backpack if you have room.|"
   ];
   for (const wid of worn) {
-    lines.push(`add_checkbox|checkbox_${wid}|${cleanName2(ctx.itemsDb.get(wid))}|0|`);
+    lines.push(`add_checkbox|checkbox_${wid}|${cleanName3(ctx.itemsDb.get(wid))}|0|`);
   }
   if (worn.length > 0) {
     lines.push("add_spacer|small|");
@@ -36806,7 +37057,7 @@ function openMannequinDialog(ctx, session, world, tile, tx, ty) {
 function openAutoActionBlockDialog(ctx, session, world, tile, tx, ty) {
   if (tile.extra?.kind !== "autoAction") tile.extra = { kind: "autoAction", fuel: 0, targetItemId: 0, enabled: false };
   const ex = tile.extra;
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const isOwner = hasOwnerAccess(session, world, tile);
   const lines = [
     `add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|`,
@@ -36826,7 +37077,7 @@ function openAutoActionBlockDialog(ctx, session, world, tile, tx, ty) {
   }
   lines.push("add_spacer|small|");
   lines.push(
-    `add_smalltext|${ex.targetItemId === 0 ? "No block type selected!" : `Target block is: \`2${cleanName2(ctx.itemsDb.get(ex.targetItemId))}\`\``}|left|`
+    `add_smalltext|${ex.targetItemId === 0 ? "No block type selected!" : `Target block is: \`2${cleanName3(ctx.itemsDb.get(ex.targetItemId))}\`\``}|left|`
   );
   lines.push("add_item_picker|selecttarget|`wChoose Target Item``|Choose the target item!|");
   lines.push("add_spacer|small|", `embed_data|tilex|${tx}`, `embed_data|tiley|${ty}`, "end_dialog|autoactionblock|Close|OK|", "add_quick_exit|");
@@ -36851,14 +37102,14 @@ function useItemOnGrinder(ctx, session, tile, tx, ty, itemId) {
   session.lastChoosenItem = itemId;
   const def = ctx.itemsDb.get(itemId);
   const maxTimes = Math.floor(slot.count / recipe.count);
-  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wGrind ${cleanName2(def)}\`\``, itemId).addTextbox(
-    `You have ${slot.count} ${cleanName2(def)}. It takes ${recipe.count} per grind. How many times will you grind (max ${maxTimes})?`
+  const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wGrind ${cleanName3(def)}\`\``, itemId).addTextbox(
+    `You have ${slot.count} ${cleanName3(def)}. It takes ${recipe.count} per grind. How many times will you grind (max ${maxTimes})?`
   ).addTextbox("`4Beware:`` If you don't have room in your inventory for the resulting items, they will drop on the floor.").addTextInput("count", "", String(maxTimes), 5).endDialog("grinder", "Cancel", "OK");
   OnDialogRequest(session, dlg);
   return true;
 }
 function openGrinderDialog(ctx, session, tile) {
-  const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`w${fgName}\`\``, tile.fg).addTextbox("Use items on here to try to grind them up into tasty food. Only certain things can be ground up.").addTextbox("You might be surprised what you can grind!").endDialog("grinder", "Thanks for the info!", "");
   OnDialogRequest(session, dlg);
 }
@@ -36897,7 +37148,7 @@ function openCrystalExchangeDialog(ctx, session, world, tile, tx, ty) {
   } else {
     lines.push("add_spacer|small|");
     for (const r of available) {
-      lines.push(`add_button|${r.result[0]}|\`$Craft ${cleanName2(ctx.itemsDb.get(r.result[0]))}\`\`|noflags|0|0|`);
+      lines.push(`add_button|${r.result[0]}|\`$Craft ${cleanName3(ctx.itemsDb.get(r.result[0]))}\`\`|noflags|0|0|`);
     }
   }
   lines.push("end_dialog|crystal_exchange|Cancel||");
@@ -36919,7 +37170,7 @@ function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
       tile.extra = { kind: "display", itemId: 0 };
       ctx.dirty = true;
       broadcastTileUpdate(world, tx, ty, tile);
-      OnTalkBubble(session, session.netId, `You removed \`5${cleanName2(def)}\`\` from the Display Block.`, 0, false);
+      OnTalkBubble(session, session.netId, `You removed \`5${cleanName3(def)}\`\` from the Display Block.`, 0, false);
     } else {
       OnTalkBubble(session, session.netId, "You don't have room to pick that up!", 0, false);
     }
@@ -36939,10 +37190,10 @@ function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
       for (const [, field] of slots) {
         if (ex[field] !== 0) {
           if (ctx.giveInventoryItem(session, ex[field], 1, true) > 0) {
-            OnConsoleMessage(session, `Picked up 1 ${cleanName2(ctx.itemsDb.get(ex[field]))}.`);
+            OnConsoleMessage(session, `Picked up 1 ${cleanName3(ctx.itemsDb.get(ex[field]))}.`);
             ex[field] = 0;
           } else {
-            OnTalkBubble(session, session.netId, `No room to take ${cleanName2(ctx.itemsDb.get(ex[field]))}.`, 0, false);
+            OnTalkBubble(session, session.netId, `No room to take ${cleanName3(ctx.itemsDb.get(ex[field]))}.`, 0, false);
             break;
           }
         }
@@ -36956,22 +37207,18 @@ function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
       const newId = Number.parseInt(kv[pickerKey], 10);
       if (!Number.isSafeInteger(newId) || newId <= 0) continue;
       const def = ctx.itemsDb.get(newId);
-      if (isUntradeable(def)) {
-        OnTalkBubble(session, session.netId, "You can't display untradeable items.", 0, false);
-        return true;
-      }
       if (ex[field] !== 0) {
         if (ctx.giveInventoryItem(session, ex[field], 1, true) > 0) {
-          OnConsoleMessage(session, `Picked up 1 ${cleanName2(ctx.itemsDb.get(ex[field]))}.`);
+          OnConsoleMessage(session, `Picked up 1 ${cleanName3(ctx.itemsDb.get(ex[field]))}.`);
           ex[field] = 0;
         } else {
-          OnTalkBubble(session, session.netId, `No room to take ${cleanName2(ctx.itemsDb.get(ex[field]))}.`, 0, false);
+          OnTalkBubble(session, session.netId, `No room to take ${cleanName3(ctx.itemsDb.get(ex[field]))}.`, 0, false);
           return true;
         }
       }
       if (ctx.consumeInventoryItem(session, newId, 1, true)) {
         ex[field] = newId;
-        OnConsoleMessage(session, `Put ${cleanName2(def)} on display.`);
+        OnConsoleMessage(session, `Put ${cleanName3(def)} on display.`);
       }
     }
     ctx.dirty = true;
@@ -36997,7 +37244,7 @@ function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
         }
         if (hasInvRoom(session, d.itemId, d.count) && ctx.giveInventoryItem(session, d.itemId, d.count, true) === d.count) {
           took = true;
-          const dName = cleanName2(ctx.itemsDb.get(d.itemId));
+          const dName = cleanName3(ctx.itemsDb.get(d.itemId));
           broadcastConsoleMessage(
             world,
             `\`7[\`\`${session.account.name} receives \`5${d.count}\`\` \`w${dName}\`\` from \`w${d.name}\`\`, how nice!\`7]\`\``
@@ -37034,7 +37281,7 @@ function handleWorldBlockDialogReturn(ctx, session, dlgName, kv) {
     tile.flags |= TILE_FLAG_EXTRA_VISUAL;
     ctx.dirty = true;
     broadcastTileUpdate(world, tx, ty, tile);
-    const msg = `\`7[\`\`\`5[\`\`\`w${session.account.name}\`\` places \`5${count}\`\` \`2${cleanName2(def)}\`\` into the ${cleanName2(ctx.itemsDb.get(tile.fg))}\`5]\`\`\`7]\`\``;
+    const msg = `\`7[\`\`\`5[\`\`\`w${session.account.name}\`\` places \`5${count}\`\` \`2${cleanName3(def)}\`\` into the ${cleanName3(ctx.itemsDb.get(tile.fg))}\`5]\`\`\`7]\`\``;
     broadcastConsoleMessage(world, msg);
     OnTalkBubble(session, session.netId, msg, 0, false);
     return true;
@@ -37118,7 +37365,7 @@ end_dialog|remove_bulletin|Cancel|OK|`
   if (dlgName === "storageboxxtreme" && tile && STORAGE_BOX_IDS.has(tile.fg)) {
     if (!canAdminAccess(session, world, tile)) return true;
     world.storageItems = world.storageItems || [];
-    const fgName = cleanName2(ctx.itemsDb.get(tile.fg));
+    const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
     if (kv.itemid) {
       const itemId = Number.parseInt(kv.itemid, 10);
       const def = ctx.itemsDb.get(itemId);
@@ -37138,7 +37385,7 @@ end_dialog|remove_bulletin|Cancel|OK|`
         session,
         `set_default_color|\`o
 add_label_with_icon|big|\`w${fgName}\`\`|left|${tile.fg}|
-add_textbox|You have ${slot.count} ${cleanName2(def)}. How many to store?|left|
+add_textbox|You have ${slot.count} ${cleanName3(def)}. How many to store?|left|
 add_text_input|itemcount||${slot.count}|3|
 add_spacer|small|
 add_button|do_add|Store Items|noflags|0|0|
@@ -37166,7 +37413,7 @@ end_dialog|storageboxxtreme|Cancel||`
       } else {
         world.storageItems.push({ x: tx, y: ty, itemId, count });
       }
-      const iName = cleanName2(ctx.itemsDb.get(itemId));
+      const iName = cleanName3(ctx.itemsDb.get(itemId));
       OnTalkBubble(session, session.netId, `Stored \`w${count} ${iName}\`\` in ${fgName}.`, 0, false);
       OnConsoleMessage(session, `Stored \`w${count} ${iName}\`\` in the ${fgName}.`);
       ctx.dirty = true;
@@ -37179,7 +37426,7 @@ end_dialog|storageboxxtreme|Cancel||`
       const entry = list[nr - 1];
       if (entry) {
         session.lastChoosenNr = nr;
-        const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+        const iName = cleanName3(ctx.itemsDb.get(entry.itemId));
         OnDialogRequest(
           session,
           `set_default_color|\`o
@@ -37209,7 +37456,7 @@ end_dialog|storageboxxtreme|Exit||`
       if (entry.count <= 0) {
         world.storageItems = world.storageItems.filter((s) => s !== entry);
       }
-      const iName = cleanName2(ctx.itemsDb.get(entry.itemId));
+      const iName = cleanName3(ctx.itemsDb.get(entry.itemId));
       sendFlyEffect(session, world, tx, ty, entry.itemId);
       OnTalkBubble(session, session.netId, `Removed \`w${take} ${iName}\`\` in ${fgName}.`, 0, true);
       OnConsoleMessage(session, `Removed \`w${take} ${iName}\`\` in the ${fgName}.`);
@@ -37341,7 +37588,7 @@ end_dialog|storageboxpassword|Exit||`
       const putId = Number.parseInt(kv.put, 10);
       const def = ctx.itemsDb.get(putId);
       const field = def ? mannequinSlotField(def.actionType === 107 ? 9 : def.clothingType) : null;
-      if (!def || !def.isClothing || isUntradeable(def) || !field || mq[field] === putId) return true;
+      if (!def || !def.isClothing || !field || mq[field] === putId) return true;
       const oldId = mq[field];
       if (oldId !== 0 && (!hasInvRoom(session, oldId, 1) || ctx.giveInventoryItem(session, oldId, 1, true) === 0)) {
         OnTalkBubble(session, session.netId, "`5[`2You don't have inventory space!``]``", 0, false);
@@ -37415,8 +37662,8 @@ end_dialog|storageboxpassword|Exit||`
     const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
     if (!recipe || !slot || times <= 0 || times * recipe.count > slot.count) return true;
     if (!ctx.consumeInventoryItem(session, itemId, times * recipe.count, true)) return true;
-    const inName = cleanName2(ctx.itemsDb.get(itemId));
-    const outName = cleanName2(ctx.itemsDb.get(recipe.prize));
+    const inName = cleanName3(ctx.itemsDb.get(itemId));
+    const outName = cleanName3(ctx.itemsDb.get(recipe.prize));
     const msg = `Ground up ${times * recipe.count} ${inName} into ${times} ${outName}!`;
     OnConsoleMessage(session, msg);
     OnTalkBubble(session, session.netId, msg, 0, true);
@@ -37442,7 +37689,7 @@ end_dialog|storageboxpassword|Exit||`
     if (!recipe) return true;
     const pPkt = makeParticleEffectPacket(97, tx * 32 + 16, ty * 32 + 16, tile.fg, 97);
     for (const p of world.peers) p.peer.sendPacket(0, pPkt, true);
-    OnTalkBubble(session, session.netId, `The crystal shatters and drops ${cleanName2(ctx.itemsDb.get(recipe.result[0]))}!`, 0, true);
+    OnTalkBubble(session, session.netId, `The crystal shatters and drops ${cleanName3(ctx.itemsDb.get(recipe.result[0]))}!`, 0, true);
     spawnOrMergeWorldDrop(world, recipe.result[0], recipe.result[1], tx * 32 + 6, ty * 32 + 6, -1);
     tile.fg = 0;
     tile.extra = void 0;
@@ -37459,6 +37706,9 @@ end_dialog|storageboxpassword|Exit||`
 function handleDialogReturn(ctx, session, kv) {
   const dlg = (kv.dialog_name || "").trim();
   if (!dlg) return;
+  if (handleSdbDialogReturn(ctx, session, dlg, kv)) {
+    return;
+  }
   if (handleTelephoneLockeDialogReturn(ctx, session, dlg, kv)) {
     return;
   }
@@ -37510,7 +37760,37 @@ function handleDrop(ctx, session, kv) {
   const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!slot) return;
   const def = ctx.itemsDb.get(itemId);
-  const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
+  if (!def || isUntradeable(def)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You can't drop that.");
+    return;
+  }
+  const world = session.world;
+  if (!world) return;
+  const playerTileX = Math.floor((session.x + 10) / 32);
+  const playerTileY = Math.floor((session.y + 15) / 32);
+  const targetTileX = Math.max(
+    0,
+    Math.min(world.width - 1, playerTileX + (session.facingLeft ? -1 : 1))
+  );
+  const targetTile = world.tiles[playerTileY * world.width + targetTileX];
+  const targetFg = targetTile ? targetTile.fg : 0;
+  const targetFgDef = targetFg ? ctx.itemsDb.get(targetFg) : void 0;
+  if (targetFgDef) {
+    const isSolid = targetFgDef.collisionType === 1;
+    const isWhiteDoor = targetFg === 6 || targetFgDef.actionType === 13;
+    const isEntrance = targetFgDef.isDoor || targetFgDef.actionType === 2 || targetFgDef.actionType === 13;
+    const isClosedToggle = targetFgDef.actionType === 21 && (targetTile.flags & 64) === 0;
+    if (isSolid || isWhiteDoor || isEntrance || isClosedToggle) {
+      OnPlayPositioned(session, "audio/punch_locked.wav");
+      OnTextOverlay(
+        session,
+        isWhiteDoor ? "You can't drop items on the white door." : "You can't drop that here, face somewhere with open space."
+      );
+      return;
+    }
+  }
+  const name = stripGtColors(def.name);
   const dialog = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`wDrop ${name}\`\``, itemId).addTextbox("How many to drop?").addTextInput("drop_count", "", String(slot.count), 5).embedData("itemID", itemId).endDialog("drop_item", "Cancel", "OK");
   OnDialogRequest(session, dialog);
 }
@@ -38034,16 +38314,6 @@ netID|${session.netId}`
     OnConsoleMessage(session, `\`2Your home world is now \`w${world.name}\`2.\`\``);
     return true;
   }
-  if (cmd === "go") {
-    if (!argStr) {
-      OnConsoleMessage(session, "`4Usage: /go <world_name>``");
-      return true;
-    }
-    OnConsoleMessage(session, `Magically warping to world \`5${argStr.toUpperCase()}\`\`...`);
-    OnPlayPositioned(session, "audio/door_open.wav");
-    ctx.joinWorld(session, argStr);
-    return true;
-  }
   if (cmd === "rgo") {
     const dest = session.lastMsgWorld || "";
     if (dest && session.world && dest === session.world.name) {
@@ -38133,23 +38403,6 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
     const action = `\`6<${displayName(session)} \`#${msg}\`\`\`6>\`\``;
     broadcastTalkBubble(world, session.netId, action, 0);
     broadcastConsoleMessage(world, `CP:0_PL:0_OID:_CT:[W]_ ${action}`, chatPortrait(session, ctx.itemsDb));
-    return true;
-  }
-  if (cmd === "sb" || cmd === "bc") {
-    if (!argStr) {
-      OnConsoleMessage(session, "`4Usage: /sb <message>``");
-      return true;
-    }
-    const clean = sanitizeChatText(argStr, 120);
-    const originWorld = world ? world.name : "LOBBY";
-    for (const p of ctx.sessions) {
-      OnConsoleMessage(
-        p,
-        `CP:0_PL:4_OID:_CT:[SB]_ \`5** [\`w${session.account.name}\`5] in [\`$${originWorld}\`5] ** : \`#${clean}\`\``,
-        chatPortrait(session, ctx.itemsDb)
-      );
-      OnPlayPositioned(p, "audio/beep.wav");
-    }
     return true;
   }
   const emotes = {
@@ -38271,7 +38524,7 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
 function dispatchCommand(ctx, session, rawWithoutSlash) {
   const parts = rawWithoutSlash.trim().split(/\s+/);
   const typed = (parts[0] || "").toLowerCase();
-  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "r", "rgo", "trade", "sb", "bc", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
+  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "r", "rgo", "trade", "sb", "bc", "broadcast", "cb", "sdb", "radio", "go", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
   const aliases = { k: "kick", p: "pull", b: "ban", ub: "unban", u: "unban" };
   const candidates = names.filter((n) => n.startsWith(typed));
   const cmd = names.includes(typed) ? typed : aliases[typed] || (candidates.length === 1 ? candidates[0] : typed);
@@ -38295,6 +38548,7 @@ function dispatchCommand(ctx, session, rawWithoutSlash) {
     OnConsoleMessage(session, `\`o>> Commands: ${publicCommands}${staff}${developer}\`\``);
     return;
   }
+  if (handleBroadcastCommand(ctx, session, cmd, argStr)) return;
   if (handlePlayerCommand(ctx, session, cmd, parts, argStr)) return;
   if (handleWorldCommand(ctx, session, cmd, argStr)) return;
   if (handleAdminCommand(ctx, session, cmd, parts, argStr)) return;
@@ -38606,7 +38860,12 @@ function handleTrash(ctx, session, kv) {
   const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!slot) return;
   const def = ctx.itemsDb.get(itemId);
-  const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
+  if (!def || isUndestroyable(def)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You'd be sorry if you lost that!");
+    return;
+  }
+  const name = stripGtColors(def.name);
   const supporter = isSuperSupporter(session.account);
   const dialog = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", `\`4${supporter ? "Recycle" : "Trash"}\`\` \`w${name}\`\``, itemId).addTextbox(`How many to destroy? (no undo${supporter ? ", " + recycleValue(itemId, 1) + " Gems per item" : ""})`).addTextInput("trash_count", "", String(slot.count), 5).embedData("itemID", itemId).endDialog("trash_item", "Cancel", "OK");
   OnDialogRequest(session, dialog);
@@ -38815,13 +39074,13 @@ function handleItemActivateRequest(ctx, session, itemId) {
 
 // server/gamePacket/item_activate_object.ts
 var GEM_ITEM_ID = 112;
-function handleItemActivateObject(ctx, session, uid) {
+function handleItemActivateObject(ctx, session, uid, forceDistance = false) {
   const world = session.world;
   if (!world) return;
   const idx = world.objects.findIndex((o) => o.uid === uid);
   if (idx === -1) return;
   const obj = world.objects[idx];
-  if (Math.hypot(session.x - obj.x, session.y - obj.y) > 160) return;
+  if (!forceDistance && Math.hypot(session.x - obj.x, session.y - obj.y) > 160) return;
   if (obj.itemId === GEM_ITEM_ID) {
     world.objects.splice(idx, 1);
     session.account.gems += obj.count;
@@ -38954,8 +39213,8 @@ function handlePlayerMoving(session, rawData, tank, ctx) {
 var GEM_ITEM_ID2 = 112;
 var AREA_LOCK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 4994]);
 var WORLD_LOCK_TIER_IDS = /* @__PURE__ */ new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
-var WEATHER_BG_SPECIAL_IDS = /* @__PURE__ */ new Set([3694, 4892, 5e3, 5654, 5716, 6854]);
-var WEATHER_STUFF_SPECIAL_IDS = /* @__PURE__ */ new Set([3832, 5958, 6280]);
+var WEATHER_BG_SPECIAL_IDS = /* @__PURE__ */ new Set([3694, 5e3]);
+var WEATHER_STUFF_SPECIAL_IDS = /* @__PURE__ */ new Set([3832]);
 var GROWMOJI_ITEMS = /* @__PURE__ */ new Set([10114, 8028, 7698, 10116, 12544, 12542]);
 var HAIR_DYE_ITEMS2 = /* @__PURE__ */ new Set([3822, 3824, 3826, 3828, 3830]);
 var EYE_ITEMS2 = /* @__PURE__ */ new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
@@ -40021,6 +40280,10 @@ function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
     spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, gemCount, tx * 32 + 10, ty * 32 + 8, -1);
   }
 }
+function isAutoPickupBlock(targetId, def) {
+  if (!def || targetId <= 0) return false;
+  return (def.flags & ITEM_FLAG_AUTO_PICKUP) !== 0;
+}
 function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, suppressDrops = false) {
   const brokenWasWorldLock = tile.extra?.kind === "lock" && WORLD_LOCK_TIER_IDS.has(targetId);
   let unlockedIndices = [];
@@ -40089,15 +40352,33 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
     }
     return;
   }
+  const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
+  for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
+  if (isAutoPickupBlock(targetId, def)) {
+    const dropX = tx * 32 + 8;
+    const dropY = ty * 32 + 8;
+    const dropObj = {
+      uid: ++world.lastObjectUid,
+      itemId: targetId,
+      count: 1,
+      x: dropX,
+      y: dropY,
+      flags: 0
+    };
+    world.objects.push(dropObj);
+    const dropPkt = makeItemDropPacket(dropObj.itemId, dropObj.count, dropObj.x, dropObj.y, dropObj.flags, -1);
+    for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
+    handleItemActivateObject(ctx, session, dropObj.uid, true);
+    return;
+  }
+  if (((def.flags & ITEM_FLAG_DROPLESS) !== 0 || def.rarity === 999) && (def.ing1 === 0 || def.ing2 === 0)) {
+    return;
+  }
   if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
   if (!def.isSeed && activeMods(session.account).some((m) => m.extraBreakGemChance && Math.random() < m.extraBreakGemChance)) {
     spawnOrMergeWorldDrop(world, GEM_ITEM_ID2, 1, tx * 32 + 12, ty * 32 + 10, -1);
   }
-  const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
-  for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
-  if (def.isLock || targetId === 12 || targetId === 20) {
-    ctx.giveInventoryItem(session, targetId, 1, true);
-  } else if (def.isSeed) {
+  if (def.isSeed) {
     if (Math.random() < 0.25) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 8, ty * 32 + 8, -1);
     }
@@ -40105,14 +40386,14 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
     const roll = Math.random();
     if (roll < 0.28) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 6, ty * 32 + 8, -1);
-    } else if (roll < 0.48 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
+    } else if (roll < 0.48 && (def.flags & ITEM_FLAG_NO_SEED) === 0 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
       spawnOrMergeWorldDrop(world, targetId + 1, 1, tx * 32 + 10, ty * 32 + 8, -1);
     }
     const mods = activeMods(session.account);
     if (mods.some((m) => m.luckyBreaks) && Math.random() < 0.1) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 6, ty * 32 + 8, -1);
     }
-    if (Math.random() < 0.55) {
+    if (Math.random() < 0.55 && def.rarity > 0) {
       let gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
       const lucky = mods.some((m) => m.luckyBreaks) && Math.random() < 0.1;
       const doubled = mods.some((m) => m.doubleGemsChance && Math.random() < m.doubleGemsChance);
@@ -41084,8 +41365,127 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     }
     newBytes.copy(output, offset);
   }
-  if (!WebAssembly.validate(output)) throw new Error("Patched client failed WebAssembly validation");
-  return extendChatPortraitExports(Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(output)))));
+  const patched = patchDisplayForegroundPass(output);
+  if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
+  return extendChatPortraitExports(Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patched)))));
+}
+function readUleb(buf, offset) {
+  let result = 0;
+  let shift = 0;
+  let pos = offset;
+  while (true) {
+    const b = buf[pos++];
+    result |= (b & 127) << shift;
+    if ((b & 128) === 0) return [result, pos];
+    shift += 7;
+  }
+}
+function writeUleb(n) {
+  const out = [];
+  let v = n >>> 0;
+  do {
+    let b = v & 127;
+    v >>>= 7;
+    if (v !== 0) b |= 128;
+    out.push(b);
+  } while (v !== 0);
+  return Buffer.from(out);
+}
+function patchDisplayForegroundPass(wasm) {
+  let pos = 8;
+  let funcImports = 0;
+  let codeSecStart = -1;
+  let codeSecLenStart = -1;
+  let codeSecBodyStart = -1;
+  let codeSecEnd = -1;
+  while (pos < wasm.length) {
+    const sid = wasm[pos++];
+    const lenStart = pos;
+    const [secLen, bodyStart] = readUleb(wasm, pos);
+    const secEnd = bodyStart + secLen;
+    if (sid === 2) {
+      let ip = bodyStart;
+      const [impCount, p2] = readUleb(wasm, ip);
+      ip = p2;
+      for (let i = 0; i < impCount; i++) {
+        const [ml, p3] = readUleb(wasm, ip);
+        ip = p3 + ml;
+        const [nl, p4] = readUleb(wasm, ip);
+        ip = p4 + nl;
+        const kind = wasm[ip++];
+        if (kind === 0) {
+          [, ip] = readUleb(wasm, ip);
+          funcImports++;
+        } else if (kind === 1) {
+          ip++;
+          const [fl, p5] = readUleb(wasm, ip);
+          [, ip] = readUleb(wasm, p5);
+          if (fl & 1) [, ip] = readUleb(wasm, ip);
+        } else if (kind === 2) {
+          const [fl, p5] = readUleb(wasm, ip);
+          [, ip] = readUleb(wasm, p5);
+          if (fl & 1) [, ip] = readUleb(wasm, ip);
+        } else if (kind === 3) {
+          ip += 2;
+        }
+      }
+    } else if (sid === 10) {
+      codeSecStart = lenStart - 1;
+      codeSecLenStart = lenStart;
+      codeSecBodyStart = bodyStart;
+      codeSecEnd = secEnd;
+      break;
+    }
+    pos = secEnd;
+  }
+  if (codeSecStart < 0) throw new Error("WASM Code section not found");
+  const needle4240 = Buffer.from(
+    "20092009290238370214200120032005200941146a4100200020022d000822004100200d20001b10f606",
+    "hex"
+  );
+  const replacement4240 = Buffer.from(
+    "20092009290238370214024020022d00084504402003419481182802002802940e490440419481182802002802900e200341b4026c6a2f01364180c000710d020b0b200120032005200941146a4100200020022d000822004100200d20001b10f6060b",
+    "hex"
+  );
+  const body1518 = Buffer.from(
+    "01087f230041206b2203240041f48019280200220441f8801928020022054704400340200428020022062f0100220704402007419481182802002802940e490440419481182802002802900e200741b4026c6a2f01364180c0007104400240230128023022080440200828020022080d010b419481182802002802880e2802900121080b10bb022109200320062d0007b3430000004294380204200320062d0006b3430000004294380200200341086a220a2009200310e8022008200720062f010a200a410020064100410010f6060b0b0b200441046a22042005470d000b0b200341206a24000b",
+    "hex"
+  );
+  let cp = codeSecBodyStart;
+  const [funcCount, afterCount] = readUleb(wasm, cp);
+  cp = afterCount;
+  const chunks = [writeUleb(funcCount)];
+  let patched4240 = false;
+  let patched1518 = false;
+  for (let i = 0; i < funcCount; i++) {
+    const fid = funcImports + i;
+    const [sz, fStart] = readUleb(wasm, cp);
+    const fEnd = fStart + sz;
+    let body = wasm.subarray(fStart, fEnd);
+    cp = fEnd;
+    if (fid === 1518) {
+      body = body1518;
+      patched1518 = true;
+    } else if (fid === 4240) {
+      const idx = body.indexOf(needle4240);
+      if (idx === -1 || body.indexOf(needle4240, idx + 1) !== -1) {
+        throw new Error("func 4240 call 886 signature mismatch");
+      }
+      body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
+      patched4240 = true;
+    }
+    chunks.push(writeUleb(body.length), body);
+  }
+  if (!patched4240 || !patched1518) {
+    throw new Error(`Failed to patch Display foreground pass (4240=${patched4240}, 1518=${patched1518})`);
+  }
+  const newCodeBody = Buffer.concat(chunks);
+  return Buffer.concat([
+    wasm.subarray(0, codeSecLenStart),
+    writeUleb(newCodeBody.length),
+    newCodeBody,
+    wasm.subarray(codeSecEnd)
+  ]);
 }
 
 // server/https/routes.ts

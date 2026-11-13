@@ -1,6 +1,7 @@
 import { clearAreaLock } from "../../database/world";
 import { makeParticleEffectPacket, makeTileUpdatePacket } from "../../proton/packet";
 import { broadcastBillboardChange, broadcastNameChanged, broadcastPositionedSfx, OnBillboardChange, OnPlayPositioned } from "../../onVariant";
+import { isUntradeable } from "../../database/items";
 import { worldModerate } from '../world-moderation';
 import { addTradeItem, confirmTrade } from '../trade';
 import { friendRequest, friendDialogReturn } from '../friends';
@@ -305,7 +306,7 @@ export function handlePlayerDialogsReturn(
     if (kv.billboard_item) {
       const bid = Number.parseInt(kv.billboard_item, 10);
       const def = ctx.itemsDb.get(bid);
-      if (bid > 0 && def && (def.flags & 0x0010) === 0 && !def.isLock) {
+      if (bid > 0 && def && !isUntradeable(def) && !def.isLock) {
         b.itemId = bid;
       } else {
         OnConsoleMessage(session, "Item can not be untradeable.");
@@ -356,7 +357,7 @@ export function handlePlayerDialogsReturn(
       const slot = session.account.inventory.find((s) => s.itemId === iid && s.count > 0);
       const def = ctx.itemsDb.get(iid);
       if (!slot || !def) return true;
-      if ((def.flags & 0x0010) !== 0 || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
+      if (isUntradeable(def) || iid === 1424 || iid === 242 || iid === 1796 || iid === 7188) {
         OnTalkBubble(session, session.netId, "You can't store this item!", 0, false);
         return true;
       }

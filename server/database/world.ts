@@ -75,6 +75,7 @@ export interface WorldInstance {
   weatherId: number;
   ownerUserId: number;
   worldBans?: Record<string,number>;
+  nuked?: boolean;
   xenonite?: XenoniteState;
   allowAdminVending?: boolean;
   disableMusicBlocks?: boolean;
@@ -106,6 +107,7 @@ export interface PersistedWorld {
   weatherId: number;
   ownerUserId: number;
   worldBans?: Record<string,number>;
+  nuked?: boolean;
   xenonite?: XenoniteState;
   allowAdminVending?: boolean;
   disableMusicBlocks?: boolean;
@@ -576,8 +578,8 @@ export function spawnOrMergeWorldDrop(
   x: number,
   y: number,
   throwerNetId = -1
-): void {
-  if (totalCount <= 0 || itemId <= 0) return;
+): DroppedObject | undefined {
+  if (totalCount <= 0 || itemId <= 0) return undefined;
 
   // 0. Magplant / Gaia / UT auto-suck check (GTPS3 World.h:17575 use_mag)
   if (itemId !== 112) {
@@ -627,12 +629,13 @@ export function spawnOrMergeWorldDrop(
         for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
       }
     }
-    return;
+    return undefined;
   }
 
   let remaining = Math.floor(totalCount);
   const dropTileX = Math.floor((x + 8) / 32);
   const dropTileY = Math.floor((y + 8) / 32);
+  let lastAffected: DroppedObject | undefined;
 
   // 1. Merge into existing nearby ground stack(s) of the exact same itemId (up to 200 per stack)!
   for (const existing of world.objects) {
@@ -647,6 +650,7 @@ export function spawnOrMergeWorldDrop(
     const addable = Math.min(remaining, 200 - existing.count);
     existing.count += addable;
     remaining -= addable;
+    lastAffected = existing;
 
     // Broadcast netId = -3 in-place stack count update (does NOT increment lastObjectUid!)
     const modPkt = makeItemModifyObjectPacket(
@@ -665,8 +669,11 @@ export function spawnOrMergeWorldDrop(
     const chunk = Math.min(200, remaining);
     remaining -= chunk;
     const uid = ++world.lastObjectUid;
-    world.objects.push({ uid, itemId, x, y, count: chunk, flags: 0 });
+    const obj: DroppedObject = { uid, itemId, x, y, count: chunk, flags: 0 };
+    world.objects.push(obj);
+    lastAffected = obj;
     const dropPkt = makeItemDropPacket(itemId, chunk, x, y, 0, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
+  return lastAffected;
 }

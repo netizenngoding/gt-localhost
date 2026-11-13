@@ -2,6 +2,7 @@ import { isSuperSupporter } from "../progression/service";
 import { recycleValue } from "../progression/recycling";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
+import { isUndestroyable } from "../database/items";
 import { OnDialogRequest, OnPlayPositioned, OnTextOverlay } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
 import { stripGtColors } from "../tools/string";
@@ -21,7 +22,12 @@ export function handleTrash(
   if (!slot) return;
 
   const def = ctx.itemsDb.get(itemId);
-  const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
+  if (!def || isUndestroyable(def)) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    OnTextOverlay(session, "You'd be sorry if you lost that!");
+    return;
+  }
+  const name = stripGtColors(def.name);
 
   const supporter = isSuperSupporter(session.account);
   const dialog = new DialogBuilder()

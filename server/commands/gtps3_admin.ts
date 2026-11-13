@@ -1,4 +1,4 @@
-import { hasPermission, canModerate, modTagOff } from "../ranks";
+import { hasPermission, canModerate } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { generateFreshWorld } from "../database/world";
@@ -10,6 +10,7 @@ import {
   OnConsoleMessage, OnTextOverlay, OnTalkBubble, OnDialogRequest, OnSetPos,
   broadcastConsoleMessage, broadcastNameChanged, broadcastSetPos, applySkinColorUpdate,
 } from "../onVariant";
+import { DialogBuilder } from "../tools/create_dialog";
 import { stripGtColors } from "../tools/string";
 
 // GTPS3 flags that have no persistent column here: m_h (/hide) and the
@@ -17,6 +18,7 @@ import { stripGtColors } from "../tools/string";
 const hidden = new WeakSet<PlayerSession>();
 const lastKickAll = new WeakMap<PlayerSession, number>();
 const resetConfirm = new WeakMap<PlayerSession, number>();
+const modTagOff = new WeakSet<PlayerSession>();
 export const isHiddenStaff = (s: PlayerSession): boolean => hidden.has(s);
 
 const UNKNOWN = "`4Unknown command.`` Enter `$/?`` for a list of valid commands.";
@@ -144,19 +146,22 @@ export function handleGtps3Admin(ctx: ServerContext, session: PlayerSession, cmd
       const q = argStr.trim().toLowerCase();
       const acct = [...ctx.accounts.values()].find(a => a.name.toLowerCase() === q)
         || ctx.findOnlineSessionByName(argStr)?.account;
-      if (!acct) { OnConsoleMessage(session, `\`4Oops: \`oPlayer \`w${argStr}\`o was not found.``); return true; }
+      if (!acct) { OnConsoleMessage(session, "`4Oops: `oPlayer `w" + argStr + "`o was not found.``"); return true; }
       const online = [...ctx.sessions].find(s => s.account === acct);
-      OnDialogRequest(session, [
-        "set_default_color|`o",
-        `add_label_with_icon|big|\`1Punish / View - ${acct.name}\`\`|left|732|`,
-        "add_spacer|small|",
-        `add_textbox|User ID: \`w${acct.userId}\`\` | Rank: \`w${acct.rank || "player"}\`\` | Gems: \`w${acct.gems}\`\`|left|`,
-        `add_textbox|Status: ${online ? `\`2Online\`\` in \`w${online.world?.name ?? "(menu)"}\`\`` : "`4Offline``"} | Banned: \`w${acct.banned ? "yes" : "no"}\`\`|left|`,
-        `add_textbox|Recent worlds: \`#${(acct.recentWorlds || []).slice(-8).reverse().join("``, `#") || "none"}\`\`|left|`,
-        `add_textbox|RID: \`w${acct.deviceKey}\`\`|left|`,
-        "add_quick_exit|",
-        "end_dialog|info|Close||",
-      ].join("\n"));
+      const statusText = online ? ("`2Online`` in `w" + (online.world?.name ?? "(menu)") + "``") : "`4Offline``";
+      const bannedText = acct.banned ? "yes" : "no";
+      const recentText = (acct.recentWorlds || []).slice(-8).reverse().join("``, `#") || "none";
+      const dlg = new DialogBuilder()
+        .setDefaultColor("`o")
+        .addLabelWithIcon("big", "`1Punish / View - " + acct.name + "``", 732)
+        .addSpacer("small")
+        .addTextbox("User ID: `w" + acct.userId + "`` | Rank: `w" + (acct.rank || "player") + "`` | Gems: `w" + acct.gems + "``")
+        .addTextbox("Status: " + statusText + " | Banned: `w" + bannedText + "``")
+        .addTextbox("Recent worlds: `#" + recentText + "``")
+        .addTextbox("RID: `w" + acct.deviceKey + "``")
+        .addQuickExit()
+        .endDialog("info", "Close", "");
+      OnDialogRequest(session, dlg);
       return true;
     }
     case "freezeall": {
@@ -214,7 +219,8 @@ export function handleGtps3Admin(ctx: ServerContext, session: PlayerSession, cmd
       if (!dev) return deny();
       if (!world) return true;
       OnConsoleMessage(session, " >> Removed all dropped items.");
-      ctx.removeAllDrops(world);
+      world.objects = [];
+      ctx.dirty = true;
       return true;
     }
     case "fixworld": {

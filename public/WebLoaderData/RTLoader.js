@@ -163,6 +163,48 @@ function makeSilentWavBytes() {
   return b;
 }
 
+async function patchNativeLoadingBackground() {
+  var fsApi = typeof FS !== "undefined" ? FS : Module && Module.FS;
+  var path = "/game/load_bg.rttex";
+  if (!fsApi || typeof fsApi.readFile !== "function" || typeof fsApi.writeFile !== "function") return false;
+  var oldIgnore = fsApi.ignorePermissions;
+  try {
+    fsApi.ignorePermissions = true;
+    var packed = fsApi.readFile(path);
+    if (!(packed instanceof Uint8Array)) packed = new Uint8Array(packed);
+    if (packed.length < 32 || String.fromCharCode.apply(null, packed.subarray(0, 6)) !== "RTPACK") throw new Error("expected RTPACK");
+    var raw = new Uint8Array(await new Response(new Blob([packed.subarray(32)]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer());
+    if (raw.length < 124 || String.fromCharCode.apply(null, raw.subarray(0, 6)) !== "RTTXTR") throw new Error("expected RTTXTR payload");
+    var view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    var width = view.getUint32(8, true), height = view.getUint32(12, true);
+    var bpp = (raw.length - 124) / (width * height);
+    if (!width || !height || bpp !== 3) throw new Error("unexpected load_bg pixel layout " + width + "x" + height + " bpp=" + bpp);
+    // Confirmed from the packaged client: load_bg.rttex is the exact pre-menu
+    // cloud/horizon background. Replace its RGB pixels in-place with a black gradient.
+    for (var p = 124; p < raw.length; p += 3) {
+      var y = Math.floor((p - 124) / 3 / width);
+      var t = height > 1 ? y / (height - 1) : 0;
+      raw[p] = Math.round(1 + 14 * t);
+      raw[p + 1] = Math.round(1 + 14 * t);
+      raw[p + 2] = Math.round(4 + 18 * t);
+    }
+    var compressed = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer());
+    var output = new Uint8Array(32 + compressed.length);
+    output.set(packed.subarray(0, 32));
+    new DataView(output.buffer).setUint32(8, compressed.length, true);
+    output.set(compressed, 32);
+    fsApi.unlink(path);
+    fsApi.writeFile(path, output);
+    console.info("[Client] Native pre-menu background replaced:", path, width + "x" + height, "RGB");
+    return true;
+  } catch (err) {
+    console.error("[Client] Could not replace native pre-menu background:", err);
+    return false;
+  } finally {
+    fsApi.ignorePermissions = oldIgnore;
+  }
+}
+
 function installVfsPatches() {
   try {
     var fsApi = typeof FS !== "undefined" ? FS : Module && Module.FS;
@@ -182,12 +224,7 @@ function installVfsPatches() {
 
       if (globalThis.ServerBranding) globalThis.ServerBranding.install(fsApi);
 
-      // 1. Use a logo-free server background so login fields remain readable
-      var sunnyBg = fsApi.readFile("/interface/large/main_menu.rttex");
-      if (sunnyBg && sunnyBg.length > 0) {
-        try { fsApi.unlink("/interface/large/generic_menu2.rttex"); } catch (_e) {}
-        fsApi.writeFile("/interface/large/generic_menu2.rttex", sunnyBg);
-      }
+      // Leave generic_menu2 alone: retain its original client texture.
 
       // 2. Populate the 7 WASM-referenced /audio/*.wav aliases missing in ReGrowtopia-1.50.data
       //    (notably /audio/sound_on.wav & /audio/sound_off.wav used inside OptionsMenu!)
@@ -1750,11 +1787,14 @@ var Module = {
       console.warn("[Client] installNativeOptionsMenuHooks error:", errHooks);
     }
 
-    try {
-      Module.ccall("mainf", null, null);
-    } catch (e) {
-      if (e !== "unwind") console.error(e);
-    }
+    // Patch the exact native pre-menu texture before mainf creates its renderer.
+    patchNativeLoadingBackground().finally(function () {
+      try {
+        Module.ccall("mainf", null, null);
+      } catch (e) {
+        if (e !== "unwind") console.error(e);
+      }
+    });
   },
   canvas: (function () {
     return document.getElementById("canvas");

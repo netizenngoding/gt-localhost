@@ -510,7 +510,7 @@ export type TileExtra =
   | { kind: "mailbox" }
   | { kind: "bulletin" }
   | { kind: "storage"; password?: string; recoveryAnswer?: string }
-  | { kind: "mannequin"; label?: string; skinColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number }
+  | { kind: "mannequin"; label?: string; expression?: number; skinColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number }
   | { kind: "crystal"; crystals: Record<number, number> }
   | { kind: "autoAction"; fuel: number; targetItemId: number; enabled: boolean }
   | { kind: "camera" };
@@ -551,8 +551,10 @@ const LOCK_FALLBACK_IDS = new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 1
 const DONATION_MAILBOX_IDS = new Set([656, 1006, 1452, 10784]);
 const BULLETIN_STORAGE_IDS = new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
 const DISPLAY_SHELF_IDS = new Set([3794, 10190, 10552]);
-const MANNEQUIN_IDS = new Set([1420, 6214, 10072, 10074, 10076, 10078]);
+const MANNEQUIN_IDS = new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13000]);
 const CRYSTAL_BLOCK_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
+const PORTRAIT_IDS = new Set([3818, 11196, 15950]); // actionType=88
+const PAINTING_EASEL_IDS = new Set([3528]); // actionType=76
 
 export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
   // Note: do NOT strip TILE_FLAG_EXTRA_VISUAL (0x0040) unconditionally because 0x0040 is also
@@ -561,7 +563,12 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
   let extraBuf: Buffer | null = null;
   let omitExtraFlag = false;
 
-  if (tile.extra) {
+  // GTPS3 World.h only serializes weather extras for 3694/5000 (type 40) and 3832 (type 49).
+  // Any other foreground with these extras (e.g. 5958 Epoch Machine) crashes the client on world load.
+  const badWeatherExtra =
+    (tile.extra?.kind === "weatherBg" && tile.fg !== 3694 && tile.fg !== 5000) ||
+    (tile.extra?.kind === "weatherStuff" && tile.fg !== 3832);
+  if (tile.extra && !badWeatherExtra) {
     if (tile.extra.kind === "door") {
       const lb = Buffer.from(tile.extra.label, "utf8");
       extraBuf = Buffer.allocUnsafe(1 + 2 + lb.length + 1);
@@ -766,6 +773,14 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf = Buffer.alloc(7);
       extraBuf[0] = 2;
       extraBuf.writeInt32LE(-1, 3);
+    } else if (PORTRAIT_IDS.has(tile.fg)) {
+      // Portrait (actionType=88): extraType=48, 25 bytes total (GTPS3 World.h:3412)
+      extraBuf = Buffer.alloc(25);
+      extraBuf[0] = 48;
+    } else if (PAINTING_EASEL_IDS.has(tile.fg)) {
+      // Painting Easel (actionType=76): extraType=35, 7 bytes total (GTPS3 World.h:3431)
+      extraBuf = Buffer.alloc(7);
+      extraBuf[0] = 35;
     }
   }
 

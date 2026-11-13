@@ -3,6 +3,7 @@
  * Directly reverse engineered from LyNnz01/GTPS3/SERVER/World.h (lines 10474, 10486, 13190-13760)
  */
 
+import { isUntradeable, ITEM_FLAG_PERMANENT } from "../../database/items";
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
 import type { WorldInstance } from "../../database/world";
@@ -285,7 +286,8 @@ export function handleVendingDialogReturn(
           selectedId === 1424 ||
           selectedId === 5816 ||
           selectedDef.actionType === 64 ||
-          (selectedDef.flags & 0x0080) !== 0
+          (selectedDef.flags & ITEM_FLAG_PERMANENT) !== 0 ||
+          isUntradeable(selectedDef)
         ) {
           const rejectMsg = (selectedDef?.isLock || selectedId === 1424 || selectedId === 5816)
             ? "No no no."

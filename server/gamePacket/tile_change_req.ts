@@ -6,6 +6,7 @@ import { farmingXp } from "../progression/model";
 import { staffInteractionReach } from "../ranks/interaction";
 import {
   buildTankPacket,
+  makeItemDropPacket,
   makeItemModifyObjectPacket,
   makeTileChangePacket,
   makeTileTreeStatePacket,
@@ -18,13 +19,21 @@ import {
   TILE_FLAG_LOCKED,
   TILE_FLAG_OPEN,
   TILE_FLAG_PUBLIC,
+  type DroppedObject,
   type SeedExtra,
   type TankPacket,
   type TileExtra,
   type WorldTile,
 } from "../proton/packet";
 import type { ServerContext } from "../database/context";
-import { WEATHER_BY_ITEM_ID, type ItemDef } from "../database/items";
+import {
+  isUntradeable,
+  WEATHER_BY_ITEM_ID,
+  ITEM_FLAG_AUTO_PICKUP,
+  ITEM_FLAG_DROPLESS,
+  ITEM_FLAG_NO_SEED,
+  type ItemDef
+} from "../database/items";
 import type { PlayerSession } from "../database/peer";
 import {
   applyAreaLock,
@@ -66,6 +75,7 @@ import { openVendingOwnerDialog, openVendingBuyerDialog } from "../action/dialog
 import { openGrowScanDialog } from "../action/dialog_return/growscan";
 import { openSuckerDialog } from "../action/dialog_return/sucker";
 import { openLockeDialog, openSalesManUntradeableDialog } from "../action/dialog_return/telephone_locke";
+import { handleItemActivateObject } from "./item_activate_object";
 import {
   AUTO_ACTION_IDS,
   BOOMBOX_IDS,
@@ -101,8 +111,9 @@ import { toggleWearableItem } from "./item_activate";
 const GEM_ITEM_ID = 112;
 const AREA_LOCK_IDS = new Set([202, 204, 206, 4994]);
 const WORLD_LOCK_TIER_IDS = new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
-const WEATHER_BG_SPECIAL_IDS = new Set([3694, 4892, 5000, 5654, 5716, 6854]);
-const WEATHER_STUFF_SPECIAL_IDS = new Set([3832, 5958, 6280]);
+// GTPS3 World.h: only these weather machines carry tile extras.
+const WEATHER_BG_SPECIAL_IDS = new Set([3694, 5000]);
+const WEATHER_STUFF_SPECIAL_IDS = new Set([3832]);
 
 export const WEATHER_MACHINE_MAP: Record<number, number> = WEATHER_BY_ITEM_ID;
 
@@ -1326,6 +1337,11 @@ function harvestWorldTree(
   }
 }
 
+export function isAutoPickupBlock(targetId: number, def?: ItemDef): boolean {
+  if (!def || targetId <= 0) return false;
+  return (def.flags & ITEM_FLAG_AUTO_PICKUP) !== 0;
+}
+
 function finalizeTileBreak(
   ctx: ServerContext,
   session: PlayerSession,
@@ -1408,16 +1424,40 @@ function finalizeTileBreak(
     return;
   }
 
+  const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
+  for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
+
+  if (isAutoPickupBlock(targetId, def)) {
+    // Return block directly to inventory with native flying drop collect effect & sfx
+    // Isolated single-item DroppedObject (never merged into existing ground stacks!)
+    const dropX = tx * 32 + 8;
+    const dropY = ty * 32 + 8;
+    const dropObj: DroppedObject = {
+      uid: ++world.lastObjectUid,
+      itemId: targetId,
+      count: 1,
+      x: dropX,
+      y: dropY,
+      flags: 0,
+    };
+    world.objects.push(dropObj);
+    const dropPkt = makeItemDropPacket(dropObj.itemId, dropObj.count, dropObj.x, dropObj.y, dropObj.flags, -1);
+    for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
+    handleItemActivateObject(ctx, session, dropObj.uid, true);
+    return;
+  }
+
+  // Dropless check: if block has Dropless flag or rarity 999 with no recipe ingredients, it drops nothing!
+  if (((def.flags & ITEM_FLAG_DROPLESS) !== 0 || def.rarity === 999) && (def.ing1 === 0 || def.ing2 === 0)) {
+    return;
+  }
+
   if (!def.isSeed) recordProgress(ctx, session, "blocks_broken", 1, farmingXp(def.rarity));
   if (!def.isSeed && activeMods(session.account).some(m=>m.extraBreakGemChance && Math.random()<m.extraBreakGemChance)) {
     spawnOrMergeWorldDrop(world, GEM_ITEM_ID, 1, tx*32+12, ty*32+10, -1);
   }
-  const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
-  for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
 
-  if (def.isLock || targetId === 12 || targetId === 20) {
-    ctx.giveInventoryItem(session, targetId, 1, true);
-  } else if (def.isSeed) {
+  if (def.isSeed) {
     if (Math.random() < 0.25) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 8, ty * 32 + 8, -1);
     }
@@ -1425,17 +1465,14 @@ function finalizeTileBreak(
     const roll = Math.random();
     if (roll < 0.28) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx * 32 + 6, ty * 32 + 8, -1);
-    } else if (roll < 0.48 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
+    } else if (roll < 0.48 && (def.flags & ITEM_FLAG_NO_SEED) === 0 && ctx.itemsDb.get(targetId + 1)?.isSeed) {
       spawnOrMergeWorldDrop(world, targetId + 1, 1, tx * 32 + 10, ty * 32 + 8, -1);
     }
     const mods = activeMods(session.account);
-    // The wiki documents a chance of a bonus block and up to 5x gems for
-    // Lucky and 2x gems for Gemmin' Juice. Exact combination rules and the
-    // distribution within "up to five" are not recovered: we cap at 5x.
     if (mods.some(m=>m.luckyBreaks) && Math.random()<0.1) {
       spawnOrMergeWorldDrop(world, targetId, 1, tx*32+6, ty*32+8, -1);
     }
-    if (Math.random() < 0.55) {
+    if (Math.random() < 0.55 && def.rarity > 0) {
       let gemAmt = Math.max(1, Math.min(25, Math.ceil((def.rarity || 1) / 3)));
       const lucky=mods.some(m=>m.luckyBreaks) && Math.random()<0.1;
       const doubled=mods.some(m=>m.doubleGemsChance && Math.random()<m.doubleGemsChance);

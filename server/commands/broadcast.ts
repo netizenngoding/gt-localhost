@@ -4,7 +4,7 @@ import type { PlayerSession } from "../database/peer";
 import { gtps3PlaymodTime } from "../playmods/service";
 import { displayName, hasPermission } from "../ranks";
 import { progression } from "../progression/service";
-import { makeVariantPacket, makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
+import { makeVariantPacket, makeTextPacket, NET_MESSAGE_GAME_MESSAGE, TILE_FLAG_OPEN } from "../proton/packet";
 import { OnConsoleMessage, OnDialogRequest, OnSetBux, OnTalkBubble, OnTextOverlay } from "../onVariant";
 import { sanitizeChatText } from "../tools/string";
 
@@ -92,7 +92,7 @@ export function handleBroadcastCommand(ctx: ServerContext, session: PlayerSessio
       `\`#${isSb ? "Super-" : ""}Broadcast sent. Used \`$${setGems(cost)} Gems\`\`. (\`$${setGems(session.account.gems)}\`\` left)\`\` (5 mins before you can broadcast again)`
     );
     const text = sanitizeChatText(argStr, 120);
-    const jammed = false; // no world jammers in this server
+    const jammed = !!session.world && session.world.tiles.some((t) => t.fg === 226 && (t.flags & TILE_FLAG_OPEN) !== 0);
     const worldName = session.world?.name || "EXIT";
     if (!jammed && session.world) lastSbWorld = session.world.name;
     const color = isStaff(session) ? "`^" : "`$";

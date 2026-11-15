@@ -68,8 +68,8 @@ export function handleDropItemReturn(
     }
   }
 
-  const dropX = targetTileX * 32 + 6;
-  const dropY = playerTileY * 32 + 6;
+  const dropX = targetTileX * 32 + 6 + (Math.random() * 14 - 7);
+  const dropY = playerTileY * 32 + 6 + (Math.random() * 8 - 4);
 
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
 

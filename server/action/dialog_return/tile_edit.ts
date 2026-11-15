@@ -1,5 +1,5 @@
 import { worldDestination } from "../../database/world-policy";
-import { makeSendLockPacket, makeTileUpdatePacket } from "../../proton/packet";
+import { makeSendLockPacket, makeTileUpdatePacket, TILE_FLAG_PUBLIC } from "../../proton/packet";
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
 import {
@@ -522,7 +522,25 @@ export function handleTileEditDialogReturn(
     if (dlgName === "lock_edit") {
       lock.adminIds = lock.adminIds.filter((id) => kv[`acc_${id}`] !== "0");
       if (kv.checkbox_public !== undefined) {
-        lock.settings = kv.checkbox_public === "1" ? lock.settings | 128 : lock.settings & ~128;
+        const isPub = kv.checkbox_public === "1";
+        lock.settings = isPub ? lock.settings | 128 : lock.settings & ~128;
+        if (isPub) tile.flags |= TILE_FLAG_PUBLIC;
+        else tile.flags &= ~TILE_FLAG_PUBLIC;
+        if (tile.fg === 202 || tile.fg === 204 || tile.fg === 206 || tile.fg === 4994) {
+          const originIdx = y * world.width + x;
+          const pubNow = Date.now();
+          for (let idx = 0; idx < world.tiles.length; idx++) {
+            const ct = world.tiles[idx];
+            if (ct.parentIndex === originIdx) {
+              if (isPub) ct.flags |= TILE_FLAG_PUBLIC;
+              else ct.flags &= ~TILE_FLAG_PUBLIC;
+              const cx = idx % world.width;
+              const cy = Math.floor(idx / world.width);
+              const cPkt = makeTileUpdatePacket(cx, cy, ct, pubNow);
+              for (const p of world.peers) p.peer.sendPacket(0, cPkt, true);
+            }
+          }
+        }
       }
       if (kv.checkbox_ignore !== undefined) {
         lock.emptyAir = kv.checkbox_ignore === "1";
@@ -604,6 +622,13 @@ export function handleTileEditDialogReturn(
         const lockedIndices = applyAreaLock(world, x, y);
         const lockPkt = makeSendLockPacket(lock.ownerUserId, tile.fg, x, y, lockedIndices);
         for (const p of world.peers) p.peer.sendPacket(0, lockPkt, true);
+        const updNow = Date.now();
+        for (const idx of lockedIndices) {
+          const lx = idx % world.width;
+          const ly = Math.floor(idx / world.width);
+          const lPkt = makeTileUpdatePacket(lx, ly, world.tiles[idx], updNow);
+          for (const p of world.peers) p.peer.sendPacket(0, lPkt, true);
+        }
         broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
       }
       ctx.dirty = true;

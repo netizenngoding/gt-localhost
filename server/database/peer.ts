@@ -10,6 +10,7 @@ import type { ENetServerPeer } from "../network/enet";
 import {
   CHAR_STATE_DOUBLE_JUMP,
   CHAR_STATE_NOCLIP,
+  makeVariantPacket,
   type CharacterStateParams,
   type InventorySlot,
 } from "../proton/packet";
@@ -82,6 +83,7 @@ export interface PlayerAccount {
   nickname?: string;
   backpackLevel?: number;
   storedItems?: Array<{ itemId: number; count: number }>;
+  magplantLinks?: Record<string, { x: number; y: number }>;
 }
 
 export interface PendingTradeOffer {
@@ -213,7 +215,63 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     storedItems: Array.isArray(raw.storedItems)
       ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0)
       : [],
+    magplantLinks:
+      raw.magplantLinks && typeof raw.magplantLinks === "object"
+        ? Object.fromEntries(
+            Object.entries(raw.magplantLinks).filter(
+              ([k, v]) =>
+                typeof k === "string" &&
+                k.length > 0 &&
+                v &&
+                Number.isSafeInteger(v.x) &&
+                v.x >= 0 &&
+                Number.isSafeInteger(v.y) &&
+                v.y >= 0
+            )
+          )
+        : undefined,
   };
+}
+
+export function sendPlanterActivated(session: PlayerSession, itemId: number, x: number, y: number): void {
+  session.peer.sendPacket(
+    0,
+    makeVariantPacket(
+      [
+        "OnPlanterActivated",
+        { type: "i32", value: itemId },
+        { type: "i32", value: x },
+        { type: "i32", value: y },
+      ],
+      -1
+    ),
+    true
+  );
+}
+
+export function setSessionMagplantLink(
+  session: PlayerSession,
+  worldName: string,
+  x: number,
+  y: number,
+  itemId: number
+): void {
+  session.magplantRemote = { x, y, itemId };
+  if (!session.account.magplantLinks) session.account.magplantLinks = {};
+  session.account.magplantLinks[worldName.toUpperCase()] = { x, y };
+  sendPlanterActivated(session, itemId, x, y);
+}
+
+export function clearSessionMagplantLink(
+  session: PlayerSession,
+  worldName?: string,
+  persistClear = true
+): void {
+  session.magplantRemote = null;
+  if (persistClear && worldName && session.account.magplantLinks) {
+    delete session.account.magplantLinks[worldName.toUpperCase()];
+  }
+  sendPlanterActivated(session, 0, 0, 0);
 }
 
 /**
@@ -298,6 +356,9 @@ export function buildCharacterStateForSession(
       else if (xeno.longBuild === 2) buildRangeTiles = 2;
       if (xeno.longPunch === 1) punchRangeTiles = Math.max(punchRangeTiles, 4);
       else if (xeno.longPunch === 2) punchRangeTiles = 2;
+    }
+    if (session.world?.tiles.some((t) => t.fg === 4992 && (t.flags & 0x0040) !== 0)) {
+      gravity = Math.min(gravity, 400.0);
     }
 
     if (c.noclip) stateFlags |= 1 << 0;

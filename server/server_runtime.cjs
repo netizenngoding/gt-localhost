@@ -27357,6 +27357,7 @@ var PACKET_ITEM_EFFECT = 19;
 var PACKET_SET_CHARACTER_STATE = 20;
 var PACKET_PING_REPLY = 21;
 var PACKET_PING_REQUEST = 22;
+var PACKET_ITEM_SUCK_EFFECT = 34;
 var TANK_FLAG_EXTENDED = 8;
 var TANK_FLAG_FACING_LEFT = 16;
 var TILE_FLAG_HAS_EXTRA = 1;
@@ -27429,7 +27430,12 @@ var ALLOWLISTED_SKIN_COLORS = [
   2749168127 >>> 0,
   726392831 >>> 0,
   1345523711 >>> 0,
-  3317891071 >>> 0
+  3317891071 >>> 0,
+  // Super Supporter skin colors (Royal Blue, Ice Blue, Bright Orange, Translucent Ruby Red)
+  3563862271 >>> 0,
+  4006130431 >>> 0,
+  8978431 >>> 0,
+  924106384 >>> 0
 ];
 function buildTankPacket(f) {
   const ext = f.extendedData;
@@ -27452,7 +27458,7 @@ function buildTankPacket(f) {
   b.writeFloatLE(f.y ?? 0, t + 28);
   b.writeFloatLE(f.speedX ?? 0, t + 32);
   b.writeFloatLE(f.speedY ?? 0, t + 36);
-  b.writeInt32LE(0, t + 40);
+  b.writeFloatLE(f.float2 ?? 0, t + 40);
   b.writeInt32LE((f.punchX ?? 0) | 0, t + 44);
   b.writeInt32LE((f.punchY ?? 0) | 0, t + 48);
   b.writeUInt32LE(ext ? ext.length : 0, t + 52);
@@ -27661,7 +27667,21 @@ var LOCK_FALLBACK_IDS = /* @__PURE__ */ new Set([202, 204, 206, 242, 1796, 4994,
 var DONATION_MAILBOX_IDS = /* @__PURE__ */ new Set([656, 1006, 1452, 10784]);
 var BULLETIN_STORAGE_IDS = /* @__PURE__ */ new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
 var DISPLAY_SHELF_IDS = /* @__PURE__ */ new Set([3794, 10190, 10552]);
-var MANNEQUIN_IDS = /* @__PURE__ */ new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13e3]);
+var MANNEQUIN_IDS = /* @__PURE__ */ new Set([1420]);
+function defaultMannequinExpression(_itemId) {
+  return 25;
+}
+var LEGACY_MANNEQUIN_EXPRESSION = {
+  8: 25
+};
+function resolveMannequinExpression(itemId, stored) {
+  const value = stored ?? defaultMannequinExpression(itemId);
+  return LEGACY_MANNEQUIN_EXPRESSION[value] ?? value;
+}
+var MANNEQUIN_DEFAULT_SKIN = 3873892095;
+function defaultMannequinSkin(_itemId) {
+  return MANNEQUIN_DEFAULT_SKIN;
+}
 var CRYSTAL_BLOCK_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
 var PORTRAIT_IDS = /* @__PURE__ */ new Set([3818, 11196, 15950]);
 var PAINTING_EASEL_IDS = /* @__PURE__ */ new Set([3528]);
@@ -27717,15 +27737,17 @@ function serializeSingleTile(tile, nowMs) {
       if (tile.extra.wl > 0) flags |= TILE_FLAG_HAS_WLS;
     } else if (tile.extra.kind === "sucker") {
       flags &= ~TILE_FLAG_EXTRA_VISUAL;
-      extraBuf = Buffer.allocUnsafe(15);
+      extraBuf = Buffer.alloc(15);
       extraBuf[0] = 62;
       extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
       extraBuf.writeUInt32LE(tile.extra.count >>> 0, 5);
       extraBuf[9] = tile.extra.enabled ? 1 : 0;
       extraBuf[10] = tile.extra.magnetron ? 1 : 0;
-      const cap = tile.fg === 5638 ? 5e3 : 1500;
-      extraBuf.writeUInt32LE(cap >>> 0, 11);
-      if (tile.extra.itemId !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+      if (tile.fg === 5638) {
+        extraBuf.writeUInt16LE(5e3, 12);
+      } else {
+        extraBuf.writeUInt16LE(1500, 13);
+      }
     } else if (tile.extra.kind === "provider") {
       extraBuf = Buffer.allocUnsafe(5);
       extraBuf[0] = 9;
@@ -27788,8 +27810,10 @@ function serializeSingleTile(tile, nowMs) {
       extraBuf[0] = 14;
       extraBuf.writeUInt16LE(lb.length, 1);
       lb.copy(extraBuf, 3);
-      extraBuf[3 + lb.length] = 0;
-      extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 4 + lb.length);
+      extraBuf[3 + lb.length] = resolveMannequinExpression(tile.fg, tile.extra.expression) & 255;
+      const pose = (tile.extra.pose ?? 0) & 255;
+      const skin = (defaultMannequinSkin(tile.fg) & 4294967040 | pose) >>> 0;
+      extraBuf.writeUInt32LE(skin, 4 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.hair & 65535, 8 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.shirt & 65535, 10 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.pants & 65535, 12 + lb.length);
@@ -27808,6 +27832,28 @@ function serializeSingleTile(tile, nowMs) {
       if (tile.extra.enabled) flags |= TILE_FLAG_EXTRA_VISUAL;
     } else if (tile.extra.kind === "camera") {
       extraBuf = null;
+    } else if (tile.extra.kind === "paintingEasel") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.allocUnsafe(7 + lb.length);
+      extraBuf[0] = 35;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+      extraBuf.writeUInt16LE(lb.length, 5);
+      lb.copy(extraBuf, 7);
+    } else if (tile.extra.kind === "portrait") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.alloc(25 + lb.length);
+      extraBuf[0] = 48;
+      extraBuf.writeUInt16LE(lb.length, 1);
+      lb.copy(extraBuf, 3);
+      const isPainted = (tile.extra.skinColor ?? 0) !== 0 || tile.extra.face !== 0 || tile.extra.hair !== 0 || tile.extra.mask !== 0;
+      if (isPainted) {
+        extraBuf.writeUInt32LE((tile.extra.expression ?? 1) >>> 0, 3 + lb.length);
+        extraBuf.writeUInt32LE((tile.extra.hairColor ?? 0) >>> 0, 11 + lb.length);
+        extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 15 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.face & 65535, 19 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.mask & 65535, 21 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.hair & 65535, 23 + lb.length);
+      }
     }
   }
   if (!extraBuf && tile.fg !== 0) {
@@ -27839,6 +27885,8 @@ function serializeSingleTile(tile, nowMs) {
     } else if (MANNEQUIN_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(26);
       extraBuf[0] = 14;
+      extraBuf[3] = defaultMannequinExpression(tile.fg);
+      extraBuf.writeUInt32LE(defaultMannequinSkin(tile.fg), 4);
     } else if (CRYSTAL_BLOCK_IDS.has(tile.fg)) {
       extraBuf = Buffer.from([20, 0, 0]);
     } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
@@ -30462,19 +30510,6 @@ function staffInteractionReach(account) {
 // server/tools/string.ts
 var import_node_crypto = __toESM(require("node:crypto"));
 var DEFAULT_SKIN_COLOR2 = 2190853119;
-function rgbHexToGtSkinColor(hex6) {
-  const r = parseInt(hex6.slice(0, 2), 16) & 255;
-  const g = parseInt(hex6.slice(2, 4), 16) & 255;
-  const b = parseInt(hex6.slice(4, 6), 16) & 255;
-  return (b << 24 | g << 16 | r << 8 | 255) >>> 0;
-}
-function gtSkinColorToRgbHex(color) {
-  const u = color >>> 0;
-  const b = u >>> 24 & 255;
-  const g = u >>> 16 & 255;
-  const r = u >>> 8 & 255;
-  return [r, g, b].map((v) => v.toString(16).padStart(2, "0").toUpperCase()).join("");
-}
 function hashPassword(password) {
   const salt = import_node_crypto.default.randomBytes(16).toString("hex");
   return `scrypt$${salt}$${import_node_crypto.default.scryptSync(password, salt, 32).toString("hex")}`;
@@ -30560,8 +30595,41 @@ function normalizeAccount(raw) {
     spawnY: raw.spawnY,
     nickname: typeof raw.nickname === "string" ? raw.nickname.replace(/[|\r\n\0]/g, "").slice(0, 24) : void 0,
     backpackLevel: typeof raw.backpackLevel === "number" && raw.backpackLevel >= 1 ? Math.min(20, raw.backpackLevel) : 1,
-    storedItems: Array.isArray(raw.storedItems) ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0) : []
+    storedItems: Array.isArray(raw.storedItems) ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0) : [],
+    magplantLinks: raw.magplantLinks && typeof raw.magplantLinks === "object" ? Object.fromEntries(
+      Object.entries(raw.magplantLinks).filter(
+        ([k, v]) => typeof k === "string" && k.length > 0 && v && Number.isSafeInteger(v.x) && v.x >= 0 && Number.isSafeInteger(v.y) && v.y >= 0
+      )
+    ) : void 0
   };
+}
+function sendPlanterActivated(session, itemId, x, y) {
+  session.peer.sendPacket(
+    0,
+    makeVariantPacket(
+      [
+        "OnPlanterActivated",
+        { type: "i32", value: itemId },
+        { type: "i32", value: x },
+        { type: "i32", value: y }
+      ],
+      -1
+    ),
+    true
+  );
+}
+function setSessionMagplantLink(session, worldName, x, y, itemId) {
+  session.magplantRemote = { x, y, itemId };
+  if (!session.account.magplantLinks) session.account.magplantLinks = {};
+  session.account.magplantLinks[worldName.toUpperCase()] = { x, y };
+  sendPlanterActivated(session, itemId, x, y);
+}
+function clearSessionMagplantLink(session, worldName, persistClear = true) {
+  session.magplantRemote = null;
+  if (persistClear && worldName && session.account.magplantLinks) {
+    delete session.account.magplantLinks[worldName.toUpperCase()];
+  }
+  sendPlanterActivated(session, 0, 0, 0);
 }
 function getClothingVector(account, itemsDb) {
   const slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -30629,6 +30697,9 @@ function buildCharacterStateForSession(session, itemsDb) {
     else if (xeno.longBuild === 2) buildRangeTiles = 2;
     if (xeno.longPunch === 1) punchRangeTiles = Math.max(punchRangeTiles, 4);
     else if (xeno.longPunch === 2) punchRangeTiles = 2;
+  }
+  if (session.world?.tiles.some((t) => t.fg === 4992 && (t.flags & 64) !== 0)) {
+    gravity = Math.min(gravity, 400);
   }
   if (c.noclip) stateFlags |= 1 << 0;
   if (c.speed) moveSpeed = 420;
@@ -31239,6 +31310,7 @@ function cancelTrade(s, reason = "Trade cancelled.") {
     trades.delete(x.session);
     if (x.open) variant(x.session, ["OnForceTradeEnd"]);
     if (reason) OnConsoleMessage(x.session, reason);
+    if (reason !== "Trade complete.") OnPlayPositioned(x.session, "audio/dialog_cancel.wav");
   }
 }
 function requestTrade(ctx, s, id) {
@@ -31253,18 +31325,22 @@ function requestTrade(ctx, s, id) {
     if (!own.open) {
       own.open = true;
       variant(s, ["OnStartTrade", p.account.name, { type: "i32", value: p.netId }]);
+      OnPlayPositioned(s, "audio/dialog_open.wav");
+      OnPlayPositioned(p, "audio/dialog_confirm.wav");
     }
     refresh(current);
     return;
   }
   if (current || trades.get(p)) {
     OnConsoleMessage(s, "One player is already trading.");
+    OnPlayPositioned(s, "audio/bleep_fail.wav");
     return;
   }
   const t = { a: { session: s, open: true, accepted: false, offer: /* @__PURE__ */ new Map() }, b: { session: p, open: false, accepted: false, offer: /* @__PURE__ */ new Map() } };
   trades.set(s, t);
   trades.set(p, t);
   variant(s, ["OnStartTrade", p.account.name, { type: "i32", value: p.netId }]);
+  OnPlayPositioned(s, "audio/dialog_open.wav");
   OnConsoleMessage(p, "`#TRADE ALERT:`` " + s.account.name + " wants to trade! Wrench them and choose Trade to accept.");
   OnPlayPositioned(p, "audio/cash_register.wav");
 }
@@ -31277,20 +31353,24 @@ function addTradeItem(ctx, s, id, n) {
   if (!t || !valid(ctx, t) || t.confirmToken || !side(t, s).open) return;
   if (!Number.isSafeInteger(n) || n < 1 || n > 200 || !allowed(ctx, s, id)) {
     OnConsoleMessage(s, "Cannot trade that item or amount.");
+    OnPlayPositioned(s, "audio/bleep_fail.wav");
     return;
   }
   const own = side(t, s), slot = s.account.inventory.find((i) => i.itemId === id);
   if (!own.offer.has(id) && own.offer.size >= 4) {
     OnConsoleMessage(s, "Only four different items fit.");
+    OnPlayPositioned(s, "audio/bleep_fail.wav");
     return;
   }
   if ((own.offer.get(id) || 0) + n > slot.count) {
     OnConsoleMessage(s, "Not enough items.");
+    OnPlayPositioned(s, "audio/bleep_fail.wav");
     return;
   }
   own.offer.set(id, (own.offer.get(id) || 0) + n);
   t.a.accepted = t.b.accepted = false;
   refresh(t, true);
+  for (const x of [t.a, t.b]) if (x.open) OnPlayPositioned(x.session, "audio/click.wav");
 }
 function exchanged(ctx, inv, give, receive, capacity) {
   const next = inv.map((x) => ({ ...x }));
@@ -31332,11 +31412,14 @@ function accept(ctx, s, raw, status) {
   const offered = other(t, s).offer;
   if (status === "1" && (malformed || seen.size > 0 && (seen.size !== offered.size || [...offered].some(([id, n]) => seen.get(id) !== n)))) {
     OnConsoleMessage(s, "Offer changed. Please check it again.");
+    OnPlayPositioned(s, "audio/bleep_fail.wav");
     refresh(t);
     return;
   }
-  side(t, s).accepted = status === "1";
+  const accepted = status === "1";
+  side(t, s).accepted = accepted;
   refresh(t);
+  for (const x of [t.a, t.b]) OnPlayPositioned(x.session, accepted ? "audio/dialog_confirm.wav" : "audio/dialog_cancel.wav");
   if (!t.a.accepted || !t.b.accepted) return;
   beginConfirmation(ctx, t);
 }
@@ -31355,6 +31438,7 @@ function beginConfirmation(ctx, t) {
     for (const [id, n] of incoming) d.addLabelWithIcon("small", `${n} x ${ctx.itemsDb.get(id)?.name.replace(/[`|\r\n]/g, "") || id}`, id);
     d.addButton(`confirm_${t.confirmToken}`, "`2Do The Trade!``").addButton("cancel", "`4Cancel``").addQuickExit();
     OnDialogRequest(x.session, d.endDialog("trade_confirm", "", ""));
+    OnPlayPositioned(x.session, "audio/dialog_open.wav");
   }
 }
 function confirmTrade(ctx, s, btn) {
@@ -31368,8 +31452,11 @@ function confirmTrade(ctx, s, btn) {
   t.confirmed.add(s);
   if (t.confirmed.size < 2) {
     OnConsoleMessage(s, "Trade confirmed; waiting for the other player.");
+    OnPlayPositioned(s, "audio/dialog_confirm.wav");
+    OnPlayPositioned(other(t, s).session, "audio/dialog_confirm.wav");
     return;
   }
+  OnPlayPositioned(s, "audio/dialog_confirm.wav");
   complete(ctx, t, s);
 }
 function complete(ctx, t, s) {
@@ -31444,6 +31531,7 @@ function tradeAction(ctx, s, action, kv, raw) {
     own.offer.delete(Number((kv.itemID || "").replace(/\|$/, "")));
     t.a.accepted = t.b.accepted = false;
     refresh(t, true);
+    for (const x of [t.a, t.b]) if (x.open) OnPlayPositioned(x.session, "audio/click.wav");
     return true;
   }
   if (action === "trade_accept") {
@@ -31786,6 +31874,11 @@ function applyAreaLock(world, lx, ly) {
       const nt = world.tiles[nIdx];
       if (isLockable(nIdx)) {
         nt.flags |= TILE_FLAG_LOCKED;
+        if ((lockTile.extra.settings & 128) !== 0 || (lockTile.flags & TILE_FLAG_PUBLIC) !== 0) {
+          nt.flags |= TILE_FLAG_PUBLIC;
+        } else {
+          nt.flags &= ~TILE_FLAG_PUBLIC;
+        }
         nt.parentIndex = originIdx;
         lockedIndices.push(nIdx);
         queue.push(nIdx);
@@ -31809,29 +31902,14 @@ function getBuildersLockDenial(world, uid, tile, tx, ty, mode = "place") {
       }
       if (!isPublic) return "";
       if (lt.extra.buildOnly && mode === "break") return "This lock allows building only!";
-      if (!lt.extra.buildOnly && mode === "place") return "This lock allows breaking only!";
       return null;
     }
     return isAdmin || isPublic ? null : "";
   };
-  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0 && tile.parentIndex < world.tiles.length) {
+  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex >= 0 && tile.parentIndex < world.tiles.length) {
     const pt = world.tiles[tile.parentIndex];
     const msg = pt ? checkLock(pt) : null;
     if (msg !== null) return msg;
-  }
-  if (tx !== void 0 && ty !== void 0) {
-    for (let y = Math.max(0, ty - 10); y <= Math.min(world.height - 1, ty + 10); y++) {
-      for (let x = Math.max(0, tx - 10); x <= Math.min(world.width - 1, tx + 10); x++) {
-        const lt = world.tiles[y * world.width + x];
-        if (!lt || lt.extra?.kind !== "lock") continue;
-        const rad = getLockRadiusForId(lt.fg);
-        if (rad <= 0) continue;
-        if (Math.abs(x - tx) <= rad && Math.abs(y - ty) <= rad) {
-          const msg = checkLock(lt);
-          if (msg !== null) return msg;
-        }
-      }
-    }
   }
   return null;
 }
@@ -31842,17 +31920,19 @@ function canModifyTile(session, world, tile, tx, ty, mode = "place") {
     if (mode === "break") return tile.extra.ownerUserId === uid;
     return tile.extra.ownerUserId === uid || tile.extra.adminIds.includes(uid);
   }
+  const areaDenial = getBuildersLockDenial(world, uid, tile, tx, ty, mode);
+  if (areaDenial !== null) return false;
+  const coveredByAreaLock = (tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex >= 0 && tile.parentIndex < world.tiles.length && world.tiles[tile.parentIndex]?.extra?.kind === "lock" && !WORLD_LOCK_IDS.has(world.tiles[tile.parentIndex].fg);
+  if (coveredByAreaLock) return true;
   if (world.ownerUserId !== 0 && world.ownerUserId !== uid) {
-    const wlTile = world.tiles.find(
-      (t) => (t.fg === 242 || t.fg === 1796 || t.fg === 5260 || t.fg === 7188 || t.fg === 10410 || t.fg === 11550 || t.fg === 11586 || t.fg === 11902 || t.fg === 12654) && t.extra?.kind === "lock"
-    );
+    const wlTile = getWorldLockTile(world);
     if (wlTile && wlTile.extra?.kind === "lock") {
       if (wlTile.extra.adminIds.includes(uid)) return true;
       if ((wlTile.extra.settings & 128) !== 0) return true;
     }
     return false;
   }
-  return getBuildersLockDenial(world, uid, tile, tx, ty, mode) === null;
+  return true;
 }
 var canModifyWorldTile = canModifyTile;
 var WORLD_LOCK_IDS = /* @__PURE__ */ new Set([242, 1796, 5260, 7188, 10410, 11550, 11586, 11902, 12654]);
@@ -31921,6 +32001,7 @@ function recomputeWorldWeather(world, itemsDb) {
   world.weatherId = nextWeather;
   return nextWeather;
 }
+var nextSuckEffectTag = 0;
 function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -1) {
   if (totalCount <= 0 || itemId <= 0) return void 0;
   if (itemId !== 112) {
@@ -31934,18 +32015,41 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
             const absorbed = Math.min(totalCount, space);
             t.extra.count += absorbed;
             totalCount -= absorbed;
+            nextSuckEffectTag = nextSuckEffectTag % 255 + 1;
             const flyPkt = buildTankPacket({
-              type: PACKET_ITEM_EFFECT,
+              type: PACKET_ITEM_SUCK_EFFECT,
+              objType: 3,
+              count1: nextSuckEffectTag,
+              count2: 2,
               netId: -1,
-              x: tx * 32 + 16,
-              y: ty * 32 + 16,
-              speedX: x,
-              speedY: y,
+              x,
+              y,
+              speedX: tx * 32 + 16,
+              speedY: ty * 32 + 16,
+              float2: 300,
               punchX: itemId
             });
             for (const p of world.peers) p.peer.sendPacket(0, flyPkt, true);
             const updPkt = makeTileUpdatePacket(tx, ty, t, Date.now());
-            for (const p of world.peers) p.peer.sendPacket(0, updPkt, true);
+            for (const p of world.peers) {
+              p.peer.sendPacket(0, updPkt, true);
+              if (t.fg === 5638 && p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty && p.magplantRemote.itemId !== t.extra.itemId) {
+                p.magplantRemote.itemId = t.extra.itemId;
+                p.peer.sendPacket(
+                  0,
+                  makeVariantPacket(
+                    [
+                      "OnPlanterActivated",
+                      { type: "i32", value: t.extra.itemId },
+                      { type: "i32", value: tx },
+                      { type: "i32", value: ty }
+                    ],
+                    -1
+                  ),
+                  true
+                );
+              }
+            }
             if (totalCount <= 0) return;
           }
         }
@@ -31999,11 +32103,17 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
   while (remaining > 0) {
     const chunk = Math.min(200, remaining);
     remaining -= chunk;
+    let sx = x;
+    let sy = y;
+    if (world.objects.some((o) => Math.hypot(o.x - sx, o.y - sy) < 4)) {
+      sx = x + (Math.random() * 14 - 7);
+      sy = y + (Math.random() * 8 - 4);
+    }
     const uid = ++world.lastObjectUid;
-    const obj = { uid, itemId, x, y, count: chunk, flags: 0 };
+    const obj = { uid, itemId, x: sx, y: sy, count: chunk, flags: 0 };
     world.objects.push(obj);
     lastAffected = obj;
-    const dropPkt = makeItemDropPacket(itemId, chunk, x, y, 0, throwerNetId);
+    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, 0, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
   return lastAffected;
@@ -32368,6 +32478,7 @@ function expireMods(ctx) {
 function infectByPunch(ctx, attacker, tx, ty) {
   const world = attacker.world, now = Date.now();
   if (!world || !activeMods(attacker.account).some((m) => m.id === "gtps3-infected")) return;
+  if (world.tiles.some((t) => (t.fg === 1278 || t.fg === 1276) && (t.flags & 64) !== 0)) return;
   if (attacker.lastInfectPunchAt && now - attacker.lastInfectPunchAt < 1500) return;
   attacker.lastInfectPunchAt = now;
   const target = [...world.peers].filter((p) => p !== attacker && tx * 32 < p.x + 20 && tx * 32 + 32 > p.x && ty * 32 < p.y + 30 && ty * 32 + 32 > p.y).sort((a, b) => a.netId - b.netId)[0];
@@ -32532,7 +32643,11 @@ var ServerContext = class {
   }
   savePlayersNow() {
     try {
-      this.atomicWriteJson(this.playersFile, Array.from(this.accounts.values()));
+      const sanitized = Array.from(this.accounts.values()).map((acc) => ({
+        ...acc,
+        inventory: acc.inventory.filter((s) => s.itemId !== 5640)
+      }));
+      this.atomicWriteJson(this.playersFile, sanitized);
     } catch (err) {
       this.dirty = true;
       throw new Error("Player save failed; mutation was not acknowledged", { cause: err });
@@ -32599,6 +32714,9 @@ var ServerContext = class {
     return { x: 48 * 32, y: 36 * 32 };
   }
   sendInventory(session, syncLocalClothes = true) {
+    if (!session.world) {
+      session.account.inventory = session.account.inventory.filter((s) => s.itemId !== 5640);
+    }
     session.peer.sendPacket(
       0,
       makeInventoryPacket(session.account.backpackSize, session.account.inventory),
@@ -32821,17 +32939,97 @@ var ServerContext = class {
     for (const peer of world.peers) recordProgress(this, peer, void 0, 0);
     if (announceEntry) {
       const owner = world.ownerUserId ? this.findAccountByUserId(world.ownerUserId) : void 0;
-      const lockNote = owner ? ` \`o[\`wWorld Locked\`\` by \`2${owner.name}\`o]\`\`` : " `o(Unclaimed - place a World Lock!)``";
+      const worldMods = [];
+      let hasJam226 = false;
+      let hasJam1276 = false;
+      let hasJam1278 = false;
+      let hasJam4884 = false;
+      let hasJam4992 = false;
+      for (const t of world.tiles) {
+        if ((t.flags & TILE_FLAG_OPEN) === 0) continue;
+        if (t.fg === 226) hasJam226 = true;
+        else if (t.fg === 1276) hasJam1276 = true;
+        else if (t.fg === 1278) hasJam1278 = true;
+        else if (t.fg === 4884) hasJam4884 = true;
+        else if (t.fg === 4992) hasJam4992 = true;
+      }
+      if (hasJam226) worldMods.push("`4JAMMED``");
+      if (hasJam1276) worldMods.push("`2NOPUNCH``");
+      if (hasJam1278) worldMods.push("`2IMMUNE``");
+      if (hasJam4884) worldMods.push("`2NOWAR``");
+      if (hasJam4992) worldMods.push("`2ANTIGRAVITY``");
+      if (world.disableMusicBlocks) worldMods.push("`6NOMUSIC``");
+      if (world.royalSilence) worldMods.push("`6SILENCED``");
+      if (world.royalRainbows) worldMods.push("`6RAINBOWS``");
+      if (world.entryLevel && world.entryLevel > 0) worldMods.push(`\`2LVL ${world.entryLevel}\`\``);
+      if (world.worldCategory) worldMods.push(`\`6${world.worldCategory}\`\``);
+      const modsText = worldMods.length > 0 ? `\`0[\`\`${worldMods.join(", ")}\`0]\`\` ` : "";
+      const otherCount = world.peers.size - 1;
       OnConsoleMessage(
         session,
-        `World \`w${world.name}\`\` entered. There are \`w${world.peers.size - 1}\`\` other people here, \`w${this.sessions.size}\`\` online.${lockNote}`
+        `World \`w${world.name}\`\` ${modsText}entered.  There are \`w${otherCount}\`\` other people here, \`w${this.sessions.size}\`\` online.`
       );
+      if (world.xenonite?.enabled) {
+        const x2 = world.xenonite;
+        const xText = "Xenonite has changed everyone's powers!" + (x2.doubleJump === 1 ? " `2Double Jump granted!``" : x2.doubleJump === 2 ? " `6Double Jump blocked!``" : "") + (x2.highJump === 1 ? " `2High Jump granted!``" : x2.highJump === 2 ? " `6High Jump blocked!``" : "") + (x2.heatResist === 1 ? " `2Heat Resist granted!``" : "") + (x2.strongPunch === 1 ? " `2Strong Punch granted!``" : x2.strongPunch === 2 ? " `6Strong Punch blocked!``" : "") + (x2.speedy === 1 ? " `2Super Speed granted!``" : x2.speedy === 2 ? " `6Super Speed blocked!``" : "") + (x2.longPunch === 1 ? " `2Long Punch granted!``" : x2.longPunch === 2 ? " `6Long Punch blocked!``" : "") + (x2.longBuild === 1 ? " `2Long Build granted!``" : x2.longBuild === 2 ? " `6Long Build blocked!``" : "");
+        OnConsoleMessage(session, xText);
+        OnTalkBubble(session, session.netId, xText, 0, true);
+      }
+      if (owner) {
+        OnConsoleMessage(session, `[\`w${world.name}\`\` World Locked by \`2${owner.name}\`\`]`);
+      }
+      const enterMsg = `\`5<\`w${session.account.name}\`\` entered, \`w${otherCount}\`\` others here>\`\``;
       for (const peer of world.peers) {
         if (peer !== session) {
-          OnConsoleMessage(
-            peer,
-            `\`o<\`w${session.account.name}\`\` entered, \`w${world.peers.size - 1}\`\` others here>\`\``
-          );
+          if (otherCount >= 1 && otherCount <= 14) {
+            OnTalkBubble(peer, session.netId, enterMsg, 1, false);
+          }
+          OnConsoleMessage(peer, enterMsg);
+        }
+      }
+      if (session.account.inventory.some((s) => s.itemId === 5640 && s.count > 0)) {
+        const worldKey = world.name.toUpperCase();
+        const saved = session.account.magplantLinks?.[worldKey];
+        let targetRemote = null;
+        if (saved && saved.x >= 0 && saved.x < world.width && saved.y >= 0 && saved.y < world.height) {
+          const st = world.tiles[saved.y * world.width + saved.x];
+          if (st?.fg === 5638 && st.extra?.kind === "sucker" && st.extra.itemId > 0) {
+            targetRemote = { x: saved.x, y: saved.y, itemId: st.extra.itemId };
+          }
+        }
+        if (!targetRemote) {
+          let fallbackActive = null;
+          for (let ty = 0; ty < world.height; ty++) {
+            for (let tx = 0; tx < world.width; tx++) {
+              const mt = world.tiles[ty * world.width + tx];
+              if (mt.fg === 5638 && mt.extra?.kind === "sucker" && mt.extra.itemId > 0 && mt.extra.magnetron) {
+                const candidate = { x: tx, y: ty, itemId: mt.extra.itemId };
+                if (mt.extra.count > 0) {
+                  targetRemote = candidate;
+                  break;
+                }
+                if (!fallbackActive) fallbackActive = candidate;
+              }
+            }
+            if (targetRemote) break;
+          }
+          if (!targetRemote) targetRemote = fallbackActive;
+        }
+        if (targetRemote) {
+          session.magplantRemote = targetRemote;
+          const expectedNetId = session.netId;
+          const sendPlanterSync = () => {
+            if (session.world !== world || session.netId !== expectedNetId || !this.sessions.has(session) || !session.magplantRemote) {
+              return;
+            }
+            const { x: rx, y: ry, itemId: rItem } = session.magplantRemote;
+            sendPlanterActivated(session, rItem, rx, ry);
+          };
+          sendPlanterSync();
+          for (const delay of [200, 800]) {
+            const timer = setTimeout(sendPlanterSync, delay);
+            if (timer.unref) timer.unref();
+          }
         }
       }
     }
@@ -32850,17 +33048,18 @@ var ServerContext = class {
     session.iconState = 0;
     session.lastIconStatePacket = void 0;
     if (session.magplantRemote) {
-      session.magplantRemote = null;
-      session.peer.sendPacket(
-        0,
-        makeVariantPacket([
-          "OnPlanterActivated",
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 }
-        ]),
-        true
-      );
+      clearSessionMagplantLink(session, void 0, false);
+    }
+    let removedRemote = 0;
+    for (let i = session.account.inventory.length - 1; i >= 0; i--) {
+      if (session.account.inventory[i].itemId === 5640) {
+        removedRemote += session.account.inventory[i].count;
+        session.account.inventory.splice(i, 1);
+      }
+    }
+    if (removedRemote > 0) {
+      this.dirty = true;
+      session.peer.sendPacket(0, makeModifyInventoryPacket(5640, 0, removedRemote), true);
     }
     world.peers.delete(session);
     session.world = null;
@@ -33037,6 +33236,7 @@ var ItemDatabase = class _ItemDatabase {
     const count = itemsDatBuf.readUInt32LE(2);
     let pos = 6;
     const reference = new Map(ORIGINAL_ITEM_REFERENCE.map((row) => [row[0], row]));
+    const removedItemIds = /* @__PURE__ */ new Set([6214, 6215, 10072, 10073, 10074, 10075, 10076, 10077, 10078, 10079, 13e3, 13001]);
     const recordChunks = [itemsDatBuf.subarray(0, 6)];
     let emptyRecord;
     const readStr = () => {
@@ -33143,7 +33343,7 @@ var ItemDatabase = class _ItemDatabase {
         isBedrock
       };
       const row = reference.get(id);
-      const allowed2 = !!row && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
+      const allowed2 = !!row && !removedItemIds.has(id) && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
       const record = itemsDatBuf.subarray(recordStart, pos);
       if (id === 0) {
         if (!allowed2) throw new Error("Item 0 does not match the original reference");
@@ -33172,8 +33372,9 @@ var ItemDatabase = class _ItemDatabase {
       }
     }
     if (pos !== itemsDatBuf.length) throw new Error("Unexpected items.dat trailing data");
-    this.rawItemsDat = itemsDatBuf;
-    this.itemsDatHash = protonHash(itemsDatBuf);
+    const rebuiltItemsDat = Buffer.concat(recordChunks);
+    this.rawItemsDat = rebuiltItemsDat;
+    this.itemsDatHash = protonHash(rebuiltItemsDat);
     const resolveSeedId = (itemOrSeedName) => {
       const lower = itemOrSeedName.toLowerCase();
       const direct = this.nameIndex.get(lower);
@@ -33434,8 +33635,7 @@ function isUntradeable(def) {
 function isUndestroyable(def) {
   if (!def) return false;
   return def.id === 18 || // Fist
-  def.id === 32 || // Wrench
-  def.id === 6336 || (def.flags & ITEM_FLAG_PERMANENT) !== 0 || (def.flags & ITEM_FLAG_UNTRADABLE) !== 0;
+  def.id === 32;
 }
 
 // server/eventType/connect.ts
@@ -33464,12 +33664,6 @@ function setSkin(ctx, s, color) {
   }
   applySkinColorUpdate(s, s.world, true);
   return true;
-}
-function showSkinMenu(s) {
-  const d = new DialogBuilder().addLabelWithIcon("big", "Skin Color", 32);
-  ALLOWLISTED_SKIN_COLORS.forEach((c, i) => d.addButton(`skin_${c}`, `#${gtSkinColorToRgbHex(c)}${i >= 8 ? " (Super Supporter)" : ""}`));
-  if (isSuperSupporter(s.account) || hasPermission(s.account, "debug")) d.addSmalltext("More colors: /skin RRGGBB or /skin RRGGBBAA (alpha 40-FF). White: /skin FFFFFF.");
-  OnDialogRequest(s, d.addQuickExit().endDialog("skin_menu", "Close", ""));
 }
 
 // server/database/store-catalog.ts
@@ -33630,7 +33824,7 @@ function handleBroadcastCommand(ctx, session, cmd, argStr) {
       `\`#${isSb ? "Super-" : ""}Broadcast sent. Used \`$${setGems(cost)} Gems\`\`. (\`$${setGems(session.account.gems)}\`\` left)\`\` (5 mins before you can broadcast again)`
     );
     const text = sanitizeChatText(argStr, 120);
-    const jammed = false;
+    const jammed = !!session.world && session.world.tiles.some((t) => t.fg === 226 && (t.flags & TILE_FLAG_OPEN) !== 0);
     const worldName = session.world?.name || "EXIT";
     if (!jammed && session.world) lastSbWorld = session.world.name;
     const color = isStaff(session) ? "`^" : "`$";
@@ -33753,8 +33947,8 @@ function handleDropItemReturn(ctx, session, kv) {
       return;
     }
   }
-  const dropX = targetTileX * 32 + 6;
-  const dropY = playerTileY * 32 + 6;
+  const dropX = targetTileX * 32 + 6 + (Math.random() * 14 - 7);
+  const dropY = playerTileY * 32 + 6 + (Math.random() * 8 - 4);
   if (!ctx.consumeInventoryItem(session, itemId, amt, true)) return;
   spawnOrMergeWorldDrop(world, itemId, amt, dropX, dropY, session.netId);
   const droppedName = stripGtColors(ctx.itemsDb.get(itemId)?.name || "Item");
@@ -34543,10 +34737,6 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
     }
     return true;
   }
-  if (dlgName === "skin_menu") {
-    if (/^skin_\d+$/.test(btn)) setSkin(ctx, session, Number(btn.slice(5)));
-    return true;
-  }
   if (dlgName === "notebook_edit") {
     if (btn === "save" || btn === "clear") {
       session.account.personalNote = btn === "clear" ? "" : String(kv.personal_note || "").replace(/[|\r\n\0]/g, " ").slice(0, 128);
@@ -34750,6 +34940,10 @@ function handlePlayerDialogsReturn(ctx, session, dlgName, kv) {
 
 // server/action/dialog_return/sucker.ts
 function openSuckerDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
   session.pendingEditTile = { x: tx, y: ty };
   if (!tile.extra || tile.extra.kind !== "sucker") {
     tile.extra = { kind: "sucker", itemId: 0, count: 0, enabled: true };
@@ -34824,18 +35018,11 @@ function handleSuckerDialogReturn(ctx, session, kv) {
         return true;
       }
     }
-    session.magplantRemote = { x: tx, y: ty, itemId: extra.itemId };
     extra.magnetron = true;
     ctx.dirty = true;
     const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
     for (const p of world.peers) p.peer.sendPacket(0, upd, true);
-    const planterPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: extra.itemId },
-      { type: "i32", value: tx },
-      { type: "i32", value: ty }
-    ]);
-    session.peer.sendPacket(0, planterPkt, true);
+    setSessionMagplantLink(session, world.name, tx, ty, extra.itemId);
     OnTalkBubble(session, session.netId, "You received a Magplant 5000 Remote.", 0, true);
     OnConsoleMessage(session, "You received a Magplant 5000 Remote.");
     return true;
@@ -34899,16 +35086,9 @@ function handleSuckerDialogReturn(ctx, session, kv) {
     extra.itemId = 0;
     extra.enabled = true;
     extra.magnetron = false;
-    const clearPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 }
-    ]);
     for (const p of world.peers) {
       if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-        p.magplantRemote = null;
-        p.peer.sendPacket(0, clearPkt, true);
+        clearSessionMagplantLink(p, world.name, true);
       }
     }
     ctx.dirty = true;
@@ -35331,7 +35511,25 @@ function handleTileEditDialogReturn(ctx, session, dlgName, kv) {
     if (dlgName === "lock_edit") {
       lock.adminIds = lock.adminIds.filter((id) => kv[`acc_${id}`] !== "0");
       if (kv.checkbox_public !== void 0) {
-        lock.settings = kv.checkbox_public === "1" ? lock.settings | 128 : lock.settings & ~128;
+        const isPub = kv.checkbox_public === "1";
+        lock.settings = isPub ? lock.settings | 128 : lock.settings & ~128;
+        if (isPub) tile.flags |= TILE_FLAG_PUBLIC;
+        else tile.flags &= ~TILE_FLAG_PUBLIC;
+        if (tile.fg === 202 || tile.fg === 204 || tile.fg === 206 || tile.fg === 4994) {
+          const originIdx = y * world.width + x;
+          const pubNow = Date.now();
+          for (let idx = 0; idx < world.tiles.length; idx++) {
+            const ct = world.tiles[idx];
+            if (ct.parentIndex === originIdx) {
+              if (isPub) ct.flags |= TILE_FLAG_PUBLIC;
+              else ct.flags &= ~TILE_FLAG_PUBLIC;
+              const cx = idx % world.width;
+              const cy = Math.floor(idx / world.width);
+              const cPkt = makeTileUpdatePacket(cx, cy, ct, pubNow);
+              for (const p of world.peers) p.peer.sendPacket(0, cPkt, true);
+            }
+          }
+        }
       }
       if (kv.checkbox_ignore !== void 0) {
         lock.emptyAir = kv.checkbox_ignore === "1";
@@ -35424,6 +35622,13 @@ end_dialog|changecat|Cancel||`
         const lockedIndices = applyAreaLock(world, x, y);
         const lockPkt = makeSendLockPacket(lock.ownerUserId, tile.fg, x, y, lockedIndices);
         for (const p of world.peers) p.peer.sendPacket(0, lockPkt, true);
+        const updNow = Date.now();
+        for (const idx of lockedIndices) {
+          const lx = idx % world.width;
+          const ly = Math.floor(idx / world.width);
+          const lPkt = makeTileUpdatePacket(lx, ly, world.tiles[idx], updNow);
+          for (const p of world.peers) p.peer.sendPacket(0, lPkt, true);
+        }
         broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
       }
       ctx.dirty = true;
@@ -35928,12 +36133,13 @@ function handleVendingDialogReturn(ctx, session, kv) {
   broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
   const effectPkt = buildTankPacket({
     type: PACKET_ITEM_EFFECT,
-    netId: session.netId,
-    x: tx * 32 + 16,
-    y: ty * 32 + 16,
+    netId: 0,
+    count2: 5,
+    targetNetId: session.netId,
     punchX: expectItem,
     punchY: session.netId,
-    value: 100
+    x: session.x + 10,
+    y: session.y + 16
   });
   for (const p of world.peers) p.peer.sendPacket(0, effectPkt, true);
   const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
@@ -36533,10 +36739,12 @@ var BULLETIN_BOARD_IDS = /* @__PURE__ */ new Set([658, 3524]);
 var STORAGE_BOX_IDS = /* @__PURE__ */ new Set([4516, 6286, 6288, 6290, 8878]);
 var CAMERA_IDS = /* @__PURE__ */ new Set([1436, 8246, 10258]);
 var BOOMBOX_IDS = /* @__PURE__ */ new Set([62, 2282]);
-var MANNEQUIN_IDS2 = /* @__PURE__ */ new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13e3]);
+var MANNEQUIN_IDS2 = /* @__PURE__ */ new Set([1420]);
 var AUTO_ACTION_IDS = /* @__PURE__ */ new Set([6950, 6952]);
 var GRINDER_IDS = /* @__PURE__ */ new Set([4582, 12196]);
 var CRYSTAL_IDS = /* @__PURE__ */ new Set([2242, 2244, 2246, 2248, 2250]);
+var PAINTING_EASEL_IDS2 = /* @__PURE__ */ new Set([3528]);
+var PORTRAIT_IDS2 = /* @__PURE__ */ new Set([3818, 11196, 15950]);
 function getStorageBoxCapacity(itemId) {
   if (itemId === 6288) return 40;
   if (itemId === 6290) return 90;
@@ -36613,9 +36821,97 @@ function useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId) {
   if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
   tile.extra = { kind: "display", itemId };
   ctx.dirty = true;
+  broadcastPositionedSfx(world, session.netId, "audio/blorb.wav");
+  sendFlyEffect(session, world, tx, ty, itemId, true);
   broadcastTileUpdate(world, tx, ty, tile);
-  OnTalkBubble(session, session.netId, `You put \`5${cleanName3(def)}\`\` on display!`, 0, true);
   return true;
+}
+function countInventoryItem(session, itemId) {
+  let total = 0;
+  for (const s of session.account.inventory) {
+    if (s.itemId === itemId) total += s.count;
+  }
+  return total;
+}
+function openPaintingEaselDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
+  const ex = tile.extra?.kind === "paintingEasel" ? tile.extra : { kind: "paintingEasel", itemId: 0, label: "" };
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  const itemName = cleanName3(ctx.itemsDb.get(tile.fg));
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${itemName}\`\`|left|${tile.fg}|`,
+    "add_spacer|small|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`
+  ];
+  if (ex.itemId !== 0) {
+    const paintedName = cleanName3(ctx.itemsDb.get(ex.itemId));
+    lines.push(`add_textbox|This is a lovely still-life of ${paintedName}.|left|`);
+    lines.push("add_button|erase|Erase Painting|noflags|0|0|");
+  } else {
+    lines.push("add_textbox|The canvas is blank.|left|");
+    lines.push("add_item_picker|paint|`wPaint Something``|Select an item to paint|");
+  }
+  lines.push(`add_text_input|artname|Signed:|${ex.label || ""}|60|`);
+  lines.push("end_dialog|artcanvas|Cancel|Update|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+var PORTRAIT_EXPRESSIONS = [
+  ["chk1", "Unconcerned", 1],
+  ["chk2", "Happy", 2],
+  ["chk3", "Sad", 3],
+  ["chk4", "Tongue Out", 4],
+  ["chk5", "Surprised", 5],
+  ["chk6", "Angry", 6],
+  ["chk7", "Talking", 7],
+  ["chk9", "Ecstatic", 9],
+  ["chk11", "Wry", 11],
+  ["chk12", "Sleeping", 12],
+  ["chk14", "Winking", 14],
+  ["chk16", "Trolling", 16],
+  ["chk18", "Vampire", 18],
+  ["chk22", "Underwater", 22],
+  ["chk27", "What", 27],
+  ["chk28", "Blushed", 28]
+];
+function isPortraitBlank(ex) {
+  return (ex.skinColor ?? 0) === 0 && ex.face === 0 && ex.hair === 0 && ex.mask === 0;
+}
+function openPortraitDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
+  const ex = tile.extra?.kind === "portrait" ? tile.extra : { kind: "portrait", label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  const itemName = cleanName3(ctx.itemsDb.get(tile.fg));
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wEdit ${itemName}\`\`|left|${tile.fg}|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`
+  ];
+  if (isPortraitBlank(ex)) {
+    lines.push("add_textbox|The canvas is blank.|left|");
+    lines.push("add_player_picker|playerNetID|`wPaint Someone``|");
+  } else {
+    lines.push("add_textbox|This is a lovely portrait of a Growtopian.|left|");
+    lines.push("add_button|erase|Erase Painting|noflags|0|0|");
+    lines.push(`add_text_input|artname|Title:|${ex.label || ""}|60|`);
+    lines.push("add_smalltext|If you'd like to touch up the painting slightly, you could change the expression:|left|");
+    const expr = ex.expression ?? 1;
+    for (const [key, label, val] of PORTRAIT_EXPRESSIONS) {
+      lines.push(`add_checkbox|${key}|${label}|${expr === val ? 1 : 0}|`);
+    }
+  }
+  lines.push("end_dialog|portrait|Cancel|Update|");
+  OnDialogRequest(session, lines.join("\n"));
 }
 function openDisplayBlockDialog(ctx, session, world, tile, tx, ty) {
   if (tile.extra?.kind !== "display") tile.extra = { kind: "display", itemId: 0 };
@@ -37011,7 +37307,7 @@ function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
     return true;
   }
   if (tile.extra?.kind !== "mannequin") {
-    tile.extra = { kind: "mannequin", label: "", skinColor: session.account.skinColor, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
   }
   if (tile.extra[field] === itemId) {
     OnTalkBubble(session, session.netId, "`5[`2You giggle as you swap two identical items``]``", 0, false);
@@ -37021,15 +37317,83 @@ function useClothingOnMannequin(ctx, session, world, tile, tx, ty, itemId) {
   OnDialogRequest(session, dlg);
   return true;
 }
+var MANNEQUIN_EXPRESSIONS = [
+  [25, "Smile"],
+  [0, "Smirk"],
+  [9, "Sad"],
+  [11, "OMG"],
+  [15, "LOL"],
+  [22, "Troll"]
+];
+var MANNEQUIN_ACTIONS = [
+  [0, "Idle (Normal)"],
+  [8, "Dance"],
+  [28, "Dance 2"],
+  [7, "Wave"],
+  [12, "Cheer"],
+  [10, "Yes"],
+  [11, "No"],
+  [24, "Fold Arms"],
+  [23, "Popcorn"],
+  [25, "Dab"],
+  [29, "March"],
+  [30, "Sassy"],
+  [31, "Squish"],
+  [16, "OMG"],
+  [18, "IDK"],
+  [21, "Roll Eyes"],
+  [9, "Sleep"]
+];
+function broadcastMannequinTransformEffect(world, session, tx, ty) {
+  const particle = makeParticleEffectPacket(44, tx * 32 + 16, ty * 32 + 16);
+  for (const p of world.peers) p.peer.sendPacket(0, particle, true);
+  broadcastPositionedSfx(world, session.netId, "audio/terraform.wav");
+}
+function openMannequinActionDialog(ctx, session, world, tile, tx, ty) {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnTalkBubble(session, session.netId, "`4Only builders with access can edit this Mannequin.``", 0, true);
+    return;
+  }
+  if (tile.extra?.kind !== "mannequin") {
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  }
+  const mq = tile.extra;
+  mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+  const currentExpr = mq.expression;
+  const currentPose = mq.pose ?? 0;
+  const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName} Custom Action\`\`|left|${tile.fg}|`,
+    "add_textbox|Choose a facial expression and a move/emote for this Mannequin!|left|",
+    "add_textbox|<CR>`wFacial Expression:``|left|"
+  ];
+  for (const [idx, label] of MANNEQUIN_EXPRESSIONS) {
+    lines.push(`add_checkbox|expr_${idx}|${label}|${idx === currentExpr ? 1 : 0}|`);
+  }
+  lines.push("add_textbox|<CR>`wMove / Emote:``|left|");
+  for (const [poseId, label] of MANNEQUIN_ACTIONS) {
+    lines.push(`add_checkbox|pose_${poseId}|${label}|${poseId === currentPose ? 1 : 0}|`);
+  }
+  lines.push(
+    "add_spacer|small|",
+    "add_button|back_edit|`oBack to Edit Mannequin``|noflags|0|0|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    "end_dialog|mannequin_action|Cancel|Update|"
+  );
+  OnDialogRequest(session, lines.join("\n"));
+}
 function openMannequinDialog(ctx, session, world, tile, tx, ty) {
   if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
     OnTalkBubble(session, session.netId, "`4Only builders with access can edit this Mannequin.``", 0, true);
     return;
   }
   if (tile.extra?.kind !== "mannequin") {
-    tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
   }
   const mq = tile.extra;
+  if (mq.expression === void 0) mq.expression = defaultMannequinExpression(tile.fg);
   const fgName = cleanName3(ctx.itemsDb.get(tile.fg));
   const worn = [mq.face, mq.shirt, mq.pants, mq.feet, mq.mask, mq.hand, mq.back, mq.hair, mq.neck].filter((id) => id > 0);
   const lines = [
@@ -37046,6 +37410,8 @@ function openMannequinDialog(ctx, session, world, tile, tx, ty) {
     lines.push("add_button|clear|`4Remove All Items``|noflags|0|0|");
   }
   lines.push(
+    "add_spacer|small|",
+    "add_button|open_action|`wSet Custom Action``|noflags|0|0|",
     "add_textbox|<CR><CR>What would you like to write on its sign?``|left|",
     `add_text_input|sign_text||${mq.label || ""}|128|`,
     `embed_data|tilex|${tx}`,
@@ -37578,12 +37944,67 @@ end_dialog|storageboxpassword|Exit||`
     broadcastTileUpdate(world, tx, ty, tile);
     return true;
   }
+  if (dlgName === "mannequin_action" && tile && MANNEQUIN_IDS2.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    if (tile.extra?.kind !== "mannequin") {
+      tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    }
+    const mq = tile.extra;
+    mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+    if (btn === "back_edit") {
+      openMannequinDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    const prevExpr = mq.expression;
+    const prevPose = mq.pose ?? 0;
+    let nextExpr = prevExpr;
+    const checkedExprs = MANNEQUIN_EXPRESSIONS.map(([idx]) => idx).filter((idx) => kv[`expr_${idx}`] === "1");
+    if (checkedExprs.length > 0) {
+      nextExpr = checkedExprs.find((idx) => idx !== prevExpr) ?? checkedExprs[0];
+    }
+    let nextPose = prevPose;
+    const checkedPoses = MANNEQUIN_ACTIONS.map(([poseId]) => poseId).filter((poseId) => kv[`pose_${poseId}`] === "1");
+    if (checkedPoses.length > 0) {
+      nextPose = checkedPoses.find((poseId) => poseId !== prevPose) ?? checkedPoses[0];
+    } else if (MANNEQUIN_ACTIONS.some(([poseId]) => kv[`pose_${poseId}`] !== void 0)) {
+      nextPose = 0;
+    }
+    if (nextExpr !== prevExpr || nextPose !== prevPose) {
+      mq.expression = nextExpr;
+      mq.pose = nextPose;
+      ctx.dirty = true;
+      broadcastMannequinTransformEffect(world, session, tx, ty);
+      broadcastTileUpdate(world, tx, ty, tile);
+    }
+    return true;
+  }
   if (dlgName === "mannequin_edit" && tile && MANNEQUIN_IDS2.has(tile.fg)) {
     if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
     if (tile.extra?.kind !== "mannequin") {
-      tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
     }
     const mq = tile.extra;
+    mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+    if (btn === "open_action") {
+      if (kv.sign_text !== void 0) {
+        mq.label = kv.sign_text.replace(/[|\r\n`%]/g, "").slice(0, 128);
+        ctx.dirty = true;
+        broadcastTileUpdate(world, tx, ty, tile);
+      }
+      openMannequinActionDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    if (btn.startsWith("expr_")) {
+      const expr = Number.parseInt(btn.slice(5), 10);
+      if (Number.isFinite(expr) && expr >= 0 && expr <= 255) {
+        mq.expression = expr;
+        ctx.dirty = true;
+        broadcastMannequinTransformEffect(world, session, tx, ty);
+        broadcastTileUpdate(world, tx, ty, tile);
+      }
+      openMannequinDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
     if (kv.put) {
       const putId = Number.parseInt(kv.put, 10);
       const def = ctx.itemsDb.get(putId);
@@ -37596,7 +38017,7 @@ end_dialog|storageboxpassword|Exit||`
       }
       if (!ctx.consumeInventoryItem(session, putId, 1, true)) return true;
       mq[field] = putId;
-      mq.skinColor = session.account.skinColor;
+      mq.skinColor = defaultMannequinSkin(tile.fg);
       ctx.dirty = true;
       broadcastPositionedSfx(world, session.netId, "audio/change_clothes.wav");
       broadcastTileUpdate(world, tx, ty, tile);
@@ -37695,6 +38116,64 @@ end_dialog|storageboxpassword|Exit||`
     tile.extra = void 0;
     tile.flags = 0;
     tile.damage = 0;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "artcanvas" && tile && PAINTING_EASEL_IDS2.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    const ex = tile.extra?.kind === "paintingEasel" ? tile.extra : { kind: "paintingEasel", itemId: 0, label: "" };
+    if (btn === "erase") {
+      ex.itemId = 0;
+    } else if (kv.paint !== void 0) {
+      const paintId = Number.parseInt(kv.paint || "0", 10);
+      if (Number.isFinite(paintId) && paintId > 0 && countInventoryItem(session, paintId) > 0) {
+        ex.itemId = paintId;
+      }
+    }
+    if (kv.artname !== void 0) {
+      const txt = (kv.artname ?? "").slice(0, 60).replace(/`%/g, "");
+      ex.label = txt;
+    }
+    tile.extra = ex;
+    tile.flags |= 1;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+  if (dlgName === "portrait" && tile && PORTRAIT_IDS2.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    const ex = tile.extra?.kind === "portrait" ? tile.extra : { kind: "portrait", label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    if (btn === "erase") {
+      ex.expression = 1;
+      ex.skinColor = 0;
+      ex.hairColor = 0;
+      ex.face = 0;
+      ex.hair = 0;
+      ex.mask = 0;
+    } else if (kv.playerNetID !== void 0 && isPortraitBlank(ex)) {
+      const targetNetId = Number.parseInt(kv.playerNetID || "0", 10);
+      const target = Array.from(world.peers).find((p) => p.netId === targetNetId);
+      if (target) {
+        const slots = getClothingVector(target.account, ctx.itemsDb);
+        ex.expression = 1;
+        ex.skinColor = target.account.skinColor ?? 3095750143;
+        ex.hairColor = target.account.hairColor ?? 0;
+        ex.face = slots[4] || 0;
+        ex.hair = slots[0] || 0;
+        ex.mask = slots[7] || 0;
+        ex.label = target.account.name;
+      }
+    } else if (!isPortraitBlank(ex)) {
+      for (const [key, , val] of PORTRAIT_EXPRESSIONS) {
+        if (kv[key] === "1") ex.expression = val;
+      }
+      if (kv.artname !== void 0) {
+        ex.label = (kv.artname ?? "").slice(0, 60).replace(/`%/g, "");
+      }
+    }
+    tile.extra = ex;
+    tile.flags |= 1;
     ctx.dirty = true;
     broadcastTileUpdate(world, tx, ty, tile);
     return true;
@@ -38115,20 +38594,6 @@ function handlePlayerCommand(ctx, session, cmd, parts, argStr) {
     );
     return true;
   }
-  if (cmd === "skin") {
-    if (!argStr.trim()) {
-      showSkinMenu(session);
-      return true;
-    }
-    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/);
-    if (!m) {
-      OnConsoleMessage(session, "Usage: /skin RRGGBB[AA]");
-      return true;
-    }
-    const color = (rgbHexToGtSkinColor(m[1]) & 4294967040 | (m[2] ? parseInt(m[2], 16) : 255)) >>> 0;
-    if (setSkin(ctx, session, color)) OnConsoleMessage(session, "Skin color updated!");
-    return true;
-  }
   if (cmd === "flag") {
     const cc = argStr.trim().toUpperCase();
     if (!/^[A-Z]{2,4}$/.test(cc)) {
@@ -38274,7 +38739,7 @@ netID|${session.netId}`
     return true;
   }
   if (cmd === "discord") {
-    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wDiscord``", 10568).addSpacer("small").addTextbox("`oVisit the Growtopia Discord page?``").addSpacer("small").addUrlButton("comment", "`wLaunch``", "https://discord.gg/gtps3", "Open Discord?", "noflags").addQuickExit().endDialog("discord_dialog", "", "");
+    const dlg = new DialogBuilder().setDefaultColor("`o").addLabelWithIcon("big", "`wDiscord``", 10568).addSpacer("small").addTextbox("`oVisit the Magnolia Discord page?``").addSpacer("small").addUrlButton("comment", "`wLaunch``", "https://discord.gg/magnolia", "Open Discord?", "noflags").addQuickExit().endDialog("discord_dialog", "", "");
     OnDialogRequest(session, dlg);
     return true;
   }
@@ -38524,7 +38989,7 @@ function handleWorldCommand(ctx, session, cmd, argStr) {
 function dispatchCommand(ctx, session, rawWithoutSlash) {
   const parts = rawWithoutSlash.trim().split(/\s+/);
   const typed = (parts[0] || "").toLowerCase();
-  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "r", "rgo", "trade", "sb", "bc", "broadcast", "cb", "sdb", "radio", "go", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "skin", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
+  const names = ["help", "?", "rank", "mods", "level", "achievements", "hidestatus", "msg", "tell", "w", "r", "rgo", "trade", "sb", "bc", "broadcast", "cb", "sdb", "radio", "go", "time", "who", "me", "find", "item", "search", "warp", "world", "worlds", "news", "gazette", "middle", "brb", "afk", "wave", "dance", "love", "sleep", "facepalm", "fp", "smh", "yes", "no", "omg", "idk", "shrug", "furious", "rolleyes", "foldarms", "fa", "stubborn", "fold", "dab", "sassy", "dance2", "march", "grumpy", "shy", "growid", "register", "flag", "door", "weather", "convert", "youtube", "yt", "kick", "pull", "freeze", "unfreeze", "ban", "worldban", "unban", "worldunban", "uba", "setlevel", "givexp", "kits", "kit", "gitem", "clearinv", "ghost", "cheats", "give", "guestrank", "mstate", "smstate", "daily", "phone", "locke", "rules", "discord", "status", "stats"];
   const aliases = { k: "kick", p: "pull", b: "ban", ub: "unban", u: "unban" };
   const candidates = names.filter((n) => n.startsWith(typed));
   const cmd = names.includes(typed) ? typed : aliases[typed] || (candidates.length === 1 ? candidates[0] : typed);
@@ -39491,6 +39956,14 @@ function handleTileChangeRequest(ctx, session, tank) {
       openDisplayBlockDialog(ctx, session, world, tile, tx, ty);
       return;
     }
+    if (PAINTING_EASEL_IDS2.has(tile.fg)) {
+      openPaintingEaselDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
+    if (PORTRAIT_IDS2.has(tile.fg)) {
+      openPortraitDialog(ctx, session, world, tile, tx, ty);
+      return;
+    }
     if (DISPLAY_SHELF_IDS2.has(tile.fg)) {
       openDisplayShelfDialog(ctx, session, world, tile, tx, ty);
       return;
@@ -39640,6 +40113,20 @@ function handleTileChangeRequest(ctx, session, tank) {
         broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
       }
     }
+    if ((tile.fg === 226 || tile.fg === 1276 || tile.fg === 1278 || tile.fg === 4884 || tile.fg === 4992) && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      if (!tile.lastPunchWeatherMs || now - tile.lastPunchWeatherMs >= 1500) {
+        tile.lastPunchWeatherMs = now;
+        if ((tile.flags & TILE_FLAG_OPEN) !== 0) tile.flags &= ~TILE_FLAG_OPEN;
+        else tile.flags |= TILE_FLAG_OPEN;
+        ctx.dirty = true;
+        const upd = makeTileUpdatePacket(tx, ty, tile, now);
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+        broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
+        if (tile.fg === 4992) {
+          for (const p of world.peers) ctx.sendCharacterState(p);
+        }
+      }
+    }
     if (tile.fg === 5638 && tile.extra?.kind === "sucker" && tile.extra.itemId > 0 && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
       const mDef = ctx.itemsDb.get(tile.extra.itemId);
       if (!mDef || mDef.isSeed || mDef.isLock || mDef.isBackground) {
@@ -39656,29 +40143,12 @@ function handleTileChangeRequest(ctx, session, tank) {
             OnConsoleMessage(session, "You received a MAGPLANT 5000 Remote.");
           }
         }
-        session.magplantRemote = { x: tx, y: ty, itemId: tile.extra.itemId };
-        session.peer.sendPacket(
-          0,
-          makeVariantPacket([
-            "OnPlanterActivated",
-            { type: "i32", value: tile.extra.itemId },
-            { type: "i32", value: tx },
-            { type: "i32", value: ty }
-          ]),
-          true
-        );
+        setSessionMagplantLink(session, world.name, tx, ty, tile.extra.itemId);
       } else {
         tile.extra.magnetron = false;
-        const offPkt = makeVariantPacket([
-          "OnPlanterActivated",
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 }
-        ]);
         for (const p of world.peers) {
           if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-            p.magplantRemote = null;
-            p.peer.sendPacket(0, offPkt, true);
+            clearSessionMagplantLink(p, world.name, true);
           }
         }
       }
@@ -39729,8 +40199,21 @@ function handleTileChangeRequest(ctx, session, tank) {
         return false;
       }
       if (session.account.rank !== "developer" && !canModifyWorldTile(session, world, bt, bx, by, "break")) {
+        const allowBuildLockPunch = canModifyWorldTile(session, world, bt, bx, by, "place") || bt.fg === 4994 && bt.extra?.kind === "lock" && ((bt.extra.settings & 128) !== 0 || bt.extra.adminIds.includes(session.account.userId));
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, lockedMessage(ctx, world, bt, bx, by, "break", session.account.userId), 0, true);
+        if (allowBuildLockPunch) {
+          const dmgPkt2 = buildTankPacket({
+            type: PACKET_TILE_APPLY_DAMAGE,
+            netId: session.netId,
+            value: 0,
+            punchX: bx,
+            punchY: by
+          });
+          for (const p of world.peers) p.peer.sendPacket(0, dmgPkt2, true);
+        } else {
+          session.peer.sendPacket(0, makeTileUpdatePacket(bx, by, bt, now), true);
+        }
         return false;
       }
       if (bDef.isLock || AREA_LOCK_IDS.has(bId) || WORLD_LOCK_TIER_IDS.has(bId)) {
@@ -39860,33 +40343,49 @@ function handleTileChangeRequest(ctx, session, tank) {
     }
     return;
   }
-  if (itemId === 5640 && session.magplantRemote) {
+  if (itemId === 5640) {
+    if (!session.magplantRemote) {
+      OnTalkBubble(session, session.netId, "Link a MAGPLANT 5000 first!", 0, true);
+      return;
+    }
     const { x: mx, y: my, itemId: rItemId } = session.magplantRemote;
     const magTile = world.tiles[my * world.width + mx];
-    if (magTile && magTile.extra && magTile.extra.kind === "sucker" && magTile.extra.itemId === rItemId && magTile.extra.count > 0) {
-      const remoteDef = ctx.itemsDb.get(rItemId);
-      if (remoteDef && !remoteDef.isSeed && !remoteDef.isLock && !remoteDef.isBackground && !tile.fg && canModifyWorldTile(session, world, tile, tx, ty, "place")) {
-        if (remoteDef.collisionType === 1 && Math.abs(session.x - tx * 32) < 18 && Math.abs(session.y - ty * 32) < 24) return;
+    if (!magTile || magTile.fg !== 5638 || magTile.extra?.kind !== "sucker" || magTile.extra.itemId !== rItemId) {
+      OnTalkBubble(session, session.netId, "Your MAGPLANT 5000 link is no longer valid.", 0, true);
+      return;
+    }
+    if (magTile.extra.count <= 0) {
+      OnTalkBubble(session, session.netId, "The MAGPLANT 5000 is empty!", 0, true);
+      return;
+    }
+    const remoteDef = ctx.itemsDb.get(rItemId);
+    const canPlaceFg = !remoteDef?.isBackground && !tile.fg;
+    const canPlaceBg = !!remoteDef?.isBackground && !tile.bg;
+    if (remoteDef && !remoteDef.isSeed && !remoteDef.isLock && (canPlaceFg || canPlaceBg) && canModifyWorldTile(session, world, tile, tx, ty, "place")) {
+      if (!remoteDef.isBackground && remoteDef.collisionType === 1 && Math.abs(session.x - tx * 32) < 18 && Math.abs(session.y - ty * 32) < 24) return;
+      if (remoteDef.isBackground) {
+        tile.bg = rItemId;
+      } else {
         tile.fg = rItemId;
-        tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+        tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
         tile.damage = 0;
-        magTile.extra.count -= 1;
-        ctx.dirty = true;
-        const placePkt2 = makeTileChangePacket(
-          session.netId,
-          tx,
-          ty,
-          rItemId,
-          session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
-        );
-        for (const p of world.peers) p.peer.sendPacket(0, placePkt2, true);
-        const updMag = makeTileUpdatePacket(mx, my, magTile, now);
-        for (const p of world.peers) {
-          p.peer.sendPacket(0, updMag, true);
-        }
-        return;
+      }
+      magTile.extra.count -= 1;
+      ctx.dirty = true;
+      const placePkt2 = makeTileChangePacket(
+        session.netId,
+        tx,
+        ty,
+        rItemId,
+        session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
+      );
+      for (const p of world.peers) p.peer.sendPacket(0, placePkt2, true);
+      const updMag = makeTileUpdatePacket(mx, my, magTile, now);
+      for (const p of world.peers) {
+        p.peer.sendPacket(0, updMag, true);
       }
     }
+    return;
   }
   if (BAIT_ITEMS.has(itemId)) {
     const isWater = tile.fg === 822 || def && def.name.toLowerCase().includes("water");
@@ -39912,6 +40411,7 @@ function handleTileChangeRequest(ctx, session, tank) {
   }
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
+  if (tile.fg === 2946 && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
   if (HAIR_DYE_ITEMS2.has(itemId) || EYE_ITEMS2.has(itemId)) {
     useDyeItem(ctx, session, world, itemId, tx, ty, playerTileX, playerTileY);
@@ -39926,7 +40426,6 @@ function handleTileChangeRequest(ctx, session, tank) {
     toggleWearableItem(ctx, session, itemId);
     return;
   }
-  if (tile.fg && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
   if (tile.fg && useItemOnDonationBox(ctx, session, tile, tx, ty, itemId)) return;
   if (tile.fg && useItemOnGrinder(ctx, session, tile, tx, ty, itemId)) return;
   if (tile.fg && useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId)) return;
@@ -40026,7 +40525,7 @@ function handleTileChangeRequest(ctx, session, tank) {
     }
     tile.fg = itemId;
     tile.damage = 0;
-    tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+    tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     const discount = activeMods(session.account).reduce((n, m) => Math.max(n, m.treeGrowthDiscount || 0), 0);
     const originalGrowSec = Math.max(1, def.growTime || 15);
     const bonusMs = Math.floor(originalGrowSec * 1e3 * discount);
@@ -40090,7 +40589,7 @@ function handleTileChangeRequest(ctx, session, tank) {
       }
     }
     tile.fg = itemId;
-    tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+    tile.flags = prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     tile.damage = 0;
     let extra;
     if (isLockItem) {
@@ -40158,6 +40657,12 @@ function handleTileChangeRequest(ctx, session, tank) {
     } else if (itemId === 2946) {
       extra = { kind: "display", itemId: 0 };
       needsFullTileUpdate = true;
+    } else if (PAINTING_EASEL_IDS2.has(itemId)) {
+      extra = { kind: "paintingEasel", itemId: 0, label: "" };
+      needsFullTileUpdate = true;
+    } else if (PORTRAIT_IDS2.has(itemId)) {
+      extra = { kind: "portrait", label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      needsFullTileUpdate = true;
     } else if (DISPLAY_SHELF_IDS2.has(itemId)) {
       extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
       needsFullTileUpdate = true;
@@ -40174,7 +40679,7 @@ function handleTileChangeRequest(ctx, session, tank) {
       extra = { kind: "storage" };
       needsFullTileUpdate = true;
     } else if (MANNEQUIN_IDS2.has(itemId)) {
-      extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(itemId), skinColor: defaultMannequinSkin(itemId), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
       needsFullTileUpdate = true;
     } else if (CRYSTAL_IDS.has(itemId)) {
       extra = { kind: "crystal", crystals: { [itemId]: 1 } };
@@ -40252,7 +40757,7 @@ function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
   }
   tile.fg = 0;
   tile.extra = void 0;
-  tile.flags = 0;
+  tile.flags &= TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC;
   tile.damage = 0;
   ctx.dirty = true;
   recordProgress(ctx, session, "trees_harvested", 1, farmingXp(rarity));
@@ -40291,16 +40796,9 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
     unlockedIndices = clearAreaLock(world, tx, ty);
   }
   if (targetId === 5638) {
-    const clearPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 }
-    ]);
     for (const p of world.peers) {
       if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-        p.magplantRemote = void 0;
-        p.peer.sendPacket(0, clearPkt, true);
+        clearSessionMagplantLink(p, world.name, true);
       }
     }
   }
@@ -40319,7 +40817,7 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
   if (tile.fg !== 0) {
     tile.fg = 0;
     tile.extra = void 0;
-    tile.flags = 0;
+    tile.flags = AREA_LOCK_IDS.has(targetId) ? 0 : tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC);
   } else {
     tile.bg = 0;
   }
@@ -41292,6 +41790,1174 @@ function extendChatPortraitExports(input) {
   return result;
 }
 
+// server/client/clothing-animation.ts
+function readUleb(buf, pos) {
+  let val = 0;
+  let shift = 0;
+  while (true) {
+    const b = buf[pos++];
+    val |= (b & 127) << shift;
+    if ((b & 128) === 0) return [val >>> 0, pos];
+    shift += 7;
+  }
+}
+function writeUleb(val) {
+  const out = [];
+  let v = val >>> 0;
+  do {
+    let b = v & 127;
+    v >>>= 7;
+    if (v !== 0) b |= 128;
+    out.push(b);
+  } while (v !== 0);
+  return out;
+}
+function writeSleb(val) {
+  const out = [];
+  let v = val | 0;
+  while (true) {
+    const b = v & 127;
+    v >>= 7;
+    const done = v === 0 && (b & 64) === 0 || v === -1 && (b & 64) !== 0;
+    out.push(done ? b : b | 128);
+    if (done) break;
+  }
+  return out;
+}
+function countFuncImports(sec2) {
+  let p = 0;
+  const [count, p1] = readUleb(sec2, p);
+  p = p1;
+  let funcImports = 0;
+  for (let i = 0; i < count; i++) {
+    const [ml, p2] = readUleb(sec2, p);
+    p = p2 + ml;
+    const [nl, p3] = readUleb(sec2, p);
+    p = p3 + nl;
+    const kind = sec2[p++];
+    if (kind === 0) {
+      [, p] = readUleb(sec2, p);
+      funcImports++;
+    } else if (kind === 1) {
+      p++;
+      const [flags, p4] = readUleb(sec2, p);
+      [, p] = readUleb(sec2, p4);
+      if (flags & 1) [, p] = readUleb(sec2, p);
+    } else if (kind === 2) {
+      const [flags, p4] = readUleb(sec2, p);
+      [, p] = readUleb(sec2, p4);
+      if (flags & 1) [, p] = readUleb(sec2, p);
+    } else if (kind === 3) {
+      p += 2;
+    }
+  }
+  return funcImports;
+}
+function ensureI32I32ToI32Type(sec1) {
+  let p = 0;
+  const [count, p1] = readUleb(sec1, p);
+  p = p1;
+  for (let i = 0; i < count; i++) {
+    if (sec1[p++] !== 96) throw new Error("Invalid WASM type entry");
+    const [np, p2] = readUleb(sec1, p);
+    p = p2;
+    const params = sec1.subarray(p, p + np);
+    p += np;
+    const [nr, p3] = readUleb(sec1, p);
+    p = p3;
+    const rets = sec1.subarray(p, p + nr);
+    p += nr;
+    if (np === 2 && params[0] === 127 && params[1] === 127 && nr === 1 && rets[0] === 127) {
+      return { data: sec1, typeIdx: i };
+    }
+  }
+  const rest = sec1.subarray(p1);
+  const out = Buffer.concat([
+    Buffer.from(writeUleb(count + 1)),
+    Buffer.from(rest),
+    Buffer.from([96, 2, 127, 127, 1, 127])
+  ]);
+  return { data: out, typeIdx: count };
+}
+function buildResolveExtraAnimBody() {
+  const b = [];
+  const emit = (...bytes) => b.push(...bytes);
+  emit(1, 9, 127);
+  emit(32, 0, 69, 4, 64, 32, 1, 15, 11);
+  emit(32, 0, 45, 0, ...writeUleb(164), 65, 1, 113, 69, 4, 64, 32, 1, 15, 11);
+  emit(32, 0, 44, 0, ...writeUleb(183));
+  emit(65, 0, 78);
+  emit(4, 64);
+  emit(32, 0, 44, 0, ...writeUleb(183), 33, 2);
+  emit(32, 0, 65, ...writeSleb(172), 106, 33, 3);
+  emit(5);
+  emit(32, 0, 40, 2, ...writeUleb(176), 33, 2);
+  emit(32, 0, 40, 2, ...writeUleb(172), 33, 3);
+  emit(11);
+  emit(
+    32,
+    2,
+    65,
+    4,
+    73,
+    32,
+    2,
+    65,
+    ...writeSleb(4096),
+    75,
+    114,
+    32,
+    3,
+    65,
+    ...writeSleb(1024),
+    73,
+    114,
+    4,
+    64,
+    32,
+    1,
+    15,
+    11
+  );
+  emit(65, 0, 33, 4, 65, 0, 33, 5);
+  emit(2, 64);
+  emit(3, 64);
+  emit(32, 4, 32, 2, 78, 13, 1);
+  emit(65, 0, 33, 10);
+  emit(2, 64, 3, 64);
+  emit(32, 4, 32, 2, 78, 13, 1);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 34, 9);
+  emit(65, 48, 107, 65, 10, 79);
+  emit(13, 1);
+  emit(65, 1, 33, 10);
+  emit(32, 4, 65, 1, 106, 33, 4);
+  emit(12, 0, 11, 11);
+  emit(32, 10, 69, 32, 4, 32, 2, 78, 114, 4, 64, 32, 1, 15, 11);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 65, 44, 71);
+  emit(4, 64, 32, 1, 15, 11);
+  emit(32, 4, 65, 1, 106, 33, 4);
+  emit(65, 0, 33, 10);
+  emit(2, 64, 3, 64);
+  emit(32, 4, 32, 2, 78, 13, 1);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 34, 9);
+  emit(65, 48, 107, 65, 10, 79);
+  emit(13, 1);
+  emit(65, 1, 33, 10);
+  emit(32, 4, 65, 1, 106, 33, 4);
+  emit(12, 0, 11, 11);
+  emit(32, 10, 69, 4, 64, 32, 1, 15, 11);
+  emit(32, 4, 32, 2, 73, 4, 64);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 65, ...writeSleb(124), 71);
+  emit(4, 64, 32, 1, 15, 11);
+  emit(32, 4, 65, 1, 106, 33, 4);
+  emit(11);
+  emit(32, 5, 65, 1, 106, 33, 5);
+  emit(12, 0, 11, 11);
+  emit(32, 5, 65, 2, 73, 4, 64, 32, 1, 15, 11);
+  emit(65, ...writeSleb(393364), 40, 2, 0, 34, 6, 69, 4, 64, 32, 1, 15, 11);
+  emit(32, 6, 40, 2, ...writeUleb(468), 65, ...writeSleb(200), 110, 33, 8);
+  emit(32, 0, 45, 0, ...writeUleb(164), 65, 2, 113, 4, 64);
+  emit(32, 5, 65, 1, 116, 65, 2, 107, 33, 6);
+  emit(32, 8, 32, 6, 112, 34, 8);
+  emit(32, 5, 79);
+  emit(4, 64, 32, 6, 32, 8, 107, 33, 8, 11);
+  emit(5);
+  emit(32, 8, 32, 5, 112, 33, 8);
+  emit(11);
+  emit(65, 0, 33, 4, 65, 0, 33, 5);
+  emit(2, 64, 3, 64);
+  emit(32, 4, 32, 2, 78, 13, 1);
+  emit(65, 0, 33, 7);
+  emit(2, 64, 3, 64);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 34, 9);
+  emit(65, 44, 70, 13, 1);
+  emit(32, 7, 65, 10, 108, 32, 9, 65, 48, 107, 106, 33, 7);
+  emit(32, 4, 65, 1, 106, 33, 4, 12, 0, 11, 11);
+  emit(32, 4, 65, 1, 106, 33, 4);
+  emit(65, 0, 33, 6);
+  emit(2, 64, 3, 64);
+  emit(32, 4, 32, 2, 78, 13, 1);
+  emit(32, 3, 32, 4, 106, 45, 0, 0, 34, 9);
+  emit(65, ...writeSleb(124), 70, 13, 1);
+  emit(32, 6, 65, 10, 108, 32, 9, 65, 48, 107, 106, 33, 6);
+  emit(32, 4, 65, 1, 106, 33, 4, 12, 0, 11, 11);
+  emit(32, 5, 32, 8, 70, 4, 64);
+  emit(32, 7, 65, ...writeSleb(255), 113);
+  emit(32, 6, 65, ...writeSleb(255), 113, 65, 8, 116, 114, 15, 11);
+  emit(32, 4, 32, 2, 73, 4, 64, 32, 4, 65, 1, 106, 33, 4, 11);
+  emit(32, 5, 65, 1, 106, 33, 5);
+  emit(12, 0, 11, 11);
+  emit(32, 1, 11);
+  return Buffer.from(b);
+}
+function hookTexLoadsInBody(body, itemVar, sites, helperFid) {
+  let out = body;
+  const fidUleb = writeUleb(helperFid);
+  for (const [tyVar, txVar, fromOffset = 0] of sites) {
+    const pattern = Buffer.from([
+      32,
+      itemVar,
+      45,
+      0,
+      45,
+      33,
+      tyVar,
+      32,
+      itemVar,
+      45,
+      0,
+      44,
+      33,
+      txVar
+    ]);
+    const replacement = Buffer.from([
+      32,
+      itemVar,
+      32,
+      itemVar,
+      45,
+      0,
+      44,
+      32,
+      itemVar,
+      45,
+      0,
+      45,
+      65,
+      8,
+      116,
+      114,
+      16,
+      ...fidUleb,
+      34,
+      txVar,
+      65,
+      8,
+      118,
+      33,
+      tyVar,
+      32,
+      txVar,
+      65,
+      ...writeSleb(255),
+      113,
+      33,
+      txVar
+    ]);
+    const idx = out.indexOf(pattern, fromOffset);
+    if (idx < 0) {
+      throw new Error(`hookTexLoadsInBody: pattern not found for item=${itemVar} ty=${tyVar} tx=${txVar}`);
+    }
+    out = Buffer.concat([out.subarray(0, idx), replacement, out.subarray(idx + pattern.length)]);
+  }
+  return out;
+}
+function replaceExactHex(body, hexSig, replacement, label) {
+  const sig = Buffer.from(hexSig, "hex");
+  const idx = body.indexOf(sig);
+  if (idx < 0) throw new Error(`${label} signature not found`);
+  return Buffer.concat([body.subarray(0, idx), replacement, body.subarray(idx + sig.length)]);
+}
+function patchClothingAnimations(wasmBytes) {
+  const buf = Buffer.from(wasmBytes);
+  const sections = [];
+  let pos = 8;
+  while (pos < buf.length) {
+    const id = buf[pos++];
+    const [len, p1] = readUleb(buf, pos);
+    sections.push({ id, data: buf.subarray(p1, p1 + len) });
+    pos = p1 + len;
+  }
+  const sec1 = sections.find((s) => s.id === 1);
+  const sec2 = sections.find((s) => s.id === 2);
+  const sec3 = sections.find((s) => s.id === 3);
+  const sec10 = sections.find((s) => s.id === 10);
+  if (!sec1 || !sec2 || !sec3 || !sec10) throw new Error("Missing required WASM sections");
+  const numImports = countFuncImports(sec2.data);
+  const { data: newSec1Data, typeIdx } = ensureI32I32ToI32Type(sec1.data);
+  sec1.data = newSec1Data;
+  let fp = 0;
+  const [funcCount, fp1] = readUleb(sec3.data, fp);
+  const newFuncIndex = numImports + funcCount;
+  sec3.data = Buffer.concat([
+    Buffer.from(writeUleb(funcCount + 1)),
+    Buffer.from(sec3.data.subarray(fp1)),
+    Buffer.from(writeUleb(typeIdx))
+  ]);
+  let cp = 0;
+  const [codeCount, cp1] = readUleb(sec10.data, cp);
+  cp = cp1;
+  if (codeCount !== funcCount) throw new Error("WASM function/code count mismatch");
+  const bodies = [];
+  for (let i = 0; i < codeCount; i++) {
+    const [sz, cp2] = readUleb(sec10.data, cp);
+    bodies.push(Buffer.from(sec10.data.subarray(cp2, cp2 + sz)));
+    cp = cp2 + sz;
+  }
+  const patchBody = (fid, fn) => {
+    const idx = fid - numImports;
+    bodies[idx] = fn(bodies[idx]);
+  };
+  patchBody(781, (b) => hookTexLoadsInBody(b, 11, [[6, 14], [3, 11]], newFuncIndex));
+  patchBody(1262, (b) => hookTexLoadsInBody(b, 9, [[8, 13], [12, 9]], newFuncIndex));
+  patchBody(1263, (b) => hookTexLoadsInBody(b, 10, [[9, 18], [7, 15], [3, 9], [3, 10]], newFuncIndex));
+  patchBody(1937, (b) => hookTexLoadsInBody(b, 10, [[8, 14], [5, 10], [4, 10]], newFuncIndex));
+  patchBody(1938, (b) => {
+    let out = hookTexLoadsInBody(b, 8, [[9, 11], [3, 8], [3, 8]], newFuncIndex);
+    const backFrontSig = "20082d0037412071450d00024020082d00244119470d00";
+    out = replaceExactHex(
+      out,
+      backFrontSig,
+      Buffer.from([
+        32,
+        8,
+        45,
+        0,
+        55,
+        65,
+        32,
+        113,
+        69,
+        13,
+        0,
+        // if (item[36] == 4 && extraOptions2.empty()) br 0;
+        32,
+        8,
+        45,
+        0,
+        36,
+        65,
+        4,
+        70,
+        32,
+        8,
+        44,
+        0,
+        ...writeUleb(207),
+        69,
+        32,
+        8,
+        44,
+        0,
+        ...writeUleb(207),
+        65,
+        0,
+        72,
+        32,
+        8,
+        40,
+        2,
+        ...writeUleb(200),
+        69,
+        113,
+        114,
+        113,
+        13,
+        0,
+        2,
+        64,
+        32,
+        8,
+        45,
+        0,
+        36,
+        65,
+        25,
+        71,
+        13,
+        0
+      ]),
+      "fid 1938 skip kind==4 empty extraOptions2 front-pass"
+    );
+    return out;
+  });
+  patchBody(1940, (b) => hookTexLoadsInBody(b, 10, [[3, 10], [8, 12], [3, 10]], newFuncIndex));
+  patchBody(5459, (b) => hookTexLoadsInBody(b, 10, [[5, 13], [3, 7]], newFuncIndex));
+  patchBody(1510, (b) => {
+    let out = replaceExactHex(
+      b,
+      "200d2d0024411e460440",
+      Buffer.from([
+        32,
+        13,
+        45,
+        0,
+        36,
+        65,
+        30,
+        70,
+        // kind == 30
+        32,
+        11,
+        65,
+        5,
+        71,
+        113,
+        // & state != 5
+        32,
+        11,
+        65,
+        4,
+        71,
+        // state != 4
+        32,
+        10,
+        40,
+        2,
+        112,
+        65,
+        0,
+        71,
+        // | punchTimer != 0
+        114,
+        113,
+        4,
+        64
+      ]),
+      "fid 1510 gate kind==30 hide only when state==5 or state==4&&punchTimer==0"
+    );
+    out = replaceExactHex(
+      out,
+      "2005200c41016a200e",
+      Buffer.from([
+        32,
+        5,
+        32,
+        12,
+        65,
+        2,
+        65,
+        1,
+        32,
+        13,
+        45,
+        0,
+        ...writeUleb(164),
+        65,
+        1,
+        113,
+        27,
+        106,
+        32,
+        14
+      ]),
+      "fid 1510 kind==30 off-hand"
+    );
+    out = hookTexLoadsInBody(out, 13, [[14, 12, 1e3], [5, 7], [5, 7], [5, 7]], newFuncIndex);
+    return out;
+  });
+  patchBody(1941, (b) => {
+    let out = hookTexLoadsInBody(b, 9, [[3, 11], [3, 9], [3, 10], [3, 9]], newFuncIndex);
+    out = replaceExactHex(
+      out,
+      "0b22073602b4010b2000280200",
+      Buffer.from([
+        11,
+        33,
+        7,
+        32,
+        9,
+        45,
+        0,
+        36,
+        65,
+        4,
+        70,
+        32,
+        9,
+        47,
+        1,
+        54,
+        65,
+        ...writeSleb(8192),
+        113,
+        32,
+        9,
+        45,
+        0,
+        ...writeUleb(164),
+        65,
+        1,
+        113,
+        114,
+        69,
+        69,
+        113,
+        4,
+        64,
+        65,
+        0,
+        33,
+        7,
+        11,
+        32,
+        7,
+        34,
+        7,
+        54,
+        2,
+        180,
+        1,
+        11,
+        32,
+        0,
+        40,
+        2,
+        0
+      ]),
+      "fid 1941 cape blink toggle"
+    );
+    return out;
+  });
+  patchBody(1939, (b) => {
+    const fidUleb = writeUleb(newFuncIndex);
+    let out = hookTexLoadsInBody(b, 10, [[15, 10]], newFuncIndex);
+    out = hookTexLoadsInBody(out, 13, [[14, 15], [4, 5], [4, 8]], newFuncIndex);
+    const loadSig = Buffer.from("2005200d2d002c6a210e200d2d002d2111", "hex");
+    const lIdx = out.indexOf(loadSig);
+    if (lIdx < 0) throw new Error("fid 1939 load signature not found");
+    const loadRep = Buffer.from([
+      32,
+      13,
+      32,
+      5,
+      32,
+      13,
+      45,
+      0,
+      44,
+      106,
+      65,
+      ...writeSleb(255),
+      113,
+      32,
+      13,
+      45,
+      0,
+      45,
+      65,
+      8,
+      116,
+      114,
+      16,
+      ...fidUleb,
+      34,
+      14,
+      65,
+      8,
+      118,
+      33,
+      17,
+      32,
+      14,
+      65,
+      ...writeSleb(255),
+      113,
+      33,
+      14
+    ]);
+    out = Buffer.concat([out.subarray(0, lIdx), loadRep, out.subarray(lIdx + loadSig.length)]);
+    const dupSig = Buffer.from("02400240200641ff017141ff01460440", "hex");
+    const dIdx = out.indexOf(dupSig);
+    if (dIdx < 0) throw new Error("fid 1939 duplicate-hand signature not found");
+    const skipInsert = Buffer.from([
+      32,
+      13,
+      65,
+      127,
+      // -1
+      16,
+      ...fidUleb,
+      65,
+      127,
+      // -1
+      71,
+      // i32.ne
+      13,
+      0
+      // br_if 0 (exits outer block 02 40)
+    ]);
+    out = Buffer.concat([out.subarray(0, dIdx + 2), skipInsert, out.subarray(dIdx + 2)]);
+    const handDrawSig = "20002a0238211a20002a023c211c";
+    const cosUleb = writeUleb(333);
+    const sinUleb = writeUleb(327);
+    out = replaceExactHex(
+      out,
+      handDrawSig,
+      Buffer.from([
+        32,
+        0,
+        42,
+        2,
+        56,
+        33,
+        26,
+        32,
+        0,
+        42,
+        2,
+        60,
+        33,
+        28,
+        32,
+        13,
+        45,
+        0,
+        36,
+        65,
+        30,
+        70,
+        4,
+        64,
+        32,
+        13,
+        45,
+        0,
+        55,
+        65,
+        ...writeSleb(128),
+        113,
+        4,
+        64,
+        67,
+        0,
+        0,
+        128,
+        63,
+        // 1.0f (facingLeft != 0)
+        67,
+        0,
+        0,
+        128,
+        191,
+        // -1.0f (facingLeft == 0)
+        32,
+        7,
+        27,
+        // select
+        32,
+        11,
+        42,
+        2,
+        176,
+        1,
+        148,
+        // * f32[local 11 + 176] (armAngle)
+        34,
+        25,
+        // local.tee 25 (angle)
+        67,
+        0,
+        0,
+        180,
+        66,
+        146,
+        // + 90.0f
+        67,
+        53,
+        250,
+        142,
+        60,
+        148,
+        // * (PI / 180.0f)
+        33,
+        27,
+        // local.set 27 (temp rad)
+        32,
+        1,
+        32,
+        26,
+        67,
+        0,
+        0,
+        64,
+        193,
+        148,
+        // scaleX * -12.0f
+        32,
+        27,
+        16,
+        ...cosUleb,
+        148,
+        // * cos(rad)
+        146,
+        33,
+        1,
+        32,
+        2,
+        32,
+        28,
+        67,
+        0,
+        0,
+        64,
+        193,
+        148,
+        // scaleY * -12.0f
+        32,
+        27,
+        16,
+        ...sinUleb,
+        148,
+        // * sin(rad)
+        146,
+        33,
+        2,
+        5,
+        67,
+        0,
+        0,
+        0,
+        0,
+        33,
+        25,
+        // local 25 = 0.0f
+        11,
+        32,
+        26,
+        33,
+        27,
+        // local 27 = local 26
+        32,
+        28,
+        33,
+        29,
+        // local 29 = local 28
+        11
+      ]),
+      "fid 1939 kind==30 flags&0x8000 transform"
+    );
+    return out;
+  });
+  patchBody(5455, (b) => {
+    const fidUleb = writeUleb(newFuncIndex);
+    let out = b;
+    for (const hexSig of ["2010200d2d002c6a2108", "2010200d2d002c6a2108"]) {
+      out = replaceExactHex(
+        out,
+        hexSig,
+        Buffer.from([
+          32,
+          16,
+          32,
+          13,
+          32,
+          13,
+          45,
+          0,
+          44,
+          32,
+          13,
+          45,
+          0,
+          45,
+          65,
+          8,
+          116,
+          114,
+          16,
+          ...fidUleb,
+          65,
+          ...writeSleb(255),
+          113,
+          106,
+          33,
+          8
+        ]),
+        "fid 5455 tx"
+      );
+    }
+    for (const [hexSig, tyVar] of [
+      ["200d2d002d210f20002802002a029c01", 15],
+      ["200d2d002d210920002802002a029c01", 9],
+      ["200d2d002d210320002802002a02a401", 3],
+      ["200d2d002d210320002802002a02a401", 3]
+    ]) {
+      const sig = Buffer.from(hexSig, "hex");
+      const idx = out.indexOf(sig);
+      if (idx < 0) throw new Error(`fid 5455 ty=${tyVar} signature not found`);
+      const rep = Buffer.from([
+        32,
+        13,
+        32,
+        13,
+        45,
+        0,
+        44,
+        32,
+        13,
+        45,
+        0,
+        45,
+        65,
+        8,
+        116,
+        114,
+        16,
+        ...fidUleb,
+        65,
+        8,
+        118,
+        33,
+        tyVar
+      ]);
+      out = Buffer.concat([out.subarray(0, idx), rep, out.subarray(idx + 7)]);
+    }
+    return out;
+  });
+  patchBody(1945, (b) => {
+    const fidCall320 = writeUleb(320);
+    const fidCall311 = writeUleb(311);
+    return replaceExactHex(
+      b,
+      "410010c0020b02402006450d0020032d0069",
+      Buffer.from([
+        65,
+        0,
+        16,
+        ...fidCall320,
+        11,
+        2,
+        64,
+        32,
+        2,
+        69,
+        13,
+        0,
+        // 0.1s timer (matches v3.52 2x/0.25s cadence)
+        32,
+        3,
+        47,
+        1,
+        14,
+        // avatarData.hair (offset 14)
+        65,
+        ...writeSleb(6008),
+        71,
+        13,
+        0,
+        2,
+        64,
+        35,
+        1,
+        40,
+        2,
+        48,
+        34,
+        0,
+        4,
+        64,
+        32,
+        0,
+        40,
+        2,
+        0,
+        34,
+        0,
+        13,
+        1,
+        11,
+        65,
+        ...writeSleb(393364),
+        40,
+        2,
+        0,
+        40,
+        2,
+        ...writeUleb(1800),
+        40,
+        2,
+        ...writeUleb(144),
+        33,
+        0,
+        11,
+        32,
+        0,
+        65,
+        ...writeSleb(320),
+        106,
+        65,
+        ...writeSleb(59),
+        32,
+        17,
+        32,
+        19,
+        16,
+        ...fidCall311,
+        // rand(left, right)
+        32,
+        26,
+        32,
+        22,
+        16,
+        ...fidCall311,
+        // rand(top, bottom)
+        67,
+        0,
+        0,
+        0,
+        0,
+        67,
+        0,
+        0,
+        0,
+        0,
+        67,
+        0,
+        0,
+        0,
+        0,
+        65,
+        0,
+        16,
+        ...fidCall320,
+        32,
+        0,
+        65,
+        ...writeSleb(320),
+        106,
+        65,
+        ...writeSleb(59),
+        32,
+        17,
+        32,
+        19,
+        16,
+        ...fidCall311,
+        32,
+        26,
+        32,
+        22,
+        16,
+        ...fidCall311,
+        67,
+        0,
+        0,
+        0,
+        0,
+        67,
+        0,
+        0,
+        0,
+        0,
+        67,
+        0,
+        0,
+        0,
+        0,
+        65,
+        0,
+        16,
+        ...fidCall320,
+        11,
+        2,
+        64,
+        32,
+        6,
+        69,
+        13,
+        0,
+        32,
+        3,
+        45,
+        0,
+        105
+      ]),
+      "fid 1945 hair 6008 Goku Aura"
+    );
+  });
+  patchBody(339, (b) => {
+    const randUleb = writeUleb(311);
+    return replaceExactHex(
+      b,
+      "200042808080f8838080c03f3702182000418080808004360220200043000020c1430000204110b70238020c20004300002041430000a04110b7023802100c3c0b",
+      Buffer.from([
+        32,
+        0,
+        67,
+        0,
+        0,
+        128,
+        63,
+        56,
+        2,
+        28,
+        // alpha = 1.0f
+        32,
+        0,
+        67,
+        102,
+        102,
+        230,
+        62,
+        67,
+        205,
+        204,
+        12,
+        63,
+        16,
+        ...randUleb,
+        56,
+        2,
+        24,
+        // scale = rand(0.45, 0.55)
+        32,
+        0,
+        67,
+        0,
+        0,
+        150,
+        194,
+        67,
+        0,
+        0,
+        12,
+        194,
+        16,
+        ...randUleb,
+        56,
+        2,
+        20,
+        // rot = rand(-75, -35)
+        32,
+        0,
+        67,
+        0,
+        0,
+        128,
+        64,
+        56,
+        2,
+        32,
+        // fade rate = 4.0f (0.25s lifetime)
+        32,
+        0,
+        67,
+        0,
+        0,
+        72,
+        194,
+        67,
+        0,
+        0,
+        200,
+        193,
+        16,
+        ...randUleb,
+        56,
+        2,
+        12,
+        // vx = rand(-50, -25)
+        32,
+        0,
+        67,
+        0,
+        0,
+        72,
+        194,
+        56,
+        2,
+        16,
+        // vy = -50.0f
+        12,
+        60,
+        11
+        // br 60; end
+      ]),
+      "fid 339 pid 59 flame wisp init"
+    );
+  });
+  patchBody(1423, (b) => {
+    const drawUleb = writeUleb(322);
+    return replaceExactHex(
+      b,
+      "2001410f4103200341880d6a200341800d6a410120174300007f4394fc004180026b2016200341f80c6a4100410010c2020c3f0b",
+      Buffer.from([
+        32,
+        1,
+        65,
+        1,
+        54,
+        2,
+        48,
+        // additive blend = 1
+        32,
+        1,
+        65,
+        13,
+        65,
+        2,
+        // tx=13, ty=2 (flame wisp)
+        32,
+        3,
+        65,
+        136,
+        13,
+        106,
+        32,
+        3,
+        65,
+        128,
+        13,
+        106,
+        65,
+        1,
+        32,
+        23,
+        67,
+        0,
+        0,
+        127,
+        67,
+        148,
+        252,
+        0,
+        65,
+        ...writeSleb(-4710400),
+        106,
+        // golden-orange 0xFFB820AA (RRGGBBAA)
+        32,
+        22,
+        32,
+        3,
+        65,
+        248,
+        12,
+        106,
+        65,
+        0,
+        65,
+        0,
+        16,
+        ...drawUleb,
+        32,
+        1,
+        65,
+        2,
+        54,
+        2,
+        48,
+        // restore blend = 2
+        12,
+        63,
+        11
+      ]),
+      "fid 1423 pid 59 flame wisp render"
+    );
+  });
+  bodies.push(buildResolveExtraAnimBody());
+  const sec10Chunks = [Buffer.from(writeUleb(bodies.length))];
+  for (const body of bodies) {
+    sec10Chunks.push(Buffer.from(writeUleb(body.length)), body);
+  }
+  sec10.data = Buffer.concat(sec10Chunks);
+  const outChunks = [buf.subarray(0, 8)];
+  for (const sec of sections) {
+    outChunks.push(Buffer.from([sec.id]), Buffer.from(writeUleb(sec.data.length)), Buffer.from(sec.data));
+  }
+  return Buffer.concat(outChunks);
+}
+
 // server/client/patch-client.ts
 var import_node_crypto5 = __toESM(require("node:crypto"));
 var CLIENT_SHA256 = "9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
@@ -41327,8 +42993,8 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     ["ReGrowtopia", "MagnoliaApp"],
     ["regrowtopia", "magnoliaapp"],
     ["CREATIVE", "MAGNOLIA"],
-    ["Creative", "Magnolia"],
-    ["creative", "magnolia"]
+    ["/creativedance", "/disabledemote"],
+    ["Creative", "Magnolia"]
   ];
   for (const [from, to] of identity) {
     const old = Buffer.from(from, "ascii"), replacement = Buffer.from(to, "ascii");
@@ -41365,11 +43031,12 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     }
     newBytes.copy(output, offset);
   }
-  const patched = patchDisplayForegroundPass(output);
+  const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
+  const patched = Buffer.from(patchClothingAnimations(patchMannequinExpression(prePatched)));
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
-  return extendChatPortraitExports(Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patched)))));
+  return extendChatPortraitExports(patched);
 }
-function readUleb(buf, offset) {
+function readUleb2(buf, offset) {
   let result = 0;
   let shift = 0;
   let pos = offset;
@@ -41380,7 +43047,7 @@ function readUleb(buf, offset) {
     shift += 7;
   }
 }
-function writeUleb(n) {
+function writeUleb2(n) {
   const out = [];
   let v = n >>> 0;
   do {
@@ -41401,30 +43068,30 @@ function patchDisplayForegroundPass(wasm) {
   while (pos < wasm.length) {
     const sid = wasm[pos++];
     const lenStart = pos;
-    const [secLen, bodyStart] = readUleb(wasm, pos);
+    const [secLen, bodyStart] = readUleb2(wasm, pos);
     const secEnd = bodyStart + secLen;
     if (sid === 2) {
       let ip = bodyStart;
-      const [impCount, p2] = readUleb(wasm, ip);
+      const [impCount, p2] = readUleb2(wasm, ip);
       ip = p2;
       for (let i = 0; i < impCount; i++) {
-        const [ml, p3] = readUleb(wasm, ip);
+        const [ml, p3] = readUleb2(wasm, ip);
         ip = p3 + ml;
-        const [nl, p4] = readUleb(wasm, ip);
+        const [nl, p4] = readUleb2(wasm, ip);
         ip = p4 + nl;
         const kind = wasm[ip++];
         if (kind === 0) {
-          [, ip] = readUleb(wasm, ip);
+          [, ip] = readUleb2(wasm, ip);
           funcImports++;
         } else if (kind === 1) {
           ip++;
-          const [fl, p5] = readUleb(wasm, ip);
-          [, ip] = readUleb(wasm, p5);
-          if (fl & 1) [, ip] = readUleb(wasm, ip);
+          const [fl, p5] = readUleb2(wasm, ip);
+          [, ip] = readUleb2(wasm, p5);
+          if (fl & 1) [, ip] = readUleb2(wasm, ip);
         } else if (kind === 2) {
-          const [fl, p5] = readUleb(wasm, ip);
-          [, ip] = readUleb(wasm, p5);
-          if (fl & 1) [, ip] = readUleb(wasm, ip);
+          const [fl, p5] = readUleb2(wasm, ip);
+          [, ip] = readUleb2(wasm, p5);
+          if (fl & 1) [, ip] = readUleb2(wasm, ip);
         } else if (kind === 3) {
           ip += 2;
         }
@@ -41451,15 +43118,21 @@ function patchDisplayForegroundPass(wasm) {
     "01087f230041206b2203240041f48019280200220441f8801928020022054704400340200428020022062f0100220704402007419481182802002802940e490440419481182802002802900e200741b4026c6a2f01364180c0007104400240230128023022080440200828020022080d010b419481182802002802880e2802900121080b10bb022109200320062d0007b3430000004294380204200320062d0006b3430000004294380200200341086a220a2009200310e8022008200720062f010a200a410020064100410010f6060b0b0b200441046a22042005470d000b0b200341206a24000b",
     "hex"
   );
+  const needle5029 = Buffer.from("200128020028020c110e00200d28029c034100109a03", "hex");
+  const insert5029 = Buffer.from(
+    "41808119280200220c41848119280200220447044041f48019280200220e41f88019280200220f470440230041c0006b2206240041940a109903430000803f92430000003f94430000404094430000004192211c20064180808088043602242006201c38022803400240200c280200210b4100211141f48019280200210e41f88019280200210f200b2a0204430000004192430000003d94a82109200b2a0208430000004192430000003d94a8210a0340200e28020022102f0100418e0b46044020102d000620094620102d0007200a46710440410121110b0b200e41046a220e200f47201145710d000b2011450d00200b10f806221b43cdcccc3d5d0d00419481182802002203418c0e6a2202280204200b2f010c220141b4026c6a410020012002280208481b2202450d002301280230221245044020032802880e28029001410c6a21120b2006200b2a02043802142006201c200b2a020892380218200641306a2012200641146a10e8022006200629033037030c200b41046a21032006201b20122a0218943802082006201b20122a021494380204200d200b2f010c2003200641246a2201201b20064100200b4101410010f706200d200b2f010c20032001201b10c20d200b2d000e4102490d0020022d00044104460d00200d200b2f010c20032001200b41001080130b200c41046a220c2004470d000b200d28029c0341ecf9172a020041f0f9172a02004300000000410010e509200d28029c034100109a03200641c0006a24000b0b",
+    "hex"
+  );
   let cp = codeSecBodyStart;
-  const [funcCount, afterCount] = readUleb(wasm, cp);
+  const [funcCount, afterCount] = readUleb2(wasm, cp);
   cp = afterCount;
-  const chunks = [writeUleb(funcCount)];
+  const chunks = [writeUleb2(funcCount)];
   let patched4240 = false;
   let patched1518 = false;
+  let patched5029 = false;
   for (let i = 0; i < funcCount; i++) {
     const fid = funcImports + i;
-    const [sz, fStart] = readUleb(wasm, cp);
+    const [sz, fStart] = readUleb2(wasm, cp);
     const fEnd = fStart + sz;
     let body = wasm.subarray(fStart, fEnd);
     cp = fEnd;
@@ -41473,16 +43146,322 @@ function patchDisplayForegroundPass(wasm) {
       }
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
+    } else if (fid === 5029) {
+      const idx = body.indexOf(needle5029);
+      if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
+        throw new Error("func 5029 post-render signature mismatch");
+      }
+      const after = idx + needle5029.length;
+      body = Buffer.concat([body.subarray(0, after), insert5029, body.subarray(after)]);
+      patched5029 = true;
     }
-    chunks.push(writeUleb(body.length), body);
+    chunks.push(writeUleb2(body.length), body);
   }
-  if (!patched4240 || !patched1518) {
-    throw new Error(`Failed to patch Display foreground pass (4240=${patched4240}, 1518=${patched1518})`);
+  if (!patched4240 || !patched1518 || !patched5029) {
+    throw new Error(`Failed to patch Display foreground pass (4240=${patched4240}, 1518=${patched1518}, 5029=${patched5029})`);
   }
   const newCodeBody = Buffer.concat(chunks);
   return Buffer.concat([
     wasm.subarray(0, codeSecLenStart),
-    writeUleb(newCodeBody.length),
+    writeUleb2(newCodeBody.length),
+    newCodeBody,
+    wasm.subarray(codeSecEnd)
+  ]);
+}
+function patchMannequinExpression(wasm) {
+  const patches = [
+    {
+      fid: 2458,
+      old: Buffer.from(
+        "2001200841056a200741012002200310cb022001200841086a200741042002200310cb02200828025441ffe9d2a57b360200",
+        "hex"
+      ),
+      replacement: Buffer.from(
+        // Keep original f331 reads/cursor advance, then copy skin/expression into mannequin struct.
+        "2001200841056a200741012002200310cb022001200841086a200741042002200310cb02200828025422052008280208360200200520082d00053a0016",
+        "hex"
+      )
+    },
+    {
+      fid: 339,
+      old: Buffer.from("21022000419ab3e6f40336022020002002380214", "hex"),
+      replacement: Buffer.from(
+        // Initialize both scale/alpha (this+28 = 1.0f) and lifetime (this+32 = 0.3f) for particleType 60 starburst sparkles.
+        "2102200042808080fc93b3e6f43e37021c20002002380214",
+        "hex"
+      )
+    },
+    {
+      fid: 1948,
+      old: Buffer.from(
+        "20002f0104220241016a220341b4026c6a410020032001280208481b2201450d002002450d00200141c4006a0c010b200041286a0b2802002101200041193a00b8012000200136022c",
+        "hex"
+      ),
+      replacement: Buffer.from(
+        // Read hair item from statePtr+0, preserve expression byte, and force both statePtr+44 and statePtr+48 (hairColor) to -1 (0xFFFFFFFF) so HairRenderer (func 1262) never hits the green 0x00FF00FF alpha-mismatch fallback.
+        "20002f0100220241016a220341b4026c6a410020032001280208481b2201450d002002450d00200141c4006a0c010b200041286a0b2802002101200020002d00123a00b8012000417f36022c2000417f360230",
+        "hex"
+      )
+    },
+    {
+      fid: 886,
+      old: Buffer.from(
+        "200041003a008106200041193a0084052000410036028004200041ffcd9bb77e3602f403230a220f410036020041e415100a200f280200200f41003602004101460d09200c42808080fc838080c03f370290032009430000000043000000004100200c4190036a10cc04",
+        "hex"
+      ),
+      replacement: Buffer.from(
+        // Persistent 64-slot per-mannequin AvatarRenderData pool (poolGlobalIdx, lazily allocated via memory.grow(1)) keyed by tileExtra ptr + pose + clothesHash (XOR of tileExtra+4..20), rate-limited to >= 3ms so multi-pass renders deduplicate without slowing high-Hz monitors, copying only +124..439 (316 bytes) so clothing updates immediately while emoting; if func 1945 clears pose back to 0 (one-shot emote finished, e.g. /popcorn), invalidate slot[0] = 0 so it loops continuously.
+        "200041003a00810620004100360280042000201228020041ff01723602f403201228020041ff01710440230c45044041014000411074240c0b230041c0026b240023002009417c6a41bc02fc0a0000230c2012410476413f714109746a210f200f280200201246200f280204201228020041ff01714671200f28020c2012280204201228020873201228020c73201228021073201228021473467104402009417c6a200f41106a41bc02fc0a00001050b0a7200f2802086b41034f0440200f1050b0a73602082000201228020041ff01713a00c804200910990f200f41106a2009417c6a41bc02fc0a000020002d00c804450440200f41003602000b0b05200f2012360200200f201228020041ff0171360204200f1050b0a7360208200f2012280204201228020873201228020c7320122802107320122802147336020c2000430000803f3802ec042000430000803f3802f4042000201228020041ff01713a00c804200910990f200f41106a2009417c6a41bc02fc0a00000b0b200020122d00163a008405230a220f410036020041e415100a200f280200200f41003602004101460d09200c42808080fc838080c03f370290032009430000000043000000004100200c4190036a10cc04201228020041ff017104402009417c6a230041bc02fc0a0000230041c0026a24000b",
+        "hex"
+      )
+    },
+    {
+      fid: 2569,
+      old: Buffer.from(
+        "41ff8389ae7c2001200220032004200b10352007280200200741003602004101470d180b",
+        "hex"
+      ),
+      replacement: Buffer.from(
+        // Append the 4 Super Supporter skin colors (Royal Blue, Ice Blue, Bright Orange, Translucent Ruby Red) to the native Options "Tap to set skin color:" palette.
+        "41ff8389ae7c2001200220032004200b10352007280200200741003602004101460d00230a2207410036020041b411200541fff1b0a37d2001200220032004200b10352007280200200741003602004101460d00230a2207410036020041b411200541ffe5a2f67e2001200220032004200b10352007280200200741003602004101460d00230a2207410036020041b411200541ffffa3042001200220032004200b10352007280200200741003602004101460d00230a2207410036020041b41120054190fdd2b8032001200220032004200b10352007280200200741003602004101470d180b",
+        "hex"
+      )
+    },
+    {
+      fid: 2620,
+      old: Buffer.from("047f20032d00044104460541000b", "hex"),
+      replacement: Buffer.from(
+        // Show floating Sign/Title bubble for both Sign (extraType 4) and Portrait (extraType 48).
+        "047f20032d000441044620032d0004413046720541000b",
+        "hex"
+      )
+    },
+    {
+      fid: 2869,
+      old: Buffer.from("20052802642205450d022005280204450d02", "hex"),
+      replacement: Buffer.from(
+        // Allow Magplant 5000 Remote (actionType 112) when client suckerData+4 is unset, while preserving UPSTREAM's seed-only flying animation gate (actionType 19) so non-seed blocks place normally.
+        "01",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("047f20002d0004410e460541000b", "hex"),
+      replacement: Buffer.from(
+        // Render green/dark Sign/Title floating bubble for Portrait (extraType 48) alongside Sign (2) and Mannequin (14).
+        "047f20002d0004410e4620002d0004413046720541000b",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("200a2802242201220028022020002c0027", "hex"),
+      replacement: Buffer.from(
+        // Portrait (extraType 48) stores its label std::string at extra+16 instead of extra+28 (Sign/Mannequin).
+        "200a280224220020004110411c20002d00044130461b6a2201220028020420002c000b",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("200a2001411c6a41014100410110a213", "hex"),
+      replacement: Buffer.from(
+        // Pass resolved label std::string pointer (local 1) directly to bubble creator (func 2466).
+        "200a200141014100410110a213",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("2223380224202343cdcc4c3e5e0440", "hex"),
+      replacement: Buffer.from(
+        // Spawn suck trail particle 197 every 0.07s instead of 0.2s so the suck path is visibly animated.
+        "2223380224202343295c8f3d5e0440",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("200420042a022443cdcc4cbe922223380224202343cdcc4c3e5e0d000b", "hex"),
+      replacement: Buffer.from(
+        // Match 0.07s trail interval inside the particle 197 loop.
+        "200420042a022443295c8fbd922223380224202343295c8f3d5e0d000b",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("20042a0210222320042a020822255b20042a020c222620042a021422275b710d06", "hex"),
+      replacement: Buffer.from(
+        // Clear objType 3 sucker flying effect (entry[4] = 0) once within 1px of target (speedX, speedY), avoiding float32 1-ULP stall.
+        "20042a0210222320042a02082225938b430000803f5d20042a020c222620042a02142227938b430000803f5d710440200441003602040c070b",
+        "hex"
+      )
+    },
+    {
+      fid: 5029,
+      old: Buffer.from("2001280204220441026b0e0d0006060106060602000306060406", "hex"),
+      replacement: Buffer.from(
+        // Route objType 3 (sucker effect, index 1 = objType - 2) alongside objType 5 into case 1 while branching on objType inside case 1.
+        "2001280204220441026b0e0d0001060106060602000306060406",
+        "hex"
+      )
+    },
+    {
+      fid: 5055,
+      old: Buffer.from("200841036b0e0d0102020202000202020202020002", "hex"),
+      replacement: Buffer.from(
+        // Skip spawning the initial 6 bee swarm particles (197) when creating objType 3 (Magplant/item sucker flying drop).
+        "200841036b0e0d0202020202000202020202020002",
+        "hex"
+      )
+    },
+    {
+      fid: 5010,
+      old: Buffer.from("380224202343295c8f3d5e04400340", "hex"),
+      replacement: Buffer.from(
+        // Skip spawning bee swarm particle 197 for objType 3 (Magplant/item sucker flying drop).
+        "3802242004280204410347202343295c8f3d5e7104400340",
+        "hex"
+      )
+    },
+    {
+      fid: 5029,
+      old: Buffer.from(
+        "10bb020240230128023022020440200228020022020d010b419481182802002802880e2802900121020b20022802c40210b8022d00e40341017310d1022102200620012a020838027820012a020c211a200642808080fc838080c03f3702702006201a38027c20064200370268410e410d200241c8017041e4004b1b410a200641f8006a200641f0006a4101417f4300000000200641e8006a4100410010c2020c03",
+        "hex"
+      ),
+      replacement: Buffer.from(
+        // For objType 3 sucker effects: seeds (actionType 19) draw via WorldToScreen (360) + RenderItemIcon (630) so Gaia's Beacon shows an actual seed; tiles/items draw via world+1872 (322) with spreadType frame offset at 0.5x scale. Leaves objType 5 snowball untouched.
+        "20044103460440200128021841004a044041948118280200418c0e6a2001280218109c0b2202044020022d0004411346044010bb0222030440200620012a0208380250200620012a020c380254200641d8006a2003200641d0006a10e8022002200641d8006a20032a0214436666263f94417f417f41004100410110f6040b054194811828020041c80e6a20012802184101108603220b044010bb02200620012a0208380278200620012a020c38027c200642808080f8838080803f37027020064200370268200b20022d002c41034104410020022d002e41024620022d002e4104467220022d002e410546721b20022d002e4103461b6a20022d002d4101410020022d002e41024620022d002e410546721b6a200641f8006a200641f0006a4101417f4300000000200641e8006a4100410010c2020b0b0b0b0c040b10bb020240230128023022020440200228020022020d010b419481182802002802880e2802900121020b20022802c40210b8022d00e40341017310d1022102200620012a020838027820012a020c211a200642808080fc838080c03f3702702006201a38027c20064200370268410e410d200241c8017041e4004b1b410a200641f8006a200641f0006a4101417f4300000000200641e8006a4100410010c2020c03",
+        "hex"
+      )
+    },
+    {
+      fid: 2835,
+      old: Buffer.from("02402008450d0020042d00240d004117", "hex"),
+      replacement: Buffer.from(
+        // Route Magplant 5000 Remote (itemId 5640) past fast-path BlitAnim (call 545) into RenderItemIcon (call 630) so it draws its configured item mini-preview.
+        "02402008450d0020042f010041882c460d0020042d00240d004117",
+        "hex"
+      )
+    },
+    {
+      fid: 630,
+      old: Buffer.from("230041d0016b22082400", "hex"),
+      replacement: Buffer.from(
+        // Extend fid 630 stack frame (208 -> 224) and save LocalPlayer+396 configured itemInfo*, original scale, and align for post-draw overlay on 5640 Remote.
+        "230041e0016b22082400200841003602d001200028020041882c4604400240419481182802002209450d0020092802880e2209450d00200928028c03220941004c0d00200941882c460d0041948118280200418c0e6a2009109c0b220d450d002008200d3602d001200820023802d401200820073602d8010b0b",
+        "hex"
+      )
+    },
+    {
+      fid: 630,
+      old: Buffer.from("200841d0016a24000f", "hex"),
+      replacement: Buffer.from(
+        // Draw 5640 Remote configured item mini-icon via RenderItemIcon (call 630) IN FRONT of the remote (after base/shadow/overlay finish) at full -1 brightness.
+        "20082802d001220d044020082a02d401210e20082802d8012107200820012a0200200e430000b041949220012a0200200e430000d04094922007451b3802d001200820012a0204200e4300002041949220012a0204200e430000d0c094922007451b3802d401200d200841d0016a200e43cdcc0c3f94417f417f41004100410110f6040b200841e0016a24000f",
+        "hex"
+      )
+    }
+  ];
+  let pos = 8;
+  let funcImports = 0;
+  let poolGlobalIdx = -1;
+  let codeSecLenStart = -1;
+  let codeSecBodyStart = -1;
+  let codeSecEnd = -1;
+  while (pos < wasm.length) {
+    const sid = wasm[pos++];
+    const lenStart = pos;
+    const [secLen, bodyStart] = readUleb2(wasm, pos);
+    const secEnd = bodyStart + secLen;
+    if (sid === 2) {
+      let ip = bodyStart;
+      const [impCount, p2] = readUleb2(wasm, ip);
+      ip = p2;
+      for (let i = 0; i < impCount; i++) {
+        const [ml, p3] = readUleb2(wasm, ip);
+        ip = p3 + ml;
+        const [nl, p4] = readUleb2(wasm, ip);
+        ip = p4 + nl;
+        const kind = wasm[ip++];
+        if (kind === 0) {
+          [, ip] = readUleb2(wasm, ip);
+          funcImports++;
+        } else if (kind === 1) {
+          ip++;
+          const [fl, p5] = readUleb2(wasm, ip);
+          [, ip] = readUleb2(wasm, p5);
+          if (fl & 1) [, ip] = readUleb2(wasm, ip);
+        } else if (kind === 2) {
+          const [fl, p5] = readUleb2(wasm, ip);
+          [, ip] = readUleb2(wasm, p5);
+          if (fl & 1) [, ip] = readUleb2(wasm, ip);
+        } else if (kind === 3) {
+          ip += 2;
+        }
+      }
+    } else if (sid === 6) {
+      const [gCount, gEntriesStart] = readUleb2(wasm, bodyStart);
+      poolGlobalIdx = gCount;
+      const newGlobalBody = Buffer.concat([
+        writeUleb2(gCount + 1),
+        wasm.subarray(gEntriesStart, secEnd),
+        Buffer.from("7f0141000b", "hex")
+      ]);
+      const newSec = Buffer.concat([writeUleb2(newGlobalBody.length), newGlobalBody]);
+      wasm = Buffer.concat([wasm.subarray(0, lenStart), newSec, wasm.subarray(secEnd)]);
+      pos = lenStart + newSec.length;
+      continue;
+    } else if (sid === 10) {
+      codeSecLenStart = lenStart;
+      codeSecBodyStart = bodyStart;
+      codeSecEnd = secEnd;
+      break;
+    }
+    pos = secEnd;
+  }
+  if (codeSecLenStart < 0 || poolGlobalIdx < 0) throw new Error("WASM Code/Global section not found for mannequin patch");
+  const gIdxHex = writeUleb2(poolGlobalIdx).toString("hex");
+  const fid886Patch = patches.find((p) => p.fid === 886);
+  fid886Patch.replacement = Buffer.from(
+    fid886Patch.replacement.toString("hex").replace(/230c/g, "23" + gIdxHex).replace(/240c/g, "24" + gIdxHex),
+    "hex"
+  );
+  let cp = codeSecBodyStart;
+  const [funcCount, afterCount] = readUleb2(wasm, cp);
+  cp = afterCount;
+  const chunks = [writeUleb2(funcCount)];
+  let appliedCount = 0;
+  for (let i = 0; i < funcCount; i++) {
+    const fid = funcImports + i;
+    const [sz, fStart] = readUleb2(wasm, cp);
+    const fEnd = fStart + sz;
+    let body = wasm.subarray(fStart, fEnd);
+    cp = fEnd;
+    for (const patch of patches.filter((p) => p.fid === fid)) {
+      const idx = body.indexOf(patch.old);
+      if (idx === -1 || body.indexOf(patch.old, idx + 1) !== -1) {
+        throw new Error(`Mannequin patch signature mismatch in func ${fid}`);
+      }
+      body = Buffer.concat([
+        body.subarray(0, idx),
+        patch.replacement,
+        body.subarray(idx + patch.old.length)
+      ]);
+      appliedCount++;
+    }
+    chunks.push(writeUleb2(body.length), body);
+  }
+  if (appliedCount !== patches.length) {
+    throw new Error(`Mannequin patch count mismatch: applied ${appliedCount} of ${patches.length}`);
+  }
+  const newCodeBody = Buffer.concat(chunks);
+  return Buffer.concat([
+    wasm.subarray(0, codeSecLenStart),
+    writeUleb2(newCodeBody.length),
     newCodeBody,
     wasm.subarray(codeSecEnd)
   ]);
@@ -41560,7 +43539,9 @@ function createHttpApp(ctx, rootDir, port) {
         clientPromise = null;
         throw err;
       });
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.type("application/wasm").send(await clientPromise);
     } catch (err) {
       console.error("Client preparation failed:", err);

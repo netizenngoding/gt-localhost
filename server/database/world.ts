@@ -4,8 +4,10 @@ import {
   makeItemDropPacket,
   makeItemModifyObjectPacket,
   makeTileUpdatePacket,
-  PACKET_ITEM_EFFECT,
+  makeVariantPacket,
+  PACKET_ITEM_SUCK_EFFECT,
   TILE_FLAG_LOCKED,
+  TILE_FLAG_PUBLIC,
   type DroppedObject,
   type WorldTile,
 } from "../proton/packet";
@@ -361,6 +363,11 @@ export function applyAreaLock(world: WorldInstance, lx: number, ly: number): num
       // Expand through empty air ONLY if not ignoring empty air or already placed non-lock tiles
       if (isLockable(nIdx)) {
         nt.flags |= TILE_FLAG_LOCKED;
+        if ((lockTile.extra.settings & 0x80) !== 0 || (lockTile.flags & TILE_FLAG_PUBLIC) !== 0) {
+          nt.flags |= TILE_FLAG_PUBLIC;
+        } else {
+          nt.flags &= ~TILE_FLAG_PUBLIC;
+        }
         nt.parentIndex = originIdx;
         lockedIndices.push(nIdx);
         queue.push(nIdx);
@@ -392,30 +399,15 @@ export function getBuildersLockDenial(
       }
       if (!isPublic) return "";
       if (lt.extra.buildOnly && mode === "break") return "This lock allows building only!";
-      if (!lt.extra.buildOnly && mode === "place") return "This lock allows breaking only!";
       return null;
     }
     return isAdmin || isPublic ? null : "";
   };
 
-  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0 && tile.parentIndex < world.tiles.length) {
+  if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex >= 0 && tile.parentIndex < world.tiles.length) {
     const pt = world.tiles[tile.parentIndex];
     const msg = pt ? checkLock(pt) : null;
     if (msg !== null) return msg;
-  }
-  if (tx !== undefined && ty !== undefined) {
-    for (let y = Math.max(0, ty - 10); y <= Math.min(world.height - 1, ty + 10); y++) {
-      for (let x = Math.max(0, tx - 10); x <= Math.min(world.width - 1, tx + 10); x++) {
-        const lt = world.tiles[y * world.width + x];
-        if (!lt || lt.extra?.kind !== "lock") continue;
-        const rad = getLockRadiusForId(lt.fg);
-        if (rad <= 0) continue;
-        if (Math.abs(x - tx) <= rad && Math.abs(y - ty) <= rad) {
-          const msg = checkLock(lt);
-          if (msg !== null) return msg;
-        }
-      }
-    }
   }
   return null;
 }
@@ -438,24 +430,30 @@ export function canModifyTile(
     return tile.extra.ownerUserId === uid || tile.extra.adminIds.includes(uid);
   }
 
-  // Check World Lock ownership / admin list
+  // Check area locks (Small / Big / Huge / Builder's Lock) via parentIndex
+  const areaDenial = getBuildersLockDenial(world, uid, tile, tx, ty, mode);
+  if (areaDenial !== null) return false;
+
+  // Check if tile is explicitly covered by an area lock (whose owner/admin/public allowed it above)
+  const coveredByAreaLock =
+    (tile.flags & TILE_FLAG_LOCKED) !== 0 &&
+    tile.parentIndex >= 0 &&
+    tile.parentIndex < world.tiles.length &&
+    world.tiles[tile.parentIndex]?.extra?.kind === "lock" &&
+    !WORLD_LOCK_IDS.has(world.tiles[tile.parentIndex].fg);
+  if (coveredByAreaLock) return true;
+
+  // Check World Lock ownership / admin list / public flag
   if (world.ownerUserId !== 0 && world.ownerUserId !== uid) {
-    // Check if user is an admin on the world lock tile
-    const wlTile = world.tiles.find(
-      (t) =>
-        (t.fg === 242 || t.fg === 1796 || t.fg === 5260 || t.fg === 7188 || t.fg === 10410 || t.fg === 11550 || t.fg === 11586 || t.fg === 11902 || t.fg === 12654) &&
-        t.extra?.kind === "lock"
-    );
+    const wlTile = getWorldLockTile(world);
     if (wlTile && wlTile.extra?.kind === "lock") {
       if (wlTile.extra.adminIds.includes(uid)) return true;
-      // Check public lock flag (bit 7 = 0x80)
       if ((wlTile.extra.settings & 0x80) !== 0) return true;
     }
     return false;
   }
 
-  // Check area locks (Small / Big / Huge / Builder's Lock) via parentIndex or radius
-  return getBuildersLockDenial(world, uid, tile, tx, ty, mode) === null;
+  return true;
 }
 
 export const canModifyWorldTile = canModifyTile;
@@ -571,6 +569,8 @@ export function recomputeWorldWeather(world: WorldInstance, itemsDb: ItemDatabas
  *  - Spawns any remaining amount (`> 0`) as a new `DroppedObject` (`++world.lastObjectUid`) with `netId = -1`!
  *  - Both `netId = -1` and `netId = -3` natively play `"audio/object_spawn2.wav"` inside `ReGrowtopia-1.50.wasm`!
  */
+let nextSuckEffectTag = 0;
+
 export function spawnOrMergeWorldDrop(
   world: WorldInstance,
   itemId: number,
@@ -593,18 +593,41 @@ export function spawnOrMergeWorldDrop(
             const absorbed = Math.min(totalCount, space);
             t.extra.count += absorbed;
             totalCount -= absorbed;
+            nextSuckEffectTag = (nextSuckEffectTag % 255) + 1;
             const flyPkt = buildTankPacket({
-              type: PACKET_ITEM_EFFECT,
+              type: PACKET_ITEM_SUCK_EFFECT,
+              objType: 3,
+              count1: nextSuckEffectTag,
+              count2: 2,
               netId: -1,
-              x: tx * 32 + 16,
-              y: ty * 32 + 16,
-              speedX: x,
-              speedY: y,
+              x,
+              y,
+              speedX: tx * 32 + 16,
+              speedY: ty * 32 + 16,
+              float2: 300,
               punchX: itemId,
             });
             for (const p of world.peers) p.peer.sendPacket(0, flyPkt, true);
             const updPkt = makeTileUpdatePacket(tx, ty, t, Date.now());
-            for (const p of world.peers) p.peer.sendPacket(0, updPkt, true);
+            for (const p of world.peers) {
+              p.peer.sendPacket(0, updPkt, true);
+              if (t.fg === 5638 && p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty && p.magplantRemote.itemId !== t.extra.itemId) {
+                p.magplantRemote.itemId = t.extra.itemId;
+                p.peer.sendPacket(
+                  0,
+                  makeVariantPacket(
+                    [
+                      "OnPlanterActivated",
+                      { type: "i32", value: t.extra.itemId },
+                      { type: "i32", value: tx },
+                      { type: "i32", value: ty },
+                    ],
+                    -1
+                  ),
+                  true
+                );
+              }
+            }
             if (totalCount <= 0) return;
           }
         }
@@ -668,11 +691,18 @@ export function spawnOrMergeWorldDrop(
   while (remaining > 0) {
     const chunk = Math.min(200, remaining);
     remaining -= chunk;
+    let sx = x;
+    let sy = y;
+    // Scatter if another stack is already at nearly the same pixel so multiple 200-stacks remain visibly distinct
+    if (world.objects.some((o) => Math.hypot(o.x - sx, o.y - sy) < 4)) {
+      sx = x + (Math.random() * 14 - 7);
+      sy = y + (Math.random() * 8 - 4);
+    }
     const uid = ++world.lastObjectUid;
-    const obj: DroppedObject = { uid, itemId, x, y, count: chunk, flags: 0 };
+    const obj: DroppedObject = { uid, itemId, x: sx, y: sy, count: chunk, flags: 0 };
     world.objects.push(obj);
     lastAffected = obj;
-    const dropPkt = makeItemDropPacket(itemId, chunk, x, y, 0, throwerNetId);
+    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, 0, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
   return lastAffected;

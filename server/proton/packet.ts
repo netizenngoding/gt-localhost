@@ -37,6 +37,7 @@ export const PACKET_ITEM_EFFECT = 19;
 export const PACKET_SET_CHARACTER_STATE = 20;
 export const PACKET_PING_REPLY = 21;
 export const PACKET_PING_REQUEST = 22;
+export const PACKET_ITEM_SUCK_EFFECT = 34;
 
 export const TANK_FLAG_EXTENDED = 0x08;
 export const TANK_FLAG_FACING_LEFT = 0x10;
@@ -95,6 +96,7 @@ export interface TankPacketFields {
   y?: number;
   speedX?: number;
   speedY?: number;
+  float2?: number;
   punchX?: number;
   punchY?: number;
   extendedData?: Buffer;
@@ -151,6 +153,11 @@ export const ALLOWLISTED_SKIN_COLORS: readonly number[] = [
   0x2b4bdfff >>> 0,
   0x50330fff >>> 0,
   0xc5c2ffff >>> 0,
+  // Super Supporter skin colors (Royal Blue, Ice Blue, Bright Orange, Translucent Ruby Red)
+  0xd46c38ff >>> 0,
+  0xeec8b2ff >>> 0,
+  0x0088ffff >>> 0,
+  0x3714be90 >>> 0,
 ];
 
 export function rgbHexToGtSkinColor(hex6: string): number {
@@ -205,7 +212,7 @@ export function buildTankPacket(f: TankPacketFields): Buffer {
   b.writeFloatLE(f.y ?? 0, t + 28);
   b.writeFloatLE(f.speedX ?? 0, t + 32);
   b.writeFloatLE(f.speedY ?? 0, t + 36);
-  b.writeInt32LE(0, t + 40);
+  b.writeFloatLE(f.float2 ?? 0, t + 40);
   b.writeInt32LE((f.punchX ?? 0) | 0, t + 44);
   b.writeInt32LE((f.punchY ?? 0) | 0, t + 48);
   b.writeUInt32LE(ext ? ext.length : 0, t + 52);
@@ -510,10 +517,12 @@ export type TileExtra =
   | { kind: "mailbox" }
   | { kind: "bulletin" }
   | { kind: "storage"; password?: string; recoveryAnswer?: string }
-  | { kind: "mannequin"; label?: string; expression?: number; skinColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number }
+  | { kind: "mannequin"; label?: string; expression?: number; pose?: number; skinColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number }
   | { kind: "crystal"; crystals: Record<number, number> }
   | { kind: "autoAction"; fuel: number; targetItemId: number; enabled: boolean }
-  | { kind: "camera" };
+  | { kind: "camera" }
+  | { kind: "paintingEasel"; itemId: number; label: string }
+  | { kind: "portrait"; label: string; expression?: number; skinColor?: number; hairColor?: number; hair: number; shirt: number; pants: number; feet: number; face: number; hand: number; back: number; mask: number; neck: number };
 
 export interface SeedExtra {
   kind: "seed";
@@ -551,7 +560,22 @@ const LOCK_FALLBACK_IDS = new Set([202, 204, 206, 242, 1796, 4994, 5260, 7188, 1
 const DONATION_MAILBOX_IDS = new Set([656, 1006, 1452, 10784]);
 const BULLETIN_STORAGE_IDS = new Set([658, 3524, 4516, 6286, 6288, 6290, 8878]);
 const DISPLAY_SHELF_IDS = new Set([3794, 10190, 10552]);
-const MANNEQUIN_IDS = new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13000]);
+const MANNEQUIN_IDS = new Set([1420]);
+// Web-client expression atlas indices (player_face/player_eyes): 25=smile, 0=smirk, 9=sad, 11=omg, 15=lol, 22=troll.
+export function defaultMannequinExpression(_itemId: number): number {
+  return 25;
+}
+const LEGACY_MANNEQUIN_EXPRESSION: Record<number, number> = {
+  8: 25,
+};
+export function resolveMannequinExpression(itemId: number, stored?: number): number {
+  const value = stored ?? defaultMannequinExpression(itemId);
+  return LEGACY_MANNEQUIN_EXPRESSION[value] ?? value;
+}
+const MANNEQUIN_DEFAULT_SKIN = 0xe6e6e6ff;
+export function defaultMannequinSkin(_itemId: number): number {
+  return MANNEQUIN_DEFAULT_SKIN;
+}
 const CRYSTAL_BLOCK_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
 const PORTRAIT_IDS = new Set([3818, 11196, 15950]); // actionType=88
 const PAINTING_EASEL_IDS = new Set([3528]); // actionType=76
@@ -615,15 +639,17 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       if (tile.extra.wl > 0) flags |= TILE_FLAG_HAS_WLS;
     } else if (tile.extra.kind === "sucker") {
       flags &= ~TILE_FLAG_EXTRA_VISUAL;
-      extraBuf = Buffer.allocUnsafe(15);
+      extraBuf = Buffer.alloc(15);
       extraBuf[0] = 62;
       extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
       extraBuf.writeUInt32LE(tile.extra.count >>> 0, 5);
       extraBuf[9] = tile.extra.enabled ? 1 : 0;
       extraBuf[10] = tile.extra.magnetron ? 1 : 0;
-      const cap = tile.fg === 5638 ? 5000 : 1500;
-      extraBuf.writeUInt32LE(cap >>> 0, 11);
-      if (tile.extra.itemId !== 0) flags |= TILE_FLAG_EXTRA_VISUAL;
+      if (tile.fg === 5638) {
+        extraBuf.writeUInt16LE(5000, 12);
+      } else {
+        extraBuf.writeUInt16LE(1500, 13);
+      }
     } else if (tile.extra.kind === "provider") {
       extraBuf = Buffer.allocUnsafe(5);
       extraBuf[0] = 9;
@@ -687,8 +713,11 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf[0] = 14;
       extraBuf.writeUInt16LE(lb.length, 1);
       lb.copy(extraBuf, 3);
-      extraBuf[3 + lb.length] = 0;
-      extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 4 + lb.length);
+      // Native expression byte; encode pose/emote ID in skinColor low byte (restored to 0xff in client).
+      extraBuf[3 + lb.length] = resolveMannequinExpression(tile.fg, tile.extra.expression) & 0xff;
+      const pose = (tile.extra.pose ?? 0) & 0xff;
+      const skin = ((defaultMannequinSkin(tile.fg) & 0xffffff00) | pose) >>> 0;
+      extraBuf.writeUInt32LE(skin, 4 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.hair & 0xffff, 8 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.shirt & 0xffff, 10 + lb.length);
       extraBuf.writeUInt16LE(tile.extra.pants & 0xffff, 12 + lb.length);
@@ -707,6 +736,32 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       if (tile.extra.enabled) flags |= TILE_FLAG_EXTRA_VISUAL;
     } else if (tile.extra.kind === "camera") {
       extraBuf = null;
+    } else if (tile.extra.kind === "paintingEasel") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.allocUnsafe(7 + lb.length);
+      extraBuf[0] = 35;
+      extraBuf.writeUInt32LE(tile.extra.itemId >>> 0, 1);
+      extraBuf.writeUInt16LE(lb.length, 5);
+      lb.copy(extraBuf, 7);
+    } else if (tile.extra.kind === "portrait") {
+      const lb = Buffer.from(tile.extra.label || "", "utf8");
+      extraBuf = Buffer.alloc(25 + lb.length);
+      extraBuf[0] = 48;
+      extraBuf.writeUInt16LE(lb.length, 1);
+      lb.copy(extraBuf, 3);
+      const isPainted =
+        (tile.extra.skinColor ?? 0) !== 0 ||
+        tile.extra.face !== 0 ||
+        tile.extra.hair !== 0 ||
+        tile.extra.mask !== 0;
+      if (isPainted) {
+        extraBuf.writeUInt32LE((tile.extra.expression ?? 1) >>> 0, 3 + lb.length);
+        extraBuf.writeUInt32LE((tile.extra.hairColor ?? 0) >>> 0, 11 + lb.length);
+        extraBuf.writeUInt32LE((tile.extra.skinColor ?? 0) >>> 0, 15 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.face & 0xffff, 19 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.mask & 0xffff, 21 + lb.length);
+        extraBuf.writeUInt16LE(tile.extra.hair & 0xffff, 23 + lb.length);
+      }
     }
   }
 
@@ -740,6 +795,8 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
     } else if (MANNEQUIN_IDS.has(tile.fg)) {
       extraBuf = Buffer.alloc(26);
       extraBuf[0] = 14;
+      extraBuf[3] = defaultMannequinExpression(tile.fg);
+      extraBuf.writeUInt32LE(defaultMannequinSkin(tile.fg), 4);
     } else if (CRYSTAL_BLOCK_IDS.has(tile.fg)) {
       extraBuf = Buffer.from([20, 0, 0]);
     } else if (WEATHER_BG_FALLBACK_IDS.has(tile.fg)) {
@@ -774,11 +831,11 @@ export function serializeSingleTile(tile: WorldTile, nowMs: number): Buffer {
       extraBuf[0] = 2;
       extraBuf.writeInt32LE(-1, 3);
     } else if (PORTRAIT_IDS.has(tile.fg)) {
-      // Portrait (actionType=88): extraType=48, 25 bytes total (GTPS3 World.h:3412)
+      // Portrait (actionType=88): extraType=48, 25 bytes total
       extraBuf = Buffer.alloc(25);
       extraBuf[0] = 48;
     } else if (PAINTING_EASEL_IDS.has(tile.fg)) {
-      // Painting Easel (actionType=76): extraType=35, 7 bytes total (GTPS3 World.h:3431)
+      // Painting Easel (actionType=76): extraType=35, 7 bytes total
       extraBuf = Buffer.alloc(7);
       extraBuf[0] = 35;
     }

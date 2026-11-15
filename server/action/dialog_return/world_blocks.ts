@@ -1,10 +1,13 @@
 import type { ServerContext } from "../../database/context";
 import { type ItemDef, isUntradeable } from "../../database/items";
-import type { PlayerSession } from "../../database/peer";
+import { getClothingVector, type PlayerSession } from "../../database/peer";
 import { GTPS3_CRYSTAL_RECIPES, GTPS3_GRINDER_RECIPES } from "../../database/recipes";
 import { canModifyWorldTile, getWorldLockTile, spawnOrMergeWorldDrop, type WorldInstance } from "../../database/world";
 import {
   buildTankPacket,
+  defaultMannequinExpression,
+  defaultMannequinSkin,
+  resolveMannequinExpression,
   makeParticleEffectPacket,
   makeTileUpdatePacket,
   PACKET_ITEM_EFFECT,
@@ -33,10 +36,12 @@ export const BULLETIN_BOARD_IDS = new Set([658, 3524]);
 export const STORAGE_BOX_IDS = new Set([4516, 6286, 6288, 6290, 8878]);
 export const CAMERA_IDS = new Set([1436, 8246, 10258]);
 export const BOOMBOX_IDS = new Set([62, 2282]);
-export const MANNEQUIN_IDS = new Set([1420, 6214, 9202, 10072, 10074, 10076, 10078, 13000]);
+export const MANNEQUIN_IDS = new Set([1420]);
 export const AUTO_ACTION_IDS = new Set([6950, 6952]);
 export const GRINDER_IDS = new Set([4582, 12196]);
 export const CRYSTAL_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
+export const PAINTING_EASEL_IDS = new Set([3528]);
+export const PORTRAIT_IDS = new Set([3818, 11196, 15950]);
 
 function getStorageBoxCapacity(itemId: number): number {
   if (itemId === 6288) return 40;
@@ -133,9 +138,140 @@ export function useItemOnDisplayBlock(
   if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
   tile.extra = { kind: "display", itemId };
   ctx.dirty = true;
+  broadcastPositionedSfx(world, session.netId, "audio/blorb.wav");
+  sendFlyEffect(session, world, tx, ty, itemId, true);
   broadcastTileUpdate(world, tx, ty, tile);
-  OnTalkBubble(session, session.netId, `You put \`5${cleanName(def)}\`\` on display!`, 0, true);
   return true;
+}
+
+const PAINT_BUCKET_IDS = [3478, 3480, 3482, 3484, 3486, 3488, 3490, 3492] as const;
+
+function countInventoryItem(session: PlayerSession, itemId: number): number {
+  let total = 0;
+  for (const s of session.account.inventory) {
+    if (s.itemId === itemId) total += s.count;
+  }
+  return total;
+}
+
+function getPaintBucketStatus(session: PlayerSession): { hasEnough: boolean; varnish: number } {
+  let hasEnough = true;
+  for (const id of PAINT_BUCKET_IDS) {
+    if (countInventoryItem(session, id) < 2) {
+      hasEnough = false;
+      break;
+    }
+  }
+  return { hasEnough, varnish: countInventoryItem(session, 3492) };
+}
+
+function consumePaintBuckets(ctx: ServerContext, session: PlayerSession): boolean {
+  if (!getPaintBucketStatus(session).hasEnough) return false;
+  for (const id of PAINT_BUCKET_IDS) {
+    ctx.consumeInventoryItem(session, id, 2, false);
+  }
+  ctx.sendInventory(session, false);
+  return true;
+}
+
+export function openPaintingEaselDialog(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile,
+  tx: number,
+  ty: number
+): void {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
+  const ex = tile.extra?.kind === "paintingEasel" ? tile.extra : { kind: "paintingEasel" as const, itemId: 0, label: "" };
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  const itemName = cleanName(ctx.itemsDb.get(tile.fg));
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${itemName}\`\`|left|${tile.fg}|`,
+    "add_spacer|small|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+  ];
+  if (ex.itemId !== 0) {
+    const paintedName = cleanName(ctx.itemsDb.get(ex.itemId));
+    lines.push(`add_textbox|This is a lovely still-life of ${paintedName}.|left|`);
+    lines.push("add_button|erase|Erase Painting|noflags|0|0|");
+  } else {
+    lines.push("add_textbox|The canvas is blank.|left|");
+    lines.push("add_item_picker|paint|`wPaint Something``|Select an item to paint|");
+  }
+  lines.push(`add_text_input|artname|Signed:|${ex.label || ""}|60|`);
+  lines.push("end_dialog|artcanvas|Cancel|Update|");
+  OnDialogRequest(session, lines.join("\n"));
+}
+
+const PORTRAIT_EXPRESSIONS: ReadonlyArray<[string, string, number]> = [
+  ["chk1", "Unconcerned", 1],
+  ["chk2", "Happy", 2],
+  ["chk3", "Sad", 3],
+  ["chk4", "Tongue Out", 4],
+  ["chk5", "Surprised", 5],
+  ["chk6", "Angry", 6],
+  ["chk7", "Talking", 7],
+  ["chk9", "Ecstatic", 9],
+  ["chk11", "Wry", 11],
+  ["chk12", "Sleeping", 12],
+  ["chk14", "Winking", 14],
+  ["chk16", "Trolling", 16],
+  ["chk18", "Vampire", 18],
+  ["chk22", "Underwater", 22],
+  ["chk27", "What", 27],
+  ["chk28", "Blushed", 28],
+];
+
+function isPortraitBlank(ex: { skinColor?: number; face: number; hair: number; mask: number }): boolean {
+  return (ex.skinColor ?? 0) === 0 && ex.face === 0 && ex.hair === 0 && ex.mask === 0;
+}
+
+export function openPortraitDialog(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile,
+  tx: number,
+  ty: number
+): void {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
+  const ex = tile.extra?.kind === "portrait"
+    ? tile.extra
+    : { kind: "portrait" as const, label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  session.lastWrenchX = tx;
+  session.lastWrenchY = ty;
+  const itemName = cleanName(ctx.itemsDb.get(tile.fg));
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`wEdit ${itemName}\`\`|left|${tile.fg}|`,
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+  ];
+  if (isPortraitBlank(ex)) {
+    lines.push("add_textbox|The canvas is blank.|left|");
+    lines.push("add_player_picker|playerNetID|`wPaint Someone``|");
+  } else {
+    lines.push("add_textbox|This is a lovely portrait of a Growtopian.|left|");
+    lines.push("add_button|erase|Erase Painting|noflags|0|0|");
+    lines.push(`add_text_input|artname|Title:|${ex.label || ""}|60|`);
+    lines.push("add_smalltext|If you'd like to touch up the painting slightly, you could change the expression:|left|");
+    const expr = ex.expression ?? 1;
+    for (const [key, label, val] of PORTRAIT_EXPRESSIONS) {
+      lines.push(`add_checkbox|${key}|${label}|${expr === val ? 1 : 0}|`);
+    }
+  }
+  lines.push("end_dialog|portrait|Cancel|Update|");
+  OnDialogRequest(session, lines.join("\n"));
 }
 
 export function openDisplayBlockDialog(
@@ -674,7 +810,7 @@ export function useClothingOnMannequin(
     return true;
   }
   if (tile.extra?.kind !== "mannequin") {
-    tile.extra = { kind: "mannequin", label: "", skinColor: session.account.skinColor, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
   }
   if (tile.extra[field] === itemId) {
     OnTalkBubble(session, session.netId, "`5[`2You giggle as you swap two identical items``]``", 0, false);
@@ -692,6 +828,90 @@ export function useClothingOnMannequin(
   return true;
 }
 
+const MANNEQUIN_EXPRESSIONS: Array<[number, string]> = [
+  [25, "Smile"],
+  [0, "Smirk"],
+  [9, "Sad"],
+  [11, "OMG"],
+  [15, "LOL"],
+  [22, "Troll"],
+];
+
+const MANNEQUIN_ACTIONS: Array<[number, string]> = [
+  [0, "Idle (Normal)"],
+  [8, "Dance"],
+  [28, "Dance 2"],
+  [7, "Wave"],
+  [12, "Cheer"],
+  [10, "Yes"],
+  [11, "No"],
+  [24, "Fold Arms"],
+  [23, "Popcorn"],
+  [25, "Dab"],
+  [29, "March"],
+  [30, "Sassy"],
+  [31, "Squish"],
+  [16, "OMG"],
+  [18, "IDK"],
+  [21, "Roll Eyes"],
+  [9, "Sleep"],
+];
+
+function broadcastMannequinTransformEffect(
+  world: WorldInstance,
+  session: PlayerSession,
+  tx: number,
+  ty: number
+): void {
+  const particle = makeParticleEffectPacket(44, tx * 32 + 16, ty * 32 + 16);
+  for (const p of world.peers) p.peer.sendPacket(0, particle, true);
+  broadcastPositionedSfx(world, session.netId, "audio/terraform.wav");
+}
+
+export function openMannequinActionDialog(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile,
+  tx: number,
+  ty: number
+): void {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnTalkBubble(session, session.netId, "`4Only builders with access can edit this Mannequin.``", 0, true);
+    return;
+  }
+  if (tile.extra?.kind !== "mannequin") {
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+  }
+  const mq = tile.extra;
+  mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+  const currentExpr = mq.expression;
+  const currentPose = mq.pose ?? 0;
+  const fgName = cleanName(ctx.itemsDb.get(tile.fg));
+
+  const lines = [
+    "set_default_color|`o",
+    `add_label_with_icon|big|\`w${fgName} Custom Action\`\`|left|${tile.fg}|`,
+    "add_textbox|Choose a facial expression and a move/emote for this Mannequin!|left|",
+    "add_textbox|<CR>`wFacial Expression:``|left|",
+  ];
+  for (const [idx, label] of MANNEQUIN_EXPRESSIONS) {
+    lines.push(`add_checkbox|expr_${idx}|${label}|${idx === currentExpr ? 1 : 0}|`);
+  }
+  lines.push("add_textbox|<CR>`wMove / Emote:``|left|");
+  for (const [poseId, label] of MANNEQUIN_ACTIONS) {
+    lines.push(`add_checkbox|pose_${poseId}|${label}|${poseId === currentPose ? 1 : 0}|`);
+  }
+  lines.push(
+    "add_spacer|small|",
+    "add_button|back_edit|`oBack to Edit Mannequin``|noflags|0|0|",
+    `embed_data|tilex|${tx}`,
+    `embed_data|tiley|${ty}`,
+    "end_dialog|mannequin_action|Cancel|Update|"
+  );
+  OnDialogRequest(session, lines.join("\n"));
+}
+
 export function openMannequinDialog(
   ctx: ServerContext,
   session: PlayerSession,
@@ -705,9 +925,10 @@ export function openMannequinDialog(
     return;
   }
   if (tile.extra?.kind !== "mannequin") {
-    tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
   }
   const mq = tile.extra;
+  if (mq.expression === undefined) mq.expression = defaultMannequinExpression(tile.fg);
   const fgName = cleanName(ctx.itemsDb.get(tile.fg));
   const worn = [mq.face, mq.shirt, mq.pants, mq.feet, mq.mask, mq.hand, mq.back, mq.hair, mq.neck].filter((id) => id > 0);
   const lines = [
@@ -724,6 +945,8 @@ export function openMannequinDialog(
     lines.push("add_button|clear|`4Remove All Items``|noflags|0|0|");
   }
   lines.push(
+    "add_spacer|small|",
+    "add_button|open_action|`wSet Custom Action``|noflags|0|0|",
     "add_textbox|<CR><CR>What would you like to write on its sign?``|left|",
     `add_text_input|sign_text||${mq.label || ""}|128|`,
     `embed_data|tilex|${tx}`,
@@ -1330,12 +1553,72 @@ export function handleWorldBlockDialogReturn(
   }
 
   // --- Mannequin ---
+  if (dlgName === "mannequin_action" && tile && MANNEQUIN_IDS.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    if (tile.extra?.kind !== "mannequin") {
+      tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    }
+    const mq = tile.extra;
+    mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+    if (btn === "back_edit") {
+      openMannequinDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    const prevExpr = mq.expression;
+    const prevPose = mq.pose ?? 0;
+
+    // Pick newly checked expression (prefer one different from current if multiple were left checked).
+    let nextExpr = prevExpr;
+    const checkedExprs = MANNEQUIN_EXPRESSIONS.map(([idx]) => idx).filter((idx) => kv[`expr_${idx}`] === "1");
+    if (checkedExprs.length > 0) {
+      nextExpr = checkedExprs.find((idx) => idx !== prevExpr) ?? checkedExprs[0];
+    }
+
+    let nextPose = prevPose;
+    const checkedPoses = MANNEQUIN_ACTIONS.map(([poseId]) => poseId).filter((poseId) => kv[`pose_${poseId}`] === "1");
+    if (checkedPoses.length > 0) {
+      nextPose = checkedPoses.find((poseId) => poseId !== prevPose) ?? checkedPoses[0];
+    } else if (MANNEQUIN_ACTIONS.some(([poseId]) => kv[`pose_${poseId}`] !== undefined)) {
+      nextPose = 0;
+    }
+
+    if (nextExpr !== prevExpr || nextPose !== prevPose) {
+      mq.expression = nextExpr;
+      mq.pose = nextPose;
+      ctx.dirty = true;
+      broadcastMannequinTransformEffect(world, session, tx, ty);
+      broadcastTileUpdate(world, tx, ty, tile);
+    }
+    return true;
+  }
+
   if (dlgName === "mannequin_edit" && tile && MANNEQUIN_IDS.has(tile.fg)) {
     if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
     if (tile.extra?.kind !== "mannequin") {
-      tile.extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      tile.extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(tile.fg), pose: 0, skinColor: defaultMannequinSkin(tile.fg), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
     }
     const mq = tile.extra;
+    mq.expression = resolveMannequinExpression(tile.fg, mq.expression);
+    if (btn === "open_action") {
+      if (kv.sign_text !== undefined) {
+        mq.label = kv.sign_text.replace(/[|\r\n`%]/g, "").slice(0, 128);
+        ctx.dirty = true;
+        broadcastTileUpdate(world, tx, ty, tile);
+      }
+      openMannequinActionDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
+    if (btn.startsWith("expr_")) {
+      const expr = Number.parseInt(btn.slice(5), 10);
+      if (Number.isFinite(expr) && expr >= 0 && expr <= 255) {
+        mq.expression = expr;
+        ctx.dirty = true;
+        broadcastMannequinTransformEffect(world, session, tx, ty);
+        broadcastTileUpdate(world, tx, ty, tile);
+      }
+      openMannequinDialog(ctx, session, world, tile, tx, ty);
+      return true;
+    }
     if (kv.put) {
       const putId = Number.parseInt(kv.put, 10);
       const def = ctx.itemsDb.get(putId);
@@ -1348,7 +1631,7 @@ export function handleWorldBlockDialogReturn(
       }
       if (!ctx.consumeInventoryItem(session, putId, 1, true)) return true;
       mq[field] = putId;
-      mq.skinColor = session.account.skinColor;
+      mq.skinColor = defaultMannequinSkin(tile.fg);
       ctx.dirty = true;
       broadcastPositionedSfx(world, session.netId, "audio/change_clothes.wav");
       broadcastTileUpdate(world, tx, ty, tile);
@@ -1451,6 +1734,72 @@ export function handleWorldBlockDialogReturn(
     tile.extra = undefined;
     tile.flags = 0;
     tile.damage = 0;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+
+  // --- Painting Easel (artcanvas) ---
+  if (dlgName === "artcanvas" && tile && PAINTING_EASEL_IDS.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    const ex = tile.extra?.kind === "paintingEasel"
+      ? tile.extra
+      : { kind: "paintingEasel" as const, itemId: 0, label: "" };
+    if (btn === "erase") {
+      ex.itemId = 0;
+    } else if (kv.paint !== undefined) {
+      const paintId = Number.parseInt(kv.paint || "0", 10);
+      if (Number.isFinite(paintId) && paintId > 0 && countInventoryItem(session, paintId) > 0) {
+        ex.itemId = paintId;
+      }
+    }
+    if (kv.artname !== undefined) {
+      const txt = (kv.artname ?? "").slice(0, 60).replace(/`%/g, "");
+      ex.label = txt;
+    }
+    tile.extra = ex;
+    tile.flags |= 0x01;
+    ctx.dirty = true;
+    broadcastTileUpdate(world, tx, ty, tile);
+    return true;
+  }
+
+  // --- Portrait / Posh Portrait (portrait) ---
+  if (dlgName === "portrait" && tile && PORTRAIT_IDS.has(tile.fg)) {
+    if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) return true;
+    const ex = tile.extra?.kind === "portrait"
+      ? tile.extra
+      : { kind: "portrait" as const, label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+    if (btn === "erase") {
+      ex.expression = 1;
+      ex.skinColor = 0;
+      ex.hairColor = 0;
+      ex.face = 0;
+      ex.hair = 0;
+      ex.mask = 0;
+    } else if (kv.playerNetID !== undefined && isPortraitBlank(ex)) {
+      const targetNetId = Number.parseInt(kv.playerNetID || "0", 10);
+      const target = Array.from(world.peers).find((p) => p.netId === targetNetId);
+      if (target) {
+        const slots = getClothingVector(target.account, ctx.itemsDb);
+        ex.expression = 1;
+        ex.skinColor = target.account.skinColor ?? 0xb88565ff;
+        ex.hairColor = target.account.hairColor ?? 0;
+        ex.face = slots[4] || 0;
+        ex.hair = slots[0] || 0;
+        ex.mask = slots[7] || 0;
+        ex.label = target.account.name;
+      }
+    } else if (!isPortraitBlank(ex)) {
+      for (const [key, , val] of PORTRAIT_EXPRESSIONS) {
+        if (kv[key] === "1") ex.expression = val;
+      }
+      if (kv.artname !== undefined) {
+        ex.label = (kv.artname ?? "").slice(0, 60).replace(/`%/g, "");
+      }
+    }
+    tile.extra = ex;
+    tile.flags |= 0x01;
     ctx.dirty = true;
     broadcastTileUpdate(world, tx, ty, tile);
     return true;

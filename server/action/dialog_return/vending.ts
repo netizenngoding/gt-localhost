@@ -13,6 +13,7 @@ import {
   makeParticleEffectPacket,
   makeTileUpdatePacket,
   PACKET_ITEM_EFFECT,
+  PACKET_ITEM_SUCK_EFFECT,
   type WorldTile,
 } from "../../proton/packet";
 import {
@@ -598,12 +599,13 @@ export function handleVendingDialogReturn(
   broadcastPositionedSfx(world, session.netId, "audio/cash_register.wav");
   const effectPkt = buildTankPacket({
     type: PACKET_ITEM_EFFECT,
-    netId: session.netId,
-    x: tx * 32 + 16,
-    y: ty * 32 + 16,
+    netId: 0,
+    count2: 5,
+    targetNetId: session.netId,
     punchX: expectItem,
     punchY: session.netId,
-    value: 100,
+    x: session.x + 10,
+    y: session.y + 16,
   });
   for (const p of world.peers) p.peer.sendPacket(0, effectPkt, true);
   const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());

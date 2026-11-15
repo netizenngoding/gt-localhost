@@ -1,5 +1,4 @@
 import { requestTrade } from '../action/trade';
-import { setSkin, showSkinMenu } from "../progression/skin";
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
@@ -124,15 +123,6 @@ export function handlePlayerCommand(
         ? "`2Inventory cleared (worn clothes, Fist & Wrench kept)!``"
         : "`2Inventory cleared!``"
     );
-    return true;
-  }
-
-  if (cmd === "skin") {
-    if (!argStr.trim()) { showSkinMenu(session); return true; }
-    const m = argStr.trim().match(/^#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/);
-    if (!m) { OnConsoleMessage(session, "Usage: /skin RRGGBB[AA]"); return true; }
-    const color = ((rgbHexToGtSkinColor(m[1]) & 0xffffff00) | (m[2] ? parseInt(m[2],16) : 255)) >>> 0;
-    if (setSkin(ctx,session,color)) OnConsoleMessage(session,"Skin color updated!");
     return true;
   }
 
@@ -330,14 +320,13 @@ export function handlePlayerCommand(
   }
 
   if (cmd === "discord") {
-    // Exact GTPS3 World.h:8146
     const dlg = new DialogBuilder()
       .setDefaultColor("`o")
       .addLabelWithIcon("big", "`wDiscord``", 10568)
       .addSpacer("small")
-      .addTextbox("`oVisit the Growtopia Discord page?``")
+      .addTextbox("`oVisit the Magnolia Discord page?``")
       .addSpacer("small")
-      .addUrlButton("comment", "`wLaunch``", "https://discord.gg/gtps3", "Open Discord?", "noflags")
+      .addUrlButton("comment", "`wLaunch``", "https://discord.gg/magnolia", "Open Discord?", "noflags")
       .addQuickExit()
       .endDialog("discord_dialog", "", "");
     OnDialogRequest(session, dlg);

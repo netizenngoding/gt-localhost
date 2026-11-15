@@ -68,18 +68,25 @@
     }
   }
   function ensureOverlay(){
+    const c=module&&module.canvas;
+    const fs=document.fullscreenElement||document.webkitFullscreenElement;
+    const host=(fs&&fs!==c)?fs:((fs&&fs===c&&c.parentElement)?c.parentElement:document.body);
     if(!overlay){
       overlay=document.createElement('canvas');
       overlay.id='native-chat-heads';
       overlay.setAttribute('aria-hidden','true');
-      Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'15',imageRendering:'pixelated'});
-      document.body.appendChild(overlay);
+      Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'10002',imageRendering:'pixelated'});
+      host.appendChild(overlay);
       paint=overlay.getContext('2d');
+    }else if(overlay.parentElement!==host){
+      host.appendChild(overlay);
     }
-    const c=module&&module.canvas;
     if(!c) return;
     const r=c.getBoundingClientRect();
-    if(overlay.width!==c.width||overlay.height!==c.height){overlay.width=c.width;overlay.height=c.height;}
+    const gl=module&&module.ctx;
+    const bw=(gl&&gl.drawingBufferWidth)||c.width;
+    const bh=(gl&&gl.drawingBufferHeight)||c.height;
+    if(overlay.width!==bw||overlay.height!==bh){overlay.width=bw;overlay.height=bh;}
     Object.assign(overlay.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
     paint.clearRect(0,0,overlay.width,overlay.height);stats.visible=0;wanted=new Map();lastDraw=performance.now();
   }

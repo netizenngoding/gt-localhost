@@ -18,23 +18,24 @@ function refresh(t:Trade,reset=false){for(const to of [t.a,t.b])if(to.open)for(c
  const label=from===to?'`oYour offer.``':`\`o${from.session.account.name}'s offer.\`\``;
  variant(to.session,['OnTradeStatus',{type:'i32',value:from.session.netId},'',label,list]);
 }}
-export function cancelTrade(s:PlayerSession,reason='Trade cancelled.'):void {const t=trades.get(s);if(!t)return;for(const x of [t.a,t.b]){trades.delete(x.session);if(x.open)variant(x.session,['OnForceTradeEnd']);if(reason)OnConsoleMessage(x.session,reason);}}
+export function cancelTrade(s:PlayerSession,reason='Trade cancelled.'):void {const t=trades.get(s);if(!t)return;for(const x of [t.a,t.b]){trades.delete(x.session);if(x.open)variant(x.session,['OnForceTradeEnd']);if(reason)OnConsoleMessage(x.session,reason);if(reason!=='Trade complete.')OnPlayPositioned(x.session,'audio/dialog_cancel.wav');}}
 export function requestTrade(ctx:ServerContext,s:PlayerSession,id:number):void {
  const p=[...(s.world?.peers||[])].find(x=>x.netId===id);if(!p||p===s||p.account===s.account||!ctx.sessions.has(p)){OnConsoleMessage(s,'Player not found.');return;}
  const current=trades.get(s);
- if(current&&valid(ctx,current)&&other(current,s).session===p){const own=side(current,s);if(!own.open){own.open=true;variant(s,['OnStartTrade',p.account.name,{type:'i32',value:p.netId}]);}refresh(current);return;}
- if(current||trades.get(p)){OnConsoleMessage(s,'One player is already trading.');return;}
+ if(current&&valid(ctx,current)&&other(current,s).session===p){const own=side(current,s);if(!own.open){own.open=true;variant(s,['OnStartTrade',p.account.name,{type:'i32',value:p.netId}]);OnPlayPositioned(s,'audio/dialog_open.wav');OnPlayPositioned(p,'audio/dialog_confirm.wav');}refresh(current);return;}
+ if(current||trades.get(p)){OnConsoleMessage(s,'One player is already trading.');OnPlayPositioned(s,'audio/bleep_fail.wav');return;}
  const t:Trade={a:{session:s,open:true,accepted:false,offer:new Map()},b:{session:p,open:false,accepted:false,offer:new Map()}};
- trades.set(s,t);trades.set(p,t);variant(s,['OnStartTrade',p.account.name,{type:'i32',value:p.netId}]);OnConsoleMessage(p,'`#TRADE ALERT:`` '+s.account.name+' wants to trade! Wrench them and choose Trade to accept.');OnPlayPositioned(p,'audio/cash_register.wav');
+ trades.set(s,t);trades.set(p,t);variant(s,['OnStartTrade',p.account.name,{type:'i32',value:p.netId}]);OnPlayPositioned(s,'audio/dialog_open.wav');OnConsoleMessage(p,'`#TRADE ALERT:`` '+s.account.name+' wants to trade! Wrench them and choose Trade to accept.');OnPlayPositioned(p,'audio/cash_register.wav');
 }
 function allowed(ctx:ServerContext,s:PlayerSession,id:number){const def=ctx.itemsDb.get(id),slot=s.account.inventory.find(i=>i.itemId===id);return !!def&&!def.name.startsWith('null_')&&!(def.flags&0x8000)&&![6,18,32,112,1424].includes(id)&&!!slot&&!slot.equipped&&slot.count>0;}
 export function addTradeItem(ctx:ServerContext,s:PlayerSession,id:number,n:number):void {
  const t=trades.get(s);if(!t||!valid(ctx,t)||t.confirmToken||!side(t,s).open)return;
- if(!Number.isSafeInteger(n)||n<1||n>200||!allowed(ctx,s,id)){OnConsoleMessage(s,'Cannot trade that item or amount.');return;}
+ if(!Number.isSafeInteger(n)||n<1||n>200||!allowed(ctx,s,id)){OnConsoleMessage(s,'Cannot trade that item or amount.');OnPlayPositioned(s,'audio/bleep_fail.wav');return;}
  const own=side(t,s),slot=s.account.inventory.find(i=>i.itemId===id)!;
- if(!own.offer.has(id)&&own.offer.size>=4){OnConsoleMessage(s,'Only four different items fit.');return;}
- if((own.offer.get(id)||0)+n>slot.count){OnConsoleMessage(s,'Not enough items.');return;}
+ if(!own.offer.has(id)&&own.offer.size>=4){OnConsoleMessage(s,'Only four different items fit.');OnPlayPositioned(s,'audio/bleep_fail.wav');return;}
+ if((own.offer.get(id)||0)+n>slot.count){OnConsoleMessage(s,'Not enough items.');OnPlayPositioned(s,'audio/bleep_fail.wav');return;}
  own.offer.set(id,(own.offer.get(id)||0)+n);t.a.accepted=t.b.accepted=false;refresh(t,true);
+ for(const x of [t.a,t.b])if(x.open)OnPlayPositioned(x.session,'audio/click.wav');
 }
 function exchanged(ctx:ServerContext,inv:InventorySlot[],give:Map<number,number>,receive:Map<number,number>,capacity:number):InventorySlot[]|null {
  const next=inv.map(x=>({...x}));
@@ -47,8 +48,11 @@ function accept(ctx:ServerContext,s:PlayerSession,raw:string,status:string){
  const seen=new Map<number,number>();let malformed=false;
  for(const line of raw.replace(/\0+$/g, "").split(/\r?\n/)){if(!line.startsWith('item|'))continue;const m=/^item\|(\d+)\|(\d+)\s*$/.exec(line);if(!m){malformed=true;break;}const id=Number(m[1]),n=Number(m[2]);if(seen.has(id)||!Number.isSafeInteger(id)||!Number.isSafeInteger(n))malformed=true;seen.set(id,n);}
  const offered=other(t,s).offer;
- if(status==='1' && (malformed || (seen.size>0 && (seen.size!==offered.size || [...offered].some(([id,n])=>seen.get(id)!==n))))) {OnConsoleMessage(s,'Offer changed. Please check it again.');refresh(t);return;}
- side(t,s).accepted=status==='1';refresh(t);if(!t.a.accepted||!t.b.accepted)return;
+ if(status==='1' && (malformed || (seen.size>0 && (seen.size!==offered.size || [...offered].some(([id,n])=>seen.get(id)!==n))))) {OnConsoleMessage(s,'Offer changed. Please check it again.');OnPlayPositioned(s,'audio/bleep_fail.wav');refresh(t);return;}
+ const accepted=status==='1';
+ side(t,s).accepted=accepted;refresh(t);
+ for(const x of [t.a,t.b])OnPlayPositioned(x.session,accepted?'audio/dialog_confirm.wav':'audio/dialog_cancel.wav');
+ if(!t.a.accepted||!t.b.accepted)return;
  beginConfirmation(ctx,t);
 }
 function beginConfirmation(ctx:ServerContext,t:Trade):void {
@@ -63,13 +67,16 @@ function beginConfirmation(ctx:ServerContext,t:Trade):void {
   for(const [id,n] of incoming)d.addLabelWithIcon('small',`${n} x ${ctx.itemsDb.get(id)?.name.replace(/[`|\r\n]/g,'')||id}`,id);
   d.addButton(`confirm_${t.confirmToken}`,'`2Do The Trade!``').addButton('cancel','`4Cancel``').addQuickExit();
   OnDialogRequest(x.session,d.endDialog('trade_confirm','',''));
+  OnPlayPositioned(x.session,'audio/dialog_open.wav');
  }
 }
 export function confirmTrade(ctx:ServerContext,s:PlayerSession,btn:string):void {
  const t=trades.get(s);if(!t||!valid(ctx,t)||!t.confirmToken)return;
  if(btn==='cancel'||!btn){cancelTrade(s);return;}
  if(btn!==`confirm_${t.confirmToken}`)return;
- t.confirmed!.add(s);if(t.confirmed!.size<2){OnConsoleMessage(s,'Trade confirmed; waiting for the other player.');return;}
+ t.confirmed!.add(s);
+ if(t.confirmed!.size<2){OnConsoleMessage(s,'Trade confirmed; waiting for the other player.');OnPlayPositioned(s,'audio/dialog_confirm.wav');OnPlayPositioned(other(t,s).session,'audio/dialog_confirm.wav');return;}
+ OnPlayPositioned(s,'audio/dialog_confirm.wav');
  complete(ctx,t,s);
 }
 function complete(ctx:ServerContext,t:Trade,s:PlayerSession):void {
@@ -104,7 +111,7 @@ export function tradeAction(ctx:ServerContext,s:PlayerSession,action:string,kv:R
   if(!allowed(ctx,s,id)||!slot){OnConsoleMessage(s,'Cannot trade that item.');return true;}
   if(slot.count===1)addTradeItem(ctx,s,id,1);else {const def=ctx.itemsDb.get(id)!;const d=new DialogBuilder().addLabelWithIcon('big',def.name.replace(/[`|\r\n]/g,''),id).addTextbox(`How many to offer? You have ${slot.count}.`).addTextInput('count','','1',3).embedData('itemID',id).addQuickExit();OnDialogRequest(s,d.endDialog('trade_add','Cancel','OK'));}return true;
  }
- if(action==='rem_trade'){const own=side(t,s);own.offer.delete(Number((kv.itemID || '').replace(/\|$/, '')));t.a.accepted=t.b.accepted=false;refresh(t,true);return true;}
+ if(action==='rem_trade'){const own=side(t,s);own.offer.delete(Number((kv.itemID || '').replace(/\|$/, '')));t.a.accepted=t.b.accepted=false;refresh(t,true);for(const x of [t.a,t.b])if(x.open)OnPlayPositioned(x.session,'audio/click.wav');return true;}
  if(action==='trade_accept'){accept(ctx,s,raw,kv.status);return true;}
  return true;
 }

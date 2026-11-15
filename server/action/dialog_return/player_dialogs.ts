@@ -5,7 +5,6 @@ import { isUntradeable } from "../../database/items";
 import { worldModerate } from '../world-moderation';
 import { addTradeItem, confirmTrade } from '../trade';
 import { friendRequest, friendDialogReturn } from '../friends';
-import { setSkin, showSkinMenu } from "../../progression/skin";
 import { showAchievements } from "../../progression/commands";
 import { SERVER_CONFIG, SERVER_NAME } from "../../config/branding";
 import { hasPermission, canModerate } from "../../ranks";
@@ -249,10 +248,6 @@ export function handlePlayerDialogsReturn(
     return true;
   }
 
-  if (dlgName === "skin_menu") {
-    if (/^skin_\d+$/.test(btn)) setSkin(ctx,session,Number(btn.slice(5)));
-    return true;
-  }
   if(dlgName==='notebook_edit'){
     if(btn==='save'||btn==='clear'){
       session.account.personalNote=btn==='clear'?'':String(kv.personal_note||'').replace(/[|\r\n\0]/g,' ').slice(0,128);

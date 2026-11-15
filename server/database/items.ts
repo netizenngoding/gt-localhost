@@ -106,6 +106,8 @@ export class ItemDatabase {
     const count = itemsDatBuf.readUInt32LE(2);
     let pos = 6;
     const reference = new Map(ORIGINAL_ITEM_REFERENCE.map(row => [row[0], row]));
+    // Remove all variant mannequins except regular Mannequin (1420) & Mannequin Seed (1421).
+    const removedItemIds = new Set([6214, 6215, 10072, 10073, 10074, 10075, 10076, 10077, 10078, 10079, 13000, 13001]);
     const recordChunks: Buffer[] = [itemsDatBuf.subarray(0, 6)];
     let emptyRecord: Buffer | undefined;
 
@@ -237,7 +239,7 @@ export class ItemDatabase {
         isBedrock,
       };
       const row = reference.get(id);
-      const allowed = !!row && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
+      const allowed = !!row && !removedItemIds.has(id) && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
       const record = itemsDatBuf.subarray(recordStart, pos);
       if (id === 0) {
         if (!allowed) throw new Error("Item 0 does not match the original reference");
@@ -266,8 +268,9 @@ export class ItemDatabase {
     }
 
     if (pos !== itemsDatBuf.length) throw new Error("Unexpected items.dat trailing data");
-    this.rawItemsDat = itemsDatBuf;
-    this.itemsDatHash = protonHash(itemsDatBuf);
+    const rebuiltItemsDat = Buffer.concat(recordChunks);
+    this.rawItemsDat = rebuiltItemsDat;
+    this.itemsDatHash = protonHash(rebuiltItemsDat);
 
     // Populate canonical Growtopia seed splicing recipes resolved by exact item name
     // (items.dat v18 zeroes client-side ing1/ing2 to prevent recipe scraping).
@@ -579,9 +582,6 @@ export function isUndestroyable(def?: ItemDef): boolean {
   if (!def) return false;
   return (
     def.id === 18 || // Fist
-    def.id === 32 || // Wrench
-    def.id === 6336 ||
-    (def.flags & ITEM_FLAG_PERMANENT) !== 0 ||
-    (def.flags & ITEM_FLAG_UNTRADABLE) !== 0
+    def.id === 32    // Wrench
   );
 }

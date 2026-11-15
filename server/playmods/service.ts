@@ -216,6 +216,7 @@ export function expireMods(ctx:ServerContext):void {
 export function infectByPunch(ctx:ServerContext,attacker:PlayerSession,tx:number,ty:number):void {
  const world=attacker.world,now=Date.now();
  if(!world || !activeMods(attacker.account).some(m=>m.id==='gtps3-infected'))return;
+ if(world.tiles.some((t)=> (t.fg===1278 || t.fg===1276) && (t.flags & 0x0040)!==0))return;
  if(attacker.lastInfectPunchAt && now-attacker.lastInfectPunchAt<1500)return;
  attacker.lastInfectPunchAt=now;
  const target=[...world.peers].filter(p=>p!==attacker && tx*32<p.x+20 && tx*32+32>p.x && ty*32<p.y+30 && ty*32+32>p.y)

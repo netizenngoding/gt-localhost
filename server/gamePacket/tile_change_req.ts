@@ -6,6 +6,8 @@ import { farmingXp } from "../progression/model";
 import { staffInteractionReach } from "../ranks/interaction";
 import {
   buildTankPacket,
+  defaultMannequinExpression,
+  defaultMannequinSkin,
   makeItemDropPacket,
   makeItemModifyObjectPacket,
   makeTileChangePacket,
@@ -34,7 +36,7 @@ import {
   ITEM_FLAG_NO_SEED,
   type ItemDef
 } from "../database/items";
-import type { PlayerSession } from "../database/peer";
+import { clearSessionMagplantLink, setSessionMagplantLink, type PlayerSession } from "../database/peer";
 import {
   applyAreaLock,
   canManageVending,
@@ -96,8 +98,12 @@ import {
   openDonationBoxDialog,
   openGrinderDialog,
   openMannequinDialog,
+  openPaintingEaselDialog,
+  openPortraitDialog,
   openStorageBoxDialog,
   openToggleableDialog,
+  PAINTING_EASEL_IDS,
+  PORTRAIT_IDS,
   STORAGE_BOX_IDS,
   useClothingOnMannequin,
   useCrystalOnCrystal,
@@ -476,8 +482,10 @@ export function handleTileChangeRequest(
       }
       return;
     }
-    // Migrated GTPS3 World Block Wrench Handlers
+    // Magnolia World Block Wrench Handlers
     if (tile.fg === 2946) { openDisplayBlockDialog(ctx, session, world, tile, tx, ty); return; }
+    if (PAINTING_EASEL_IDS.has(tile.fg)) { openPaintingEaselDialog(ctx, session, world, tile, tx, ty); return; }
+    if (PORTRAIT_IDS.has(tile.fg)) { openPortraitDialog(ctx, session, world, tile, tx, ty); return; }
     if (DISPLAY_SHELF_IDS.has(tile.fg)) { openDisplayShelfDialog(ctx, session, world, tile, tx, ty); return; }
     if (DONATION_BOX_IDS.has(tile.fg)) { openDonationBoxDialog(ctx, session, world, tile, tx, ty); return; }
     if (MAILBOX_IDS.has(tile.fg) || BULLETIN_BOARD_IDS.has(tile.fg)) { openBulletinOrMailboxDialog(ctx, session, world, tile, tx, ty); return; }
@@ -625,6 +633,22 @@ export function handleTileChangeRequest(
       }
     }
 
+    // Jammer / Anti-Gravity punch toggle (226 Signal, 1276 Punch, 1278 Zombie, 4884 Balloon, 4992 Anti-Gravity)
+    if ((tile.fg === 226 || tile.fg === 1276 || tile.fg === 1278 || tile.fg === 4884 || tile.fg === 4992) && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+      if (!tile.lastPunchWeatherMs || now - tile.lastPunchWeatherMs >= 1500) {
+        tile.lastPunchWeatherMs = now;
+        if ((tile.flags & TILE_FLAG_OPEN) !== 0) tile.flags &= ~TILE_FLAG_OPEN;
+        else tile.flags |= TILE_FLAG_OPEN;
+        ctx.dirty = true;
+        const upd = makeTileUpdatePacket(tx, ty, tile, now);
+        for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+        broadcastPositionedSfx(world, session.netId, "audio/switch.wav");
+        if (tile.fg === 4992) {
+          for (const p of world.peers) ctx.sendCharacterState(p);
+        }
+      }
+    }
+
     // Magplant 5000 (5638) punch toggle magnetron mode when item is configured (GTPS3 World.h:18807-18928)
     if (tile.fg === 5638 && tile.extra?.kind === "sucker" && tile.extra.itemId > 0 && canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
       const mDef = ctx.itemsDb.get(tile.extra.itemId);
@@ -642,29 +666,12 @@ export function handleTileChangeRequest(
             OnConsoleMessage(session, "You received a MAGPLANT 5000 Remote.");
           }
         }
-        session.magplantRemote = { x: tx, y: ty, itemId: tile.extra.itemId };
-        session.peer.sendPacket(
-          0,
-          makeVariantPacket([
-            "OnPlanterActivated",
-            { type: "i32", value: tile.extra.itemId },
-            { type: "i32", value: tx },
-            { type: "i32", value: ty },
-          ]),
-          true
-        );
+        setSessionMagplantLink(session, world.name, tx, ty, tile.extra.itemId);
       } else {
         tile.extra.magnetron = false;
-        const offPkt = makeVariantPacket([
-          "OnPlanterActivated",
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-        ]);
         for (const p of world.peers) {
           if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-            p.magplantRemote = null;
-            p.peer.sendPacket(0, offPkt, true);
+            clearSessionMagplantLink(p, world.name, true);
           }
         }
       }
@@ -717,8 +724,25 @@ export function handleTileChangeRequest(
         return false;
       }
       if (session.account.rank !== "developer" && !canModifyWorldTile(session, world, bt, bx, by, "break")) {
+        const allowBuildLockPunch =
+          canModifyWorldTile(session, world, bt, bx, by, "place") ||
+          (bt.fg === 4994 &&
+            bt.extra?.kind === "lock" &&
+            ((bt.extra.settings & 0x80) !== 0 || bt.extra.adminIds.includes(session.account.userId)));
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, lockedMessage(ctx, world, bt, bx, by, "break", session.account.userId), 0, true);
+        if (allowBuildLockPunch) {
+          const dmgPkt = buildTankPacket({
+            type: PACKET_TILE_APPLY_DAMAGE,
+            netId: session.netId,
+            value: 0,
+            punchX: bx,
+            punchY: by,
+          });
+          for (const p of world.peers) p.peer.sendPacket(0, dmgPkt, true);
+        } else {
+          session.peer.sendPacket(0, makeTileUpdatePacket(bx, by, bt, now), true);
+        }
         return false;
       }
 
@@ -861,38 +885,53 @@ export function handleTileChangeRequest(
     return;
   }
 
-  // Magplant Remote 5640 usage (GTPS3 World.h:12574)
-  if (itemId === 5640 && session.magplantRemote) {
+  // Magplant Remote (5640) usage - never fall through to normal block placement
+  if (itemId === 5640) {
+    if (!session.magplantRemote) {
+      OnTalkBubble(session, session.netId, "Link a MAGPLANT 5000 first!", 0, true);
+      return;
+    }
     const { x: mx, y: my, itemId: rItemId } = session.magplantRemote;
     const magTile = world.tiles[my * world.width + mx];
-    if (magTile && magTile.extra && magTile.extra.kind === "sucker" && magTile.extra.itemId === rItemId && magTile.extra.count > 0) {
-      const remoteDef = ctx.itemsDb.get(rItemId);
-      if (
-        remoteDef &&
-        !remoteDef.isSeed &&
-        !remoteDef.isLock &&
-        !remoteDef.isBackground &&
-        !tile.fg &&
-        canModifyWorldTile(session, world, tile, tx, ty, "place")
-      ) {
-        if (remoteDef.collisionType === 1 && Math.abs(session.x - tx * 32) < 18 && Math.abs(session.y - ty * 32) < 24) return;
+    if (!magTile || magTile.fg !== 5638 || magTile.extra?.kind !== "sucker" || magTile.extra.itemId !== rItemId) {
+      OnTalkBubble(session, session.netId, "Your MAGPLANT 5000 link is no longer valid.", 0, true);
+      return;
+    }
+    if (magTile.extra.count <= 0) {
+      OnTalkBubble(session, session.netId, "The MAGPLANT 5000 is empty!", 0, true);
+      return;
+    }
+    const remoteDef = ctx.itemsDb.get(rItemId);
+    const canPlaceFg = !remoteDef?.isBackground && !tile.fg;
+    const canPlaceBg = !!remoteDef?.isBackground && !tile.bg;
+    if (
+      remoteDef &&
+      !remoteDef.isSeed &&
+      !remoteDef.isLock &&
+      (canPlaceFg || canPlaceBg) &&
+      canModifyWorldTile(session, world, tile, tx, ty, "place")
+    ) {
+      if (!remoteDef.isBackground && remoteDef.collisionType === 1 && Math.abs(session.x - tx * 32) < 18 && Math.abs(session.y - ty * 32) < 24) return;
+      if (remoteDef.isBackground) {
+        tile.bg = rItemId;
+      } else {
         tile.fg = rItemId;
-        tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+        tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
         tile.damage = 0;
-        magTile.extra.count -= 1;
-        ctx.dirty = true;
-        const placePkt = makeTileChangePacket(
-          session.netId, tx, ty, rItemId,
-          session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
-        );
-        for (const p of world.peers) p.peer.sendPacket(0, placePkt, true);
-        const updMag = makeTileUpdatePacket(mx, my, magTile, now);
-        for (const p of world.peers) {
-          p.peer.sendPacket(0, updMag, true);
-        }
-        return;
+      }
+      magTile.extra.count -= 1;
+      ctx.dirty = true;
+      const placePkt = makeTileChangePacket(
+        session.netId, tx, ty, rItemId,
+        session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
+      );
+      for (const p of world.peers) p.peer.sendPacket(0, placePkt, true);
+      const updMag = makeTileUpdatePacket(mx, my, magTile, now);
+      for (const p of world.peers) {
+        p.peer.sendPacket(0, updMag, true);
       }
     }
+    return;
   }
 
   // Fishing Bait usage on Water (GTPS3 World.h:21475)
@@ -923,6 +962,9 @@ export function handleTileChangeRequest(
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
 
+  // Display Block (2946) accepts any item (including consumables, dyes, and clothes) BEFORE they are consumed/equipped.
+  if (tile.fg === 2946 && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
+
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
 
   // Dyes and eye items are actionType 8 consumables. Previously they fell
@@ -943,7 +985,6 @@ export function handleTileChangeRequest(
   }
 
   // Interactive item-on-block mechanics BEFORE normal tile placement
-  if (tile.fg && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
   if (tile.fg && useItemOnDonationBox(ctx, session, tile, tx, ty, itemId)) return;
   if (tile.fg && useItemOnGrinder(ctx, session, tile, tx, ty, itemId)) return;
   if (tile.fg && useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId)) return;
@@ -1052,7 +1093,7 @@ export function handleTileChangeRequest(
 
     tile.fg = itemId;
     tile.damage = 0;
-    tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+    tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     // Client uses elapsed time versus items.dat growTime. Advancing the stored
     // start time by 5% gives the documented 5% shorter maturity deadline and
     // survives world save/reload; the initial visible growth is approximate.
@@ -1129,7 +1170,7 @@ export function handleTileChangeRequest(
     }
 
     tile.fg = itemId;
-    tile.flags = session.facingLeft ? TILE_FLAG_FLIPPED : 0;
+    tile.flags = (prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     tile.damage = 0;
 
     let extra: TileExtra | undefined;
@@ -1204,6 +1245,12 @@ export function handleTileChangeRequest(
     } else if (itemId === 2946) {
       extra = { kind: "display", itemId: 0 };
       needsFullTileUpdate = true;
+    } else if (PAINTING_EASEL_IDS.has(itemId)) {
+      extra = { kind: "paintingEasel", itemId: 0, label: "" };
+      needsFullTileUpdate = true;
+    } else if (PORTRAIT_IDS.has(itemId)) {
+      extra = { kind: "portrait", label: "", expression: 1, skinColor: 0, hairColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      needsFullTileUpdate = true;
     } else if (DISPLAY_SHELF_IDS.has(itemId)) {
       extra = { kind: "displayShelf", s1: 0, s2: 0, s3: 0, s4: 0 };
       needsFullTileUpdate = true;
@@ -1220,7 +1267,7 @@ export function handleTileChangeRequest(
       extra = { kind: "storage" };
       needsFullTileUpdate = true;
     } else if (MANNEQUIN_IDS.has(itemId)) {
-      extra = { kind: "mannequin", label: "", skinColor: 0, hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
+      extra = { kind: "mannequin", label: "", expression: defaultMannequinExpression(itemId), skinColor: defaultMannequinSkin(itemId), hair: 0, shirt: 0, pants: 0, feet: 0, face: 0, hand: 0, back: 0, mask: 0, neck: 0 };
       needsFullTileUpdate = true;
     } else if (CRYSTAL_IDS.has(itemId)) {
       extra = { kind: "crystal", crystals: { [itemId]: 1 } };
@@ -1303,7 +1350,7 @@ function harvestWorldTree(
 
   tile.fg = 0;
   tile.extra = undefined;
-  tile.flags = 0;
+  tile.flags &= (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC);
   tile.damage = 0;
   ctx.dirty = true;
 
@@ -1361,16 +1408,9 @@ function finalizeTileBreak(
     unlockedIndices = clearAreaLock(world, tx, ty);
   }
   if (targetId === 5638) {
-    const clearPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-    ]);
     for (const p of world.peers) {
       if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-        p.magplantRemote = undefined;
-        p.peer.sendPacket(0, clearPkt, true);
+        clearSessionMagplantLink(p, world.name, true);
       }
     }
   }
@@ -1390,7 +1430,7 @@ function finalizeTileBreak(
   if (tile.fg !== 0) {
     tile.fg = 0;
     tile.extra = undefined;
-    tile.flags = 0;
+    tile.flags = AREA_LOCK_IDS.has(targetId) ? 0 : (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC));
   } else {
     tile.bg = 0;
   }

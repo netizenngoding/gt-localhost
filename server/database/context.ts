@@ -3,7 +3,11 @@ import { cancelTrade } from '../action/trade';
 import { effectiveSkin } from "../playmods/model";
 import { expireMods } from "../playmods/service";
 import { progression, recordProgress } from "../progression/service";
-import { buildCharacterStateForSession } from "./peer";
+import {
+  buildCharacterStateForSession,
+  clearSessionMagplantLink,
+  sendPlanterActivated,
+} from "./peer";
 import { staffInteractionReach } from "../ranks/interaction";
 import { displayName, hasPermission } from "../ranks";
 import { RankService } from "../ranks/service";
@@ -14,9 +18,11 @@ import path from "node:path";
 import {
   makeInventoryPacket,
   makeModifyInventoryPacket,
+  makeParticleEffectPacket,
   makeSetCharacterStatePacket,
   makeVariantPacket,
   makeWorldMapPacket,
+  TILE_FLAG_OPEN,
 } from "../proton/packet";
 import {
   broadcastConsoleMessage,
@@ -169,7 +175,11 @@ export class ServerContext {
 
   public savePlayersNow(): void {
     try {
-      this.atomicWriteJson(this.playersFile, Array.from(this.accounts.values()));
+      const sanitized = Array.from(this.accounts.values()).map((acc) => ({
+        ...acc,
+        inventory: acc.inventory.filter((s) => s.itemId !== 5640),
+      }));
+      this.atomicWriteJson(this.playersFile, sanitized);
     } catch (err) {
       this.dirty = true;
       throw new Error("Player save failed; mutation was not acknowledged", { cause: err });
@@ -245,6 +255,9 @@ export class ServerContext {
   }
 
   public sendInventory(session: PlayerSession, syncLocalClothes = true): void {
+    if (!session.world) {
+      session.account.inventory = session.account.inventory.filter((s) => s.itemId !== 5640);
+    }
     session.peer.sendPacket(
       0,
       makeInventoryPacket(session.account.backpackSize, session.account.inventory),
@@ -505,19 +518,116 @@ export class ServerContext {
 
     if (announceEntry) {
       const owner = world.ownerUserId ? this.findAccountByUserId(world.ownerUserId) : undefined;
-      const lockNote = owner
-        ? ` \`o[\`wWorld Locked\`\` by \`2${owner.name}\`o]\`\``
-        : " `o(Unclaimed - place a World Lock!)``";
+      const worldMods: string[] = [];
+      let hasJam226 = false;
+      let hasJam1276 = false;
+      let hasJam1278 = false;
+      let hasJam4884 = false;
+      let hasJam4992 = false;
+      for (const t of world.tiles) {
+        if ((t.flags & TILE_FLAG_OPEN) === 0) continue;
+        if (t.fg === 226) hasJam226 = true;
+        else if (t.fg === 1276) hasJam1276 = true;
+        else if (t.fg === 1278) hasJam1278 = true;
+        else if (t.fg === 4884) hasJam4884 = true;
+        else if (t.fg === 4992) hasJam4992 = true;
+      }
+      if (hasJam226) worldMods.push("`4JAMMED``");
+      if (hasJam1276) worldMods.push("`2NOPUNCH``");
+      if (hasJam1278) worldMods.push("`2IMMUNE``");
+      if (hasJam4884) worldMods.push("`2NOWAR``");
+      if (hasJam4992) worldMods.push("`2ANTIGRAVITY``");
+      if (world.disableMusicBlocks) worldMods.push("`6NOMUSIC``");
+      if (world.royalSilence) worldMods.push("`6SILENCED``");
+      if (world.royalRainbows) worldMods.push("`6RAINBOWS``");
+      if (world.entryLevel && world.entryLevel > 0) worldMods.push(`\`2LVL ${world.entryLevel}\`\``);
+      if (world.worldCategory) worldMods.push(`\`6${world.worldCategory}\`\``);
+
+      const modsText = worldMods.length > 0 ? `\`0[\`\`${worldMods.join(", ")}\`0]\`\` ` : "";
+      const otherCount = world.peers.size - 1;
       OnConsoleMessage(
         session,
-        `World \`w${world.name}\`\` entered. There are \`w${world.peers.size - 1}\`\` other people here, \`w${this.sessions.size}\`\` online.${lockNote}`
+        `World \`w${world.name}\`\` ${modsText}entered.  There are \`w${otherCount}\`\` other people here, \`w${this.sessions.size}\`\` online.`
       );
+
+      if (world.xenonite?.enabled) {
+        const x = world.xenonite;
+        const xText =
+          "Xenonite has changed everyone's powers!" +
+          (x.doubleJump === 1 ? " `2Double Jump granted!``" : x.doubleJump === 2 ? " `6Double Jump blocked!``" : "") +
+          (x.highJump === 1 ? " `2High Jump granted!``" : x.highJump === 2 ? " `6High Jump blocked!``" : "") +
+          (x.heatResist === 1 ? " `2Heat Resist granted!``" : "") +
+          (x.strongPunch === 1 ? " `2Strong Punch granted!``" : x.strongPunch === 2 ? " `6Strong Punch blocked!``" : "") +
+          (x.speedy === 1 ? " `2Super Speed granted!``" : x.speedy === 2 ? " `6Super Speed blocked!``" : "") +
+          (x.longPunch === 1 ? " `2Long Punch granted!``" : x.longPunch === 2 ? " `6Long Punch blocked!``" : "") +
+          (x.longBuild === 1 ? " `2Long Build granted!``" : x.longBuild === 2 ? " `6Long Build blocked!``" : "");
+        OnConsoleMessage(session, xText);
+        OnTalkBubble(session, session.netId, xText, 0, true);
+      }
+
+      if (owner) {
+        OnConsoleMessage(session, `[\`w${world.name}\`\` World Locked by \`2${owner.name}\`\`]`);
+      }
+
+      const enterMsg = `\`5<\`w${session.account.name}\`\` entered, \`w${otherCount}\`\` others here>\`\``;
       for (const peer of world.peers) {
         if (peer !== session) {
-          OnConsoleMessage(
-            peer,
-            `\`o<\`w${session.account.name}\`\` entered, \`w${world.peers.size - 1}\`\` others here>\`\``
-          );
+          if (otherCount >= 1 && otherCount <= 14) {
+            OnTalkBubble(peer, session.netId, enterMsg, 1, false);
+          }
+          OnConsoleMessage(peer, enterMsg);
+        }
+      }
+
+      if (session.account.inventory.some((s) => s.itemId === 5640 && s.count > 0)) {
+        const worldKey = world.name.toUpperCase();
+        const saved = session.account.magplantLinks?.[worldKey];
+        let targetRemote: { x: number; y: number; itemId: number } | null = null;
+        if (saved && saved.x >= 0 && saved.x < world.width && saved.y >= 0 && saved.y < world.height) {
+          const st = world.tiles[saved.y * world.width + saved.x];
+          if (st?.fg === 5638 && st.extra?.kind === "sucker" && st.extra.itemId > 0) {
+            targetRemote = { x: saved.x, y: saved.y, itemId: st.extra.itemId };
+          }
+        }
+        if (!targetRemote) {
+          let fallbackActive: { x: number; y: number; itemId: number } | null = null;
+          for (let ty = 0; ty < world.height; ty++) {
+            for (let tx = 0; tx < world.width; tx++) {
+              const mt = world.tiles[ty * world.width + tx];
+              if (mt.fg === 5638 && mt.extra?.kind === "sucker" && mt.extra.itemId > 0 && mt.extra.magnetron) {
+                const candidate = { x: tx, y: ty, itemId: mt.extra.itemId };
+                if (mt.extra.count > 0) {
+                  targetRemote = candidate;
+                  break;
+                }
+                if (!fallbackActive) fallbackActive = candidate;
+              }
+            }
+            if (targetRemote) break;
+          }
+          if (!targetRemote) targetRemote = fallbackActive;
+        }
+        if (targetRemote) {
+          session.magplantRemote = targetRemote;
+          const expectedNetId = session.netId;
+          const sendPlanterSync = () => {
+            if (
+              session.world !== world ||
+              session.netId !== expectedNetId ||
+              !this.sessions.has(session) ||
+              !session.magplantRemote
+            ) {
+              return;
+            }
+            const { x: rx, y: ry, itemId: rItem } = session.magplantRemote;
+            sendPlanterActivated(session, rItem, rx, ry);
+          };
+          sendPlanterSync();
+          // Re-send after OnSpawn finishes creating the local NetAvatar in client memory.
+          for (const delay of [200, 800]) {
+            const timer = setTimeout(sendPlanterSync, delay);
+            if (timer.unref) timer.unref();
+          }
         }
       }
     }
@@ -535,17 +645,19 @@ export class ServerContext {
     session.iconState = 0;
     session.lastIconStatePacket = undefined;
     if (session.magplantRemote) {
-      session.magplantRemote = null;
-      session.peer.sendPacket(
-        0,
-        makeVariantPacket([
-          "OnPlanterActivated",
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-          { type: "i32", value: 0 },
-        ]),
-        true
-      );
+      clearSessionMagplantLink(session, undefined, false);
+    }
+    // Magplant 5000 Remote (5640) is a temporary per-world item: remove it whenever leaving a world.
+    let removedRemote = 0;
+    for (let i = session.account.inventory.length - 1; i >= 0; i--) {
+      if (session.account.inventory[i].itemId === 5640) {
+        removedRemote += session.account.inventory[i].count;
+        session.account.inventory.splice(i, 1);
+      }
+    }
+    if (removedRemote > 0) {
+      this.dirty = true;
+      session.peer.sendPacket(0, makeModifyInventoryPacket(5640, 0, removedRemote), true);
     }
     world.peers.delete(session);
     session.world = null;

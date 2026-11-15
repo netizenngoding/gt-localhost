@@ -4,11 +4,11 @@
  */
 
 import type { ServerContext } from "../../database/context";
-import type { PlayerSession } from "../../database/peer";
+import { clearSessionMagplantLink, setSessionMagplantLink, type PlayerSession } from "../../database/peer";
 import type { WorldInstance } from "../../database/world";
 import { canModifyWorldTile } from "../../database/world";
 import { makeTileUpdatePacket, makeVariantPacket, type WorldTile } from "../../proton/packet";
-import { OnConsoleMessage, OnDialogRequest, OnTalkBubble } from "../../onVariant";
+import { OnConsoleMessage, OnDialogRequest, OnPlayPositioned, OnTalkBubble } from "../../onVariant";
 import { DialogBuilder } from "../../tools/create_dialog";
 import { stripGtColors } from "../../tools/string";
 
@@ -20,6 +20,10 @@ export function openSuckerDialog(
   tx: number,
   ty: number
 ): void {
+  if (!canModifyWorldTile(session, world, tile, tx, ty, "wrench")) {
+    OnPlayPositioned(session, "audio/punch_locked.wav");
+    return;
+  }
   session.pendingEditTile = { x: tx, y: ty };
   if (!tile.extra || tile.extra.kind !== "sucker") {
     tile.extra = { kind: "sucker", itemId: 0, count: 0, enabled: true };
@@ -117,18 +121,11 @@ export function handleSuckerDialogReturn(
         return true;
       }
     }
-    session.magplantRemote = { x: tx, y: ty, itemId: extra.itemId };
     extra.magnetron = true;
     ctx.dirty = true;
     const upd = makeTileUpdatePacket(tx, ty, tile, Date.now());
     for (const p of world.peers) p.peer.sendPacket(0, upd, true);
-    const planterPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: extra.itemId },
-      { type: "i32", value: tx },
-      { type: "i32", value: ty },
-    ]);
-    session.peer.sendPacket(0, planterPkt, true);
+    setSessionMagplantLink(session, world.name, tx, ty, extra.itemId);
     OnTalkBubble(session, session.netId, "You received a Magplant 5000 Remote.", 0, true);
     OnConsoleMessage(session, "You received a Magplant 5000 Remote.");
     return true;
@@ -204,16 +201,9 @@ export function handleSuckerDialogReturn(
     extra.itemId = 0;
     extra.enabled = true;
     extra.magnetron = false;
-    const clearPkt = makeVariantPacket([
-      "OnPlanterActivated",
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-      { type: "i32", value: 0 },
-    ]);
     for (const p of world.peers) {
       if (p.magplantRemote && p.magplantRemote.x === tx && p.magplantRemote.y === ty) {
-        p.magplantRemote = null;
-        p.peer.sendPacket(0, clearPkt, true);
+        clearSessionMagplantLink(p, world.name, true);
       }
     }
     ctx.dirty = true;

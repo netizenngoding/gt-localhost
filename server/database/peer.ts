@@ -276,7 +276,10 @@ export function clearSessionMagplantLink(
 
 /**
  * Verified against ReGrowtopia-1.50.wasm Func #4579 @ 2068..2110 & Gurotopia SetClothing.cpp:
- * All 10 clothing slots (0=Hair, 1=Shirt, 2=Pants, 3=Feet, 4=Face, 5=Hand, 6=Back, 7=Mask, 8=Necklace, 9=Ances).
+ * All 10 clothing slots (0=Hat, 1=Shirt, 2=Pants, 3=Feet, 4=Face, 5=Hand, 6=Back, 7=Hair, 8=Necklace, 9=Ances).
+ * items.dat clothingType lines up 1:1 with these indices (e.g. 66 Top Hat = 0,
+ * 6008 Intergalactic Warrior Hair = 7), so slot 0 is headwear and slot 7 is the
+ * only slot Hair Dye may tint.
  */
 export function getClothingVector(account: PlayerAccount, itemsDb: ItemDatabase): TenClothingSlots {
   const slots: TenClothingSlots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -311,6 +314,10 @@ export function buildCharacterStateForSession(
     if (session.account.inventory.some(v=>v.itemId===3774 && v.equipped && v.count>0)) stateFlags |= 1<<4;
     if (abilities.speedy.length) moveSpeed = 310.0;
     if (abilities.highJump.length) gravity = 700.0;
+    // Hovering_Cloak items: the official client applies a hold-jump hover
+    // modifier. The local server cannot see the held key, so it lowers gravity
+    // while the cloak is equipped to reproduce the float.
+    if (abilities.hover.length) gravity = Math.min(gravity, 500.0);
     // Ordinary punch range stacks up to two extra tiles. Ring of Range has
     // a separate owner-world rule and is deliberately absent from the table.
     const ringOfRange = session.account.inventory.some(i=>i.equipped && i.count>0 && i.itemId===11094);
@@ -323,7 +330,7 @@ export function buildCharacterStateForSession(
       // Punch animation is selected separately by the GTPS3 slot priority below.
     }
     // GTPS3 World.h update_clothes slot precedence: hand, neck, back, face,
-    // mask, hair, feet, shirt, pants, ances. Numeric type values are items.dat.
+    // hair, hat, feet, shirt, pants, ances. Numeric type values are items.dat.
     for (const clothingType of [5, 8, 6, 4, 7, 0, 3, 1, 2, 9]) {
       const slot = session.account.inventory.find(v => {
         if (!v.equipped || v.count <= 0) return false;

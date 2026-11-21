@@ -350,24 +350,22 @@
       const old = fs.ignorePermissions;fs.ignorePermissions=true;
       const patched=[];
       try {
-        const ui=global.SERVER_UI_ASSETS;
-        for(const [stem,encoded] of Object.entries({autofill_panel:"UlRQQUNLAABrAQAAfAABAAEAAAAAAAAAAAAAAAAAAAB4nO3RoQ3CYBRG0aJYAI/EMkvzC8ZhBcIibMMIjAECmjS1yHNfcpKnPnPnMS5jnqbr9LU7rP6ff2/Z267tj6d3bLfnK6B1//P9EUj9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d9Wf1v9bfW31d+27R/P0j+uDy2q9G4=",autofill_selected:"UlRQQUNLAAB4AAAAfAABAAEAAAAAAAAAAAAAAAAAAAB4nO3MsQnAIBRF0Z8dMpn8IpBlnMktnMoUJiBpbc+DA6+6JfPKElFjOs7lv3b39f61u/UBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADySTT6w="})) {
-          const target="/interface/"+stem+".rttex";
-          try{fs.unlink(target);}catch(_){} fs.writeFile(target,Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))); patched.push(target);
-        }
         // The user's emote artwork is installed into the existing native hand
         // texture. Both client variants use the same transparent grayscale PNG.
         const customMiddle=Uint8Array.from(atob("UlRQQUNLAAB1AAAAfAgAAAEAAAAAAAAAAAAAAAAAAAB42gsKCYkICWJgEGBgYFAAYkYRJDYUUwpg5jFwMIyCQQ4WL178H4Zv3boFxydOnIBjWtoNswPE3rp1KxzTw+8wu2BuGAj7YfYiu4FecT9Y7EfG9LQfOQ3QM97xhcFA2Q/L8yPV/oEO/4GyH9kNtLYHAMUz24Y="),c=>c.charCodeAt(0));
         for(const target of ["/game/player_arm_middlefinger.rttex","/game/player_arm_middlefinger_beta.rttex"]) {
           try{fs.unlink(target);}catch(_){} fs.writeFile(target,customMiddle); patched.push(target);
         }
+        if (global.SERVER_UI_ASSETS) {
+        const ui=global.SERVER_UI_ASSETS;
         const fontPaths={normal:"font_normal",normalx2:"font_normalx2",big:"font_mono_big",bigx2:"font_mono_bigx2",tiktok:"server_tiktok"};
         for(const [key,stem] of Object.entries(fontPaths)) {
           const target="/interface/"+stem+(key==="tiktok"?".rttex":".rtfont");
           try{fs.unlink(target);}catch(_){}
           fs.writeFile(target,Uint8Array.from(atob(ui[key]),c=>c.charCodeAt(0)));patched.push(target);
         }
-        for(const [kind,targets] of Object.entries(paths)) {
+        }
+        if (images) for(const [kind,targets] of Object.entries(paths)) {
           const binary=atob(images[kind]);const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
           for(const path of targets) { try{fs.unlink(path);}catch(_){} fs.writeFile(path,bytes);patched.push(path); }
         }

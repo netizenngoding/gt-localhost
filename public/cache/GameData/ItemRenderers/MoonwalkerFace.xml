@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ItemRenderer>
+	<Data>
+		<Sprite name="s_face" fileName="game/player_cosmetics4.rttex" textureSize="32" frame="10,13"/>
+	</Data>
+	<RenderRules>
+		<RenderFaceItem>
+			<ContextUpdate type="SetTint">
+				<Set name="forceTint">true</Set>
+				<Set name="tint">255,255,255,255</Set>
+			</ContextUpdate>
+			<SpriteRender name="s_face" blend="PREMULTIPLIED_ALPHA" alignment="DOWN_CENTER" drawShadow="false"/>
+		</RenderFaceItem>
+	</RenderRules>
+</ItemRenderer>

@@ -4,10 +4,16 @@ import { getClothingVector, type PlayerSession } from "../database/peer";
 import type { ItemDatabase } from "../database/items";
 import type { WorldInstance } from "../database/world";
 
-export interface ChatPortrait { clothes: number[]; skin: number; }
+export interface ChatPortrait { clothes: number[]; skin: number; hairColor: number; }
 let nextPortraitId = 0;
 export function chatPortrait(subject: PlayerSession, items: ItemDatabase): ChatPortrait {
-  return { clothes: [...getClothingVector(subject.account, items)], skin: effectiveSkin(subject.account) >>> 0 };
+  // 0 = no dye. Sending the real account colour keeps every viewer from painting
+  // the portrait hair with their own Hair Dye.
+  return {
+    clothes: [...getClothingVector(subject.account, items)],
+    skin: effectiveSkin(subject.account) >>> 0,
+    hairColor: (subject.account.hairColor ?? 0) >>> 0,
+  };
 }
 export function makeConsoleMessagePacket(message: string, portrait?: ChatPortrait): Buffer {
   if (!portrait) return makeVariantPacket(["OnConsoleMessage", message]);
@@ -18,7 +24,7 @@ export function makeConsoleMessagePacket(message: string, portrait?: ChatPortrai
   const header = /_CT:\[[^\]]+\]_ ?/.exec(message);
   const at = header ? header.index + header[0].length : 0;
   const tagged = message.slice(0, at) + marker + message.slice(at);
-  return makeVariantPacket(["OnConsoleMessage", tagged, JSON.stringify({v:1,id,clothes:portrait.clothes,skin:portrait.skin})]);
+  return makeVariantPacket(["OnConsoleMessage", tagged, JSON.stringify({v:1,id,clothes:portrait.clothes,skin:portrait.skin,hairColor:portrait.hairColor})]);
 }
 export function OnConsoleMessage(session: PlayerSession, message: string, portrait?: ChatPortrait): void {
   session.peer.sendPacket(0, makeConsoleMessagePacket(message, portrait), true);

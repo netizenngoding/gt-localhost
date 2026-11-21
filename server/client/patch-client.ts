@@ -4,9 +4,33 @@ import { patchDyeAppearance } from "./dye-appearance";
 import { extendChatPortraitExports } from "./portrait-exports";
 import { patchClothingAnimations } from "./clothing-animation";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 // Exact audited client. Never apply offsets to an unrecognized upstream revision.
 export const CLIENT_SHA256="9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
-export function patchClient(input:Buffer,hideWarning:boolean, autofillLabel = "Autofill", serverName = "MagnoliaPS"):Buffer {
+
+function collectLegacyXmlRendererIds(publicCacheDir: string): number[] {
+  const xmlDir = path.join(publicCacheDir, "GameData", "ItemRenderers");
+  if (!fs.existsSync(xmlDir)) return [];
+  const ids: number[] = [];
+  for (const name of fs.readdirSync(xmlDir)) {
+    const m = /^r(\d+)\.xml$/.exec(name);
+    if (!m) continue;
+    // Libc++ 32-bit std::string SSO fits at most 10 ASCII bytes inline ("r12345.xml" = 10)
+    if (name.length > 10) continue;
+    ids.push(Number(m[1]));
+  }
+  ids.sort((a, b) => a - b);
+  return ids;
+}
+
+export function patchClient(
+  input: Buffer,
+  hideWarning: boolean,
+  autofillLabel = "Autofill",
+  serverName = "MagnoliaPS",
+  publicCacheDir = path.resolve(process.cwd(), "public", "cache")
+): Buffer {
  if(crypto.createHash("sha256").update(input).digest("hex")!==CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
  const output=Buffer.from(input);
  if(hideWarning) {
@@ -86,7 +110,8 @@ export function patchClient(input:Buffer,hideWarning:boolean, autofillLabel = "A
   // 2) Replace func 1518 (TileOverlayComponent::PostRender, vtable+12, called at func 5029 after players
   //    and right before batch flush) to render all visible fg tiles with flags & 0x2000.
   const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
-  const patched = Buffer.from(patchClothingAnimations(patchMannequinExpression(prePatched)));
+  const legacyXmlIds = collectLegacyXmlRendererIds(publicCacheDir);
+  const patched = Buffer.from(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds));
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
   return extendChatPortraitExports(patched);
 }

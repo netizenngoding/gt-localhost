@@ -1,70 +1,160 @@
-// Native in-game command assistant: all visuals are Proton/WASM entities.
-// JavaScript only bridges input and the existing native entity ABI; no HTML UI.
+// Native Growtopia console autofill: no HTML UI, no custom panels.
+//
+// The client already ships a native AutoFill component that renders the exact
+// dropdown from the original game (list, gold selection, "F1"/"F2"/TAB hint
+// box). Its candidate list lives in a C++ std::vector<Record> at a fixed
+// address in this pinned build. We only append item names to that vector so
+// `/give 333 1 Indo` completes item names, and we switch the native option on.
+//
+// Record layout (verified against the pinned client): 3 x std::string (12 bytes
+// each) + int32, 40 bytes per element.
 (function (global) {
   'use strict';
-  // Public commands only. Staff-only commands must not be suggested to guests.
-  const catalog=[['help','Daftar perintah'],['level','Level dan XP'],['achievements','Pencapaian'],['hidestatus','Tampilkan/sembunyikan status'],['find','Cari item'],['growid','Daftar akun'],['warp','Pindah world'],['worlds','Daftar world'],['who','Pemain di world'],['me','Kirim aksi'],['middle','Emote'],['msg','Pesan pemain'],['trade','Tukar item'],['sb','Siaran'],['time','Waktu'],['skin','Warna kulit'],['flag','Bendera'],['rank','Rank'],['mods','Staff online'],['news','Gazette'],['door','Pintu'],['weather','Cuaca'],['convert','Konversi'],['wave','Melambaikan tangan'],['dance','Menari'],['love','Cinta'],['sleep','Tidur'],['facepalm','Facepalm'],['smh','Geleng kepala'],['yes','Ya'],['no','Tidak'],['omg','Terkejut'],['shrug','Angkat bahu'],['fold','Lipat tangan'],['dab','Dab'],['sassy','Gaya'],['dance2','Menari'],['march','Berbaris'],['grumpy','Kesal'],['shy','Malu']];
-  const pref='magnolia_native_autofill_v1';
-  function enabled(){try{return global.localStorage.getItem(pref)!=='0'}catch(_){return true}}
-  function setEnabled(value){try{global.localStorage.setItem(pref,value?'1':'0')}catch(_){}if(!value)clear()}
-  function match(text){if(!/^\/[a-z]*$/i.test(text))return [];const q=text.slice(1).toLowerCase();return catalog.filter(c=>c[0].startsWith(q))}
-  global.NativeAutofill={enabled,setEnabled,match};
-  if(!global.document)return;
-  let rows=[],boxParent=0,last='',selection=0,choices=[],dismissed=null,shown=false,highlight=null,highlightBase=0,highlightStep=0,windowStart=0;
-  function sdk(){return global.GameSDK && global.GameSDK.ready ? global.GameSDK : null}
-  function clear(){
-    const g=sdk(), parent=g && g.entity('ConsoleInputBG');
-    if(parent && parent.exists && parent.ptr===boxParent){for(const e of rows) {try {if(e.exists)e.destroy()}catch(_){}}}
-    rows=[];boxParent=0;shown=false;highlight=null;
+  var pref = 'magnolia_native_autofill_v2';
+  // Verified against the pinned ReGrowtopia 1.50 client.
+  var VEC_BEGIN = 393436;
+  var VEC_END = 393440;
+  var VEC_CAP = 393444;
+  var REC_SIZE = 40;
+  var ENABLE_FLAG = 369787;
+  var APP_PTR = 393364;
+
+  function enabled() {
+    try { return global.localStorage.getItem(pref) !== '0'; } catch (_) { return true; }
   }
-  function nativeDisabled(){
-    try{const m=global.Module,g=sdk(),a=g._abi,s=a.ensureScratch()+320;a.writeStdString(s,'enableAutoFill');const v=m.wasmTable.get(623)(m.HEAPU32[393364>>2],s);a.freeStdString(s);if(v)m.HEAPU32[(v+8)>>2]=0;}catch(_){}
+  function setEnabled(value) {
+    try { global.localStorage.setItem(pref, value ? '1' : '0'); } catch (_) {}
+    if (applyOption(!!value)) optionApplied = true;
   }
-  function accept(command){const g=sdk();if(!g||!command)return;const box=g.entity('ConsoleInputBox');if(!box.exists)return;box._applyTextNow('/'+command[0]+' ');last='/'+command[0]+' ';dismissed=last;clear();}
-  function draw(parent){
-    clear();boxParent=parent.ptr;
-    const h=global.GameSDK.screenSize.height, step=Math.max(20,h*0.031), y0=parent.size.height+4;
-    const width=Math.min(275,global.GameSDK.screenSize.width*.48), visible=choices.slice(windowStart,windowStart+3);
-    const panel=parent.addOverlayBg({name:'mag_native_panel',file:'interface/autofill_panel.rttex',x:5,y:y0,width:width,height:step*(visible.length+1)+5});rows.push(panel);
-    const title=parent.addLabel({name:'mag_native_autofill_title',text:'`wAutofill',x:14,y:y0+4,linesPerScreenY:48});rows.push(title);
-    highlightBase=y0+step; highlightStep=step;
-    highlight=parent.addOverlayBg({name:'mag_native_selection',file:'interface/autofill_selected.rttex',x:9,y:highlightBase+step*(selection-windowStart),width:width-8,height:step});rows.push(highlight);
-    visible.forEach((c,i)=>{
-      const label='`w/'+c[0].padEnd(12,' ')+' `o'+c[1];
-      const button=parent.addButton({name:'mag_native_command_'+(windowStart+i),text:label,x:16,y:y0+step*(i+1)+2,linesPerScreenY:44,maxWidth:width-22,onClick:()=>accept(c)});rows.push(button);
-    });
-    shown=true;
+
+  var names = null;
+  var fetching = false;
+  var fetchFailedAt = 0;
+  var injectedBlock = 0;
+  var injectedEnd = 0;
+  var optionApplied = false;
+
+  function sdk() { return global.GameSDK && global.GameSDK.ready ? global.GameSDK : null; }
+  function memoryReady() {
+    var m = global.Module;
+    return !!(m && m.HEAPU8 && m.HEAPU32 && m.wasmTable && typeof m.wasmTable.get === 'function');
   }
-  function tick(){
-    const g=sdk();if(!g)return;nativeDisabled();
-    try{
-      const parent=g.entity('ConsoleInputBG'),input=g.entity('ConsoleInputBox');
-      const world=g.entity('WorldSpecificGUI');
-      if(!parent.exists || !input.exists || !world.exists || ['GenericDialog','PauseMenu','OptionsMenu','StoreMenu'].some(n=>{const e=g.entity(n);return e.exists&&e.visible;})) {clear();last='';dismissed=null;return;}
-      const text=input.text;if(text!==last){last=text;dismissed=null;selection=0;windowStart=0;}
-      if(!enabled()||text===dismissed){clear();return;}
-      const next=match(text);if(!next.length){clear();return;}
-      if(!shown || boxParent!==parent.ptr || choices.length!==next.length || choices.some((x,i)=>x[0]!==next[i][0])){choices=next;draw(parent)}
-    }catch(e){clear();console.warn('[NativeAutofill]',e)}
+
+  function fetchNames() {
+    if (names || fetching) return;
+    if (fetchFailedAt && Date.now() - fetchFailedAt < 15000) return;
+    fetching = true;
+    var url = '/api/autofill-items';
+    var hash = global.SERVER_ITEMS_HASH;
+    if (hash !== undefined) url += '?v=' + encodeURIComponent(hash);
+    global.fetch(url, { cache: 'force-cache' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (text) {
+        if (!text) return;
+        var list = text.split('\n');
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+          var name = list[i].trim();
+          if (name) out.push(name);
+        }
+        if (out.length) names = out;
+        fetchFailedAt = out.length ? 0 : Date.now();
+      })
+      .catch(function () { fetchFailedAt = Date.now(); })
+      .then(function () { fetching = false; });
   }
-  global.addEventListener('keydown',function(e){if(!shown||e.altKey||e.ctrlKey||e.metaKey)return;
-    if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();e.stopImmediatePropagation();selection=(selection+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length;
-      const previous=windowStart;
-      if(selection<windowStart)windowStart=selection;
-      else if(selection>=windowStart+3)windowStart=selection-2;
-      if(previous!==windowStart){const g=sdk(),p=g&&g.entity('ConsoleInputBG');if(p&&p.exists)draw(p);}
+
+  // Switch the native AutoFill option on/off; this is the same flag the
+  // in-game Options checkbox writes, so both stay in sync.
+  function applyOption(on) {
+    try {
+      var m = global.Module, g = sdk();
+      if (!m || !g) return false;
+      m.HEAPU8[ENABLE_FLAG] = on ? 1 : 0;
+      var abi = g._abi, s = abi.ensureScratch() + 320;
+      abi.writeStdString(s, 'enableAutoFill');
+      var app = m.HEAPU32[APP_PTR >> 2];
+      var v = app ? m.wasmTable.get(623)(app, s) : 0;
+      abi.freeStdString(s);
+      if (v) {
+        m.HEAPU32[v >> 2] = 5; // TYPE_UINT32
+        m.HEAPU32[(v + 8) >> 2] = on ? 1 : 0;
+        var sig = m.HEAPU32[(v + 36) >> 2];
+        if (sig) m.wasmTable.get(536)(sig, v);
+      }
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function writeRecord(m, abi, rec, name) {
+    abi.writeStdString(rec, name);
+    abi.writeStdString(rec + 12, '');
+    abi.writeStdString(rec + 24, '');
+    m.HEAPU32[(rec + 36) >> 2] = 0;
+  }
+
+  function appendItems(startPtr) {
+    var m = global.Module;
+    var abi = sdk()._abi;
+    var rec = startPtr;
+    for (var i = 0; i < names.length; i++) {
+      writeRecord(m, abi, rec, names[i]);
+      rec += REC_SIZE;
     }
-    else if(e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();accept(choices[selection]);}
-    else if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();dismissed=last;clear();}
-  },true);
-  global.setInterval(tick,100);
-  // Smoothly move the native selection texture; no DOM animation or overlay.
-  function animate(){
-    if(shown && highlight && highlight.exists){
-      const pos=highlight.position,target=highlightBase+(selection-windowStart)*highlightStep;
-      if(Math.abs(target-pos.y)>0.1) highlight.position={x:pos.x,y:pos.y+(target-pos.y)*0.3};
-    }
-    global.requestAnimationFrame(animate);
+    return rec;
   }
-  global.requestAnimationFrame(animate);
+
+  function inject() {
+    if (!names || !names.length || !memoryReady()) return false;
+    var m = global.Module;
+    var u32 = m.HEAPU32;
+    var beg = u32[VEC_BEGIN >> 2] >>> 0;
+    var end = u32[VEC_END >> 2] >>> 0;
+    var cap = u32[VEC_CAP >> 2] >>> 0;
+    if (!beg || end < beg) return false;
+    var baseCount = (end - beg) / REC_SIZE;
+    if (baseCount < 1) return false; // native command list not loaded yet
+    if (beg === injectedBlock && end === injectedEnd) return true;
+
+    var need = names.length * REC_SIZE;
+    // The client may clear and re-parse its own list in place; reuse the block.
+    if (beg === injectedBlock && cap >= end + need) {
+      var stop = appendItems(end);
+      m.HEAPU32[VEC_END >> 2] = stop;
+      injectedEnd = stop;
+      return true;
+    }
+
+    var capacity = baseCount + names.length + 64;
+    var block = m.wasmTable.get(117)(capacity * REC_SIZE); // operator new
+    if (!block) return false;
+    m.HEAPU8.copyWithin(block, beg, end);
+    var stopPtr = appendItems(block + baseCount * REC_SIZE);
+    u32 = m.HEAPU32;
+    u32[VEC_BEGIN >> 2] = block;
+    u32[VEC_END >> 2] = stopPtr;
+    u32[VEC_CAP >> 2] = block + capacity * REC_SIZE;
+    injectedBlock = block;
+    injectedEnd = stopPtr;
+    return true;
+  }
+
+  function tick() {
+    var g = sdk();
+    if (!g) return;
+    if (!optionApplied) optionApplied = applyOption(enabled());
+    if (!enabled()) return;
+    fetchNames();
+    if (!names) return;
+    inject();
+  }
+
+  global.NativeAutofill = {
+    enabled: enabled,
+    setEnabled: setEnabled,
+    isReady: function () { return !!(names && injectedEnd && injectedBlock); },
+    _injectNow: function () { return inject(); }
+  };
+
+  global.setInterval(tick, 700);
 })(globalThis);

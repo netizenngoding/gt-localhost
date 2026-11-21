@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ItemRenderer>
+	<Data>
+		<Sprite name="s_head" fileName="game/player_cosmetics4.rttex" textureSize="32" frame="25,14"/>
+		<Sprite name="s_muzzle" fileName="game/particles12.rttex" textureSize="32" frame="23,25"/>
+		<Sprite name="s_laser" fileName="game/particles12.rttex" textureSize="32" frame="22,25"/>
+		<Sprite name="s_shrapnel" fileName="game/particles12.rttex" textureSize="32" frame="24,25"/>
+		<Sprite name="s_smoke" fileName="game/particles.rttex" textureSize="32" frame="8,1"/>
+		<StateMachines>
+			<StateMachine name="HeadAnim">
+				<States start="Idle">
+					<State name="Idle"/>
+					<State name="Blink"/>
+					<State name="Punch"/>
+				</States>
+				<Transitions>
+					<Transition to="Idle" from="Blink|Punch">
+						<Condition type="and">
+							<IsAction operatorType="NotEqual">PUNCH</IsAction>
+							<IsAnimationFinished>a_blink</IsAnimationFinished>
+						</Condition>
+					</Transition>
+					<Transition to="Blink" from="Idle">
+						<Condition type="and">
+							<IsAction operatorType="NotEqual">PUNCH</IsAction>
+							<CheckRandomRangeNumber EndNumber="100">0</CheckRandomRangeNumber>
+						</Condition>
+					</Transition>
+					<Transition to="Punch" from="Idle|Blink">
+						<Condition>
+							<IsAction>PUNCH</IsAction>
+						</Condition>
+					</Transition>
+				</Transitions>
+			</StateMachine>
+		</StateMachines>
+		<Animations>
+			<SpriteAnimation sprite="s_head" name="a_idle" animTime="1000" isLoop="true" playOnState="HeadAnim.Idle">
+				<Frame>25,14</Frame>
+			</SpriteAnimation>
+			<SpriteAnimation sprite="s_head" name="a_blink" animTime="500" isLoop="false" playOnState="HeadAnim.Blink">
+				<Frame>25,14</Frame>
+				<Frame>26,14</Frame>
+				<Frame>27,14</Frame>
+				<Frame>26,14</Frame>
+				<Frame>25,14</Frame>
+			</SpriteAnimation>
+			<SpriteAnimation sprite="s_head" name="a_punch" animTime="1000" isLoop="true" playOnState="HeadAnim.Punch">
+				<Frame>28,14</Frame>
+			</SpriteAnimation>
+			<SpriteAnimation sprite="s_shrapnel" name="a_shrapnel">
+				<Frame>24,25</Frame>
+				<Frame>25,25</Frame>
+				<Frame>26,25</Frame>
+			</SpriteAnimation>
+		</Animations>
+		<RenderOptions>
+			<Default>
+				<Set name="IgnorePunchTypeCheck">false</Set>
+				<Set name="IgnoreDefaultDestroyedTileEffect">true</Set>
+        <Set name="PunchSoundOverride">HAT</Set>
+        <Set name="PlayDefaultPunchAudio">false</Set>
+			</Default>
+		</RenderOptions>
+		<ParticleSystems>
+			<ParticleSystem name="ps_punchMuzzle" updateStage="OnPunchStart">
+				<Emitter>
+					<Set name="offset">8, -30</Set>
+					<Set name="lifeTime">0.2</Set>
+					<Set name="particlesPerEmission">1</Set>
+					<Set name="checkParticleNumToEmit">true</Set>
+					<Set name="particlesToEmit">1</Set>
+					<Set name="infParticles">true</Set>
+				</Emitter>
+				<Particle>
+					<Set name="sprite">s_muzzle</Set>
+					<Set name="lifeTime">0.2</Set>
+					<Set name="blendingMode">ADDITIVE</Set>
+					<Set name="initialRotationRate">360</Set>
+					<Set name="initialAlpha">0.5</Set>
+				</Particle>
+			</ParticleSystem>
+			<ParticleSystem name="ps_punchLaser" updateStage="OnPunchStart">
+				<Emitter>
+					<Set name="offset">8, -30</Set>
+					<Set name="particlesPerEmission">1</Set>
+					<Set name="checkParticleNumToEmit">true</Set>
+					<Set name="particlesToEmit">1</Set>
+					<Set name="infParticles">true</Set>
+					<Set name="lifeTime">0.2</Set>
+				</Emitter>
+				<Particle>
+					<Set name="sprite">s_laser</Set>
+					<Set name="lifeTime">0.2</Set>
+					<Set name="blendingMode">ADDITIVE</Set>
+					<Set name="isBeamParticle">true</Set>
+					<Set name="renderAlignment">LEFT_CENTER</Set>
+					<Curve name="initialAlpha">
+						<KeyFrame>0,0.25</KeyFrame>
+						<KeyFrame>0.25,0.75</KeyFrame>
+						<KeyFrame>0.75,0.75</KeyFrame>
+						<KeyFrame>1,0.25</KeyFrame>
+					</Curve>
+				</Particle>
+			</ParticleSystem>
+			<ParticleSystem name="ps_explosionBreak" updateStage="OnDestroyedTile" secondary="ps_explosionTrail">
+				<Emitter>
+					<Set name="particlesPerEmission">8</Set>
+				</Emitter>
+				<Particle randomSpriteFrame="true">
+					<Set name="sprite">s_shrapnel</Set>
+					<Curve name="initialAlpha">
+						<KeyFrame>0, 1</KeyFrame>
+						<KeyFrame>0.75, 1</KeyFrame>
+						<KeyFrame>1, 0</KeyFrame>
+					</Curve>
+					<Set name="useGravity">true</Set>
+					<Set name="lifeTime">2</Set>
+					<RandomRadial name="initialVelocity" angleRange="0,360" radiusRange="100,150"/>
+					<Set name="gravityVector">0, 150</Set>
+					<Random name="initialRotationRate" min="-360" max="360"/>
+				</Particle>
+			</ParticleSystem>
+			<ParticleSystem name="ps_explosionTrail">
+				<Emitter>
+					<Set name="lifeTime">1.5</Set>
+					<Set name="particlesPerEmission">1</Set>
+					<Set name="particlesToEmit">80</Set>
+					<Set name="emissionInterval">0.15</Set>
+				</Emitter>
+				<Particle UseParentVariantId="true">
+					<Set name="blendingMode">PREMULTIPLIED_ALPHA</Set>
+					<Set name="lifeTime">1</Set>
+					<Curve name="initialAlpha">
+						<KeyFrame>0, 0</KeyFrame>
+						<KeyFrame>0.5, 0.75</KeyFrame>
+						<KeyFrame>1, 0</KeyFrame>
+					</Curve>
+					<Set name="sprite">s_smoke</Set>
+					<Set name="initialRotationRate">180</Set>
+					<Curve name="initialScale">
+						<KeyFrame>0,0,0</KeyFrame>
+						<KeyFrame>0.5,1,1</KeyFrame>
+						<KeyFrame>1,0,0</KeyFrame>
+					</Curve>
+				</Particle>
+			</ParticleSystem>
+		</ParticleSystems>
+	</Data>
+	<RenderRules>
+		<RenderHat>
+			<SpriteRender name="s_head" blend="PREMULTIPLIED_ALPHA" offset="0,-16" alignment="DOWN_CENTER"/>
+		</RenderHat>
+		<OnPunchUpdate>
+			<AvatarTransform class="ArmAngle">
+				<Set name="armName">arm2Angle</Set>
+				<Set name="armAngle">0</Set>
+			</AvatarTransform>
+			<AvatarTransform class="ArmAngle">
+				<Set name="armName">arm1Angle</Set>
+				<Set name="armAngle">0</Set>
+			</AvatarTransform>
+		</OnPunchUpdate>
+	</RenderRules>
+</ItemRenderer>

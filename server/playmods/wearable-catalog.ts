@@ -935,3 +935,13 @@ export const HIGH_JUMP_IDS: ReadonlySet<number> = new Set([
   8014, // Spring Flinger Shoes
   8016, // Ultra Spring Flinger Shoes
 ]);
+
+// Native "Hovering_Cloak" tag items. The official client applies a hold-jump
+// hover modifier; the local server approximates it with reduced gravity so the
+// equipped cloak visibly floats instead of behaving like a normal cape.
+export const HOVER_IDS: ReadonlySet<number> = new Set([
+  5206, // Cloak of Falling Waters (slow-fall cloak)
+  6758, // Cloak of Hoveration
+  16216, // Cloak of Chaos (Hovering_Cloak tag)
+  16218, // Royal Cloak of Chaos (Hovering_Cloak tag)
+]);

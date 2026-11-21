@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ItemRenderer>
+  <Data>
+    <!-- Spirit of Anubis (9006): native v5.x renderer draws the full 64x128
+         game/ld_bisuna.rttex spirit behind the player, not the 32x32 icon cell.
+         The texture is 64 px wide, so textureSize=64 gives two 64x64 rows. -->
+    <Sprite name="s_anubis_top" fileName="game/ld_bisuna.rttex" textureSize="64" frame="0,0" />
+    <Sprite name="s_anubis_bottom" fileName="game/ld_bisuna.rttex" textureSize="64" frame="0,1" />
+    <Animations>
+      <SpriteSinPulseAnimation name="a_float" autoPlay="true" isLoop="true">
+        <Parameter name="offset.y">
+          <Set name="offset">0</Set>
+          <Set name="period">2400</Set>
+          <Set name="scale">4</Set>
+        </Parameter>
+      </SpriteSinPulseAnimation>
+    </Animations>
+  </Data>
+  <RenderRules>
+    <RenderBehind value="playerCenter">
+      <SpriteRender name="s_anubis_top" offset="0,-64" drawShadow="false" blend="PREMULTIPLIED_ALPHA" />
+      <SpriteRender name="s_anubis_bottom" offset="0,0" drawShadow="false" blend="PREMULTIPLIED_ALPHA" />
+    </RenderBehind>
+  </RenderRules>
+</ItemRenderer>

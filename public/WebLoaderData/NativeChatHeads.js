@@ -7,8 +7,8 @@
   const marker = /`o`o`o((?:`[0-9]){10})`o {4,6}/;
   let ex, module, overlay, paint, inLog=false, installed=false, lastDraw=0, capturing=false;
   const stats={rendered:0,errors:0,visible:0};
-  function key(meta){return meta.clothes.join(',')+':'+(meta.skin>>>0);}
-  function validMeta(meta){return meta&&meta.v===1&&typeof meta.id==='string'&&/^\d{10}$/.test(meta.id)&&Array.isArray(meta.clothes)&&meta.clothes.length===10&&meta.clothes.every(n=>Number.isInteger(n)&&n>=0&&n<=65535)&&Number.isInteger(meta.skin)&&meta.skin>=0&&meta.skin<=4294967295;}
+  function key(meta){return meta.clothes.join(',')+':'+(meta.skin>>>0)+':'+((meta.hairColor||0)>>>0);}
+  function validMeta(meta){return meta&&meta.v===1&&typeof meta.id==='string'&&/^\d{10}$/.test(meta.id)&&Array.isArray(meta.clothes)&&meta.clothes.length===10&&meta.clothes.every(n=>Number.isInteger(n)&&n>=0&&n<=65535)&&Number.isInteger(meta.skin)&&meta.skin>=0&&meta.skin<=4294967295&&(meta.hairColor===undefined||(Number.isInteger(meta.hairColor)&&meta.hairColor>=0&&meta.hairColor<=4294967295));}
   function receive(args){if(typeof args[2]!=='string'||args[2].length>512)return;let meta;try{meta=JSON.parse(args[2]);}catch(_){return;}if(!validMeta(meta))return;rows.set(meta.id,meta);while(rows.size>400)rows.delete(rows.keys().next().value);}
   function cropHead(pixels,w,h){let left=w,right=-1,top=h,bottom=-1;
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){if(pixels[((h-1-y)*w+x)*4+3]>16){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);}}
@@ -39,6 +39,9 @@
       for(let i=0;i<10;i++)dv.setUint16(fake+1576+i*2,[0,4,7,8].includes(i)?meta.clothes[i]:0,true);
       dv.setUint32(state+860,fake,true);m.HEAPU8[state+101]=0;ex.portraitApply(state,fake);
       dv.setUint32(state+40,meta.skin,true);dv.setUint32(state+44,meta.skin,true);dv.setUint32(state+52,0,true);
+      // NetAvatar+564 holds the Hair Dye colour; portraits would otherwise inherit
+      // the local player's dye and repaint other people's hair.
+      dv.setUint32(state+48,(meta.hairColor||0)>>>0,true);
       // f1513 maps facing -> +108 and native /smile expression 1 -> +309.
       m.HEAPU8[state+108]=0;m.HEAPU8[state+309]=1;m.HEAPU8[state+124]=0;m.HEAPU8[state+184]=0;m.HEAPU8[state+102]=0;m.HEAPU8[state+109]=0;m.HEAPU8[state+249]=0;
       dv.setFloat32(state+88,0,true);dv.setFloat32(state+92,0,true);dv.setUint32(state+860,fake,true);
@@ -57,6 +60,7 @@
       dv.setUint16(fake+1576,0,true);dv.setUint16(fake+1576+14,0,true);
       dv.setUint32(state+860,fake,true);m.HEAPU8[state+101]=0;ex.portraitApply(state,fake);
       dv.setUint32(state+40,meta.skin&0xffffff00,true);dv.setUint32(state+44,meta.skin&0xffffff00,true);
+      dv.setUint32(state+48,(meta.hairColor||0)>>>0,true);
       gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);ex.portraitDraw(resource,state,0,0,0,scale);m.wasmTable.get(1336)(392580,0);
       const accessories=new Uint8Array(256*256*4);gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,accessories);
       mergeHeadLayers(pixels,accessories,256,256,208);

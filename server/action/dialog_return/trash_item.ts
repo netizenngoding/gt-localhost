@@ -8,7 +8,9 @@ import { stripGtColors } from "../../tools/string";
 
 /**
  * Destroys items; Supporters receive audited store-item recycling refunds.
- * Keeps audio 100% clean (no non-original `audio/trash.wav`).
+ * Message matches Gurotopia include/action/dialog_return/trash_item.cpp:
+ *   "{count} `w{item}`` recycled, `w{gems}`` gems earned."
+ * Plays audio/trash.wav (an original client asset) on every recycle.
  */
 export function handleTrashItemReturn(
   ctx: ServerContext,
@@ -17,10 +19,15 @@ export function handleTrashItemReturn(
 ): void {
   if (kv.buttonClicked === "Cancel") return;
 
-  if (!/^\d+$/.test(kv.itemID || "") || !/^\d+$/.test(kv.trash_count || "")) return;
-  const itemId = parseInt((kv.itemID || "0").trim(), 10);
-  const rawAmt = parseInt((kv.trash_count || "").trim(), 10);
-  if (!itemId || itemId === 18 || itemId === 32 || !Number.isFinite(rawAmt) || rawAmt <= 0) {
+  // Accept both the authentic "count" field (Gurotopia trash.cpp) and the
+  // legacy "trash_count" key so old dialogs still parse.
+  const rawAmt = (kv.count ?? kv.trash_count ?? "").trim();
+  const rawId = (kv.itemID ?? "").trim();
+  if (!/^\d+$/.test(rawId) || !/^\d+$/.test(rawAmt)) return;
+
+  const itemId = parseInt(rawId, 10);
+  const rawCount = parseInt(rawAmt, 10);
+  if (!itemId || itemId === 18 || itemId === 32 || !Number.isFinite(rawCount) || rawCount <= 0) {
     return;
   }
 
@@ -31,7 +38,7 @@ export function handleTrashItemReturn(
     return;
   }
 
-  const amt = Math.min(200, rawAmt);
+  const amt = Math.min(200, rawCount);
   const slot = session.account.inventory.find((s) => s.itemId === itemId);
   if (!slot || slot.count < amt) return;
 
@@ -44,8 +51,8 @@ export function handleTrashItemReturn(
 
   const def = ctx.itemsDb.get(itemId);
   const name = def ? stripGtColors(def.name) : `Item #${itemId}`;
-  OnConsoleMessage(
-    session,
-    `\`4${amt} \`w${name}\`4 recycled for \`2+${reward} Gems\`4.\`\``
-  );
+
+  // Gurotopia trash_item.cpp: "{count} `w{item}`` recycled, `w{gems}`` gems earned."
+  OnConsoleMessage(session, `${amt} \`w${name}\`\` recycled, \`w${reward}\`\` gems earned.`);
+  OnPlayPositioned(session, "audio/trash.wav");
 }

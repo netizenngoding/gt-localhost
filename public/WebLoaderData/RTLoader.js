@@ -222,6 +222,30 @@ function installVfsPatches() {
         fsApi.writeFile("/items.dat", Module._cachedItemsDat);
       }
 
+      if (Module._cacheOverrides && Module._cacheOverrides.length > 0) {
+        var ensureDir = function (dirPath) {
+          var parts = dirPath.split("/").filter(Boolean);
+          var cur = "";
+          for (var d = 0; d < parts.length; d++) {
+            cur += "/" + parts[d];
+            try { fsApi.mkdir(cur); } catch (_e) {}
+          }
+        };
+        for (var ovIdx = 0; ovIdx < Module._cacheOverrides.length; ovIdx++) {
+          var ov = Module._cacheOverrides[ovIdx];
+          if (!ov || !ov.path || !ov.bytes || !ov.bytes.length) continue;
+          var relClean = ov.path.replace(/^\/+/, "");
+          var targets = ["/" + relClean, "/cache/" + relClean];
+          for (var tIdx = 0; tIdx < targets.length; tIdx++) {
+            var tp = targets[tIdx];
+            var slash = tp.lastIndexOf("/");
+            if (slash > 0) ensureDir(tp.slice(0, slash));
+            try { fsApi.unlink(tp); } catch (_e) {}
+            fsApi.writeFile(tp, ov.bytes);
+          }
+        }
+      }
+
       if (globalThis.ServerBranding) globalThis.ServerBranding.install(fsApi);
 
       // Leave generic_menu2 alone: retain its original client texture.
@@ -1699,6 +1723,33 @@ var Module = {
         .finally(function () {
           if (typeof removeRunDependency === "function") {
             removeRunDependency("sync_items_dat");
+          }
+        });
+    },
+    function () {
+      if (typeof addRunDependency === "function") {
+        addRunDependency("sync_cache_overrides");
+      }
+      fetch("/cache/overrides.json", { cache: "no-cache" })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (list) {
+          if (!Array.isArray(list) || !list.length) return;
+          return Promise.all(list.map(function (rel) {
+            var clean = String(rel).replace(/^\/+/, "");
+            return fetch("/cache/" + clean, { cache: "default" })
+              .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+              .then(function (buf) {
+                return buf ? { path: clean, bytes: new Uint8Array(buf) } : null;
+              })
+              .catch(function () { return null; });
+          })).then(function (items) {
+            Module._cacheOverrides = items.filter(Boolean);
+          });
+        })
+        .catch(function () {})
+        .finally(function () {
+          if (typeof removeRunDependency === "function") {
+            removeRunDependency("sync_cache_overrides");
           }
         });
     }

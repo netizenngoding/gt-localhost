@@ -12,7 +12,11 @@
  * 4. Updates `fid 1510` so `kind == 30 && (fxFlags & 1)` off-hand draws `(tx+2, ty)`
  *    and skips the duplicate pulsing 2nd-hand draw in `fid 1939` for `extraOptions`
  *    animated items (e.g. Exquisite Gauntlet of Elements 6878).
- * 5. Adds Goku Aura (`particleId = 59`) emission in `fid 1945` when `hair == 6008`.
+ * 5. Optionally registers an owner-supplied `r<id>.xml` renderer inside `fid 614`
+ *    (`GetXMLItemRenderDefinition`) using inline libc++ SSO `std::string` storage.
+ *    Official items never need this: their `items.dat` `xmlFile` (v16+) already points
+ *    at the authentic `GameData/ItemRenderers/*.xml`, and items without one use the
+ *    native renderer (texture cell + `extraFile` animation), exactly like real Growtopia.
  */
 
 function readUleb(buf: Uint8Array, pos: number): [number, number] {
@@ -81,7 +85,11 @@ function countFuncImports(sec2: Uint8Array): number {
   return funcImports;
 }
 
-function ensureI32I32ToI32Type(sec1: Uint8Array): { data: Uint8Array; typeIdx: number } {
+function ensureFuncType(
+  sec1: Uint8Array,
+  wantParams: number[],
+  wantRets: number[]
+): { data: Uint8Array; typeIdx: number } {
   let p = 0;
   const [count, p1] = readUleb(sec1, p);
   p = p1;
@@ -95,7 +103,12 @@ function ensureI32I32ToI32Type(sec1: Uint8Array): { data: Uint8Array; typeIdx: n
     p = p3;
     const rets = sec1.subarray(p, p + nr);
     p += nr;
-    if (np === 2 && params[0] === 0x7f && params[1] === 0x7f && nr === 1 && rets[0] === 0x7f) {
+    if (
+      np === wantParams.length &&
+      nr === wantRets.length &&
+      wantParams.every((v, k) => params[k] === v) &&
+      wantRets.every((v, k) => rets[k] === v)
+    ) {
       return { data: sec1, typeIdx: i };
     }
   }
@@ -103,7 +116,7 @@ function ensureI32I32ToI32Type(sec1: Uint8Array): { data: Uint8Array; typeIdx: n
   const out = Buffer.concat([
     Buffer.from(writeUleb(count + 1)),
     Buffer.from(rest),
-    Buffer.from([0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f]),
+    Buffer.from([0x60, wantParams.length, ...wantParams, wantRets.length, ...wantRets]),
   ]);
   return { data: out, typeIdx: count };
 }
@@ -111,15 +124,17 @@ function ensureI32I32ToI32Type(sec1: Uint8Array): { data: Uint8Array; typeIdx: n
 /**
  * Builds the WASM function body (without the outer byte-length prefix) for:
  *   resolveExtraAnimFrame(p0: itemInfoPtr, p1: packedDefaultXY) -> i32
+ * Only applies `extraOptions` when `(p1 & 0xff, (p1 >> 8) & 0xff)` appears in `extraOptions`;
+ * otherwise returns `p1` untouched so `extraFile`-indexed frame lists never corrupt base `tex`.
  * Locals:
- *   2: len, 3: ptr, 4: i, 5: count, 6: val, 7: curX, 8: target, 9: ch, 10: digitSeen
+ *   2: len, 3: ptr, 4: i, 5: count, 6: val, 7: curX, 8: target, 9: ch, 10: digitSeen, 11: foundDefault
  */
 function buildResolveExtraAnimBody(): Buffer {
   const b: number[] = [];
   const emit = (...bytes: number[]) => b.push(...bytes);
 
-  // 1 local decl group: 9 x i32 (locals 2..10)
-  emit(0x01, 0x09, 0x7f);
+  // 1 local decl group: 10 x i32 (locals 2..11)
+  emit(0x01, 0x0a, 0x7f);
 
   // if (!itemInfoPtr) return p1;
   emit(0x20, 0x00, 0x45, 0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b);
@@ -147,21 +162,22 @@ function buildResolveExtraAnimBody(): Buffer {
     0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b
   );
 
-  // Pass 1: validate and count `x,y|...` entries
-  // i = 0; count = 0;
-  emit(0x41, 0x00, 0x21, 0x04, 0x41, 0x00, 0x21, 0x05);
+  // Pass 1: validate, count `x,y|...` entries, and verify default (tx, ty) exists in extraOptions
+  // i = 0; count = 0; foundDefault = 0;
+  emit(0x41, 0x00, 0x21, 0x04, 0x41, 0x00, 0x21, 0x05, 0x41, 0x00, 0x21, 0x0b);
   emit(0x02, 0x40); // block $p1_done
   emit(0x03, 0x40); // loop $p1_loop
   // if (i >= len) br $p1_done
   emit(0x20, 0x04, 0x20, 0x02, 0x4e, 0x0d, 0x01);
 
-  // Parse X digits: digitSeen = 0
-  emit(0x41, 0x00, 0x21, 0x0a);
+  // Parse X digits into curX (local 7): digitSeen = 0; curX = 0
+  emit(0x41, 0x00, 0x21, 0x0a, 0x41, 0x00, 0x21, 0x07);
   emit(0x02, 0x40, 0x03, 0x40); // block; loop
   emit(0x20, 0x04, 0x20, 0x02, 0x4e, 0x0d, 0x01); // i >= len -> br
   emit(0x20, 0x03, 0x20, 0x04, 0x6a, 0x2d, 0x00, 0x00, 0x22, 0x09); // ch = mem[ptr+i]
   emit(0x41, 0x30, 0x6b, 0x41, 0x0a, 0x4f); // (ch - '0') >= 10u
   emit(0x0d, 0x01);
+  emit(0x20, 0x07, 0x41, 0x0a, 0x6c, 0x20, 0x09, 0x41, 0x30, 0x6b, 0x6a, 0x21, 0x07); // curX = curX*10 + (ch-'0')
   emit(0x41, 0x01, 0x21, 0x0a); // digitSeen = 1
   emit(0x20, 0x04, 0x41, 0x01, 0x6a, 0x21, 0x04); // i++
   emit(0x0c, 0x00, 0x0b, 0x0b); // continue; end loop; end block
@@ -172,13 +188,14 @@ function buildResolveExtraAnimBody(): Buffer {
   emit(0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b);
   emit(0x20, 0x04, 0x41, 0x01, 0x6a, 0x21, 0x04); // i++
 
-  // Parse Y digits: digitSeen = 0
-  emit(0x41, 0x00, 0x21, 0x0a);
+  // Parse Y digits into val (local 6): digitSeen = 0; val = 0
+  emit(0x41, 0x00, 0x21, 0x0a, 0x41, 0x00, 0x21, 0x06);
   emit(0x02, 0x40, 0x03, 0x40);
   emit(0x20, 0x04, 0x20, 0x02, 0x4e, 0x0d, 0x01);
   emit(0x20, 0x03, 0x20, 0x04, 0x6a, 0x2d, 0x00, 0x00, 0x22, 0x09);
   emit(0x41, 0x30, 0x6b, 0x41, 0x0a, 0x4f); // (ch - '0') >= 10u
   emit(0x0d, 0x01);
+  emit(0x20, 0x06, 0x41, 0x0a, 0x6c, 0x20, 0x09, 0x41, 0x30, 0x6b, 0x6a, 0x21, 0x06); // val = val*10 + (ch-'0')
   emit(0x41, 0x01, 0x21, 0x0a);
   emit(0x20, 0x04, 0x41, 0x01, 0x6a, 0x21, 0x04);
   emit(0x0c, 0x00, 0x0b, 0x0b);
@@ -192,12 +209,19 @@ function buildResolveExtraAnimBody(): Buffer {
   emit(0x20, 0x04, 0x41, 0x01, 0x6a, 0x21, 0x04);
   emit(0x0b);
 
+  // if (curX == (p1 & 0xff) && val == ((p1 >> 8) & 0xff)) foundDefault = 1;
+  emit(
+    0x20, 0x07, 0x20, 0x01, 0x41, ...writeSleb(255), 0x71, 0x46,
+    0x20, 0x06, 0x20, 0x01, 0x41, 0x08, 0x76, 0x41, ...writeSleb(255), 0x71, 0x46,
+    0x71, 0x04, 0x40, 0x41, 0x01, 0x21, 0x0b, 0x0b
+  );
+
   // count++; continue
   emit(0x20, 0x05, 0x41, 0x01, 0x6a, 0x21, 0x05);
   emit(0x0c, 0x00, 0x0b, 0x0b);
 
-  // if (count < 2) return p1;
-  emit(0x20, 0x05, 0x41, 0x02, 0x49, 0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b);
+  // if (count < 2 || foundDefault == 0) return p1;
+  emit(0x20, 0x05, 0x41, 0x02, 0x49, 0x20, 0x0b, 0x45, 0x72, 0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b);
 
   // app = i32.load(393364); if (!app) return p1;
   emit(0x41, ...writeSleb(393364), 0x28, 0x02, 0x00, 0x22, 0x06, 0x45, 0x04, 0x40, 0x20, 0x01, 0x0f, 0x0b);
@@ -252,6 +276,49 @@ function buildResolveExtraAnimBody(): Buffer {
 }
 
 /**
+ * Injects owner-supplied `r<id>.xml` filename lookups into `fid 614`
+ * (`GetXMLItemRenderDefinition`) when an item's native `xmlFile` is empty.
+ * Official items are driven by `items.dat`; this only activates when an owner
+ * deliberately drops `public/cache/GameData/ItemRenderers/r<id>.xml`.
+ * Every filename `r<id>.xml` (<= 10 bytes) fits inline in libc++ 32-bit
+ * `std::string` SSO at `[local2 + 96 .. local2 + 107]`.
+ */
+function patchFid614LegacyXmlFallbacks(body: Buffer, legacyXmlIds: number[]): Buffer {
+  if (!legacyXmlIds.length) return body;
+  const beforeSig = "20022d006b2103200228026421050b";
+  const afterSig = "0240200520032003c0410048";
+  const fullSig = Buffer.from(beforeSig + afterSig, "hex");
+  const idx = body.indexOf(fullSig);
+  if (idx < 0 || body.indexOf(fullSig, idx + 1) !== -1) {
+    throw new Error("fid 614 xmlFile SSO reload signature mismatch");
+  }
+  const splitAt = idx + beforeSig.length / 2;
+
+  const ins: number[] = [];
+  const emit = (...bytes: number[]) => ins.push(...bytes);
+
+  // Only inject when xmlFile is still empty inline SSO ([local2+107] == 0)
+  emit(0x20, 0x03, 0x45, 0x04, 0x40); // local.get 3; i32.eqz; if void
+  for (const id of legacyXmlIds) {
+    const fname = `r${id}.xml`;
+    if (fname.length > 10) {
+      throw new Error(`Legacy XML filename exceeds 10-byte libc++ SSO limit: ${fname}`);
+    }
+    emit(0x20, 0x01, 0x41, ...writeSleb(id), 0x46, 0x04, 0x40); // if (itemId == id)
+    for (let k = 0; k < fname.length; k++) {
+      emit(0x20, 0x02, 0x41, ...writeSleb(fname.charCodeAt(k)), 0x3a, 0x00, ...writeUleb(96 + k));
+    }
+    emit(0x20, 0x02, 0x41, 0x00, 0x3a, 0x00, ...writeUleb(96 + fname.length)); // NUL terminator
+    emit(0x20, 0x02, 0x41, ...writeSleb(fname.length), 0x3a, 0x00, ...writeUleb(107)); // SSO len byte
+    emit(0x41, ...writeSleb(fname.length), 0x21, 0x03); // local 3 = len
+    emit(0x0b); // end if itemId
+  }
+  emit(0x0b); // end if local3 == 0
+
+  return Buffer.concat([body.subarray(0, splitAt), Buffer.from(ins), body.subarray(splitAt)]);
+}
+
+/**
  * Replaces every `local.get item; i32.load8_u (0,45); local.set ty; local.get item; i32.load8_u (0,44); local.set tx`
  * (searching sequentially from `startOffset`) with a call to `helperFid` and unpacking into `(tx, ty)`.
  */
@@ -294,7 +361,7 @@ function replaceExactHex(body: Buffer, hexSig: string, replacement: Buffer, labe
   return Buffer.concat([body.subarray(0, idx), replacement, body.subarray(idx + sig.length)]);
 }
 
-export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
+export function patchClothingAnimations(wasmBytes: Uint8Array, legacyXmlIds: number[] = []): Uint8Array {
   const buf = Buffer.from(wasmBytes);
   const sections: Array<{ id: number; data: Uint8Array }> = [];
   let pos = 8;
@@ -312,10 +379,11 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
   if (!sec1 || !sec2 || !sec3 || !sec10) throw new Error("Missing required WASM sections");
 
   const numImports = countFuncImports(sec2.data);
-  const { data: newSec1Data, typeIdx } = ensureI32I32ToI32Type(sec1.data);
-  sec1.data = newSec1Data;
+  const r0 = ensureFuncType(sec1.data, [0x7f, 0x7f], [0x7f]);
+  sec1.data = r0.data;
+  const typeIdx = r0.typeIdx;
 
-  // Parse function section (sec3) and append helper typeIdx
+  // Parse function section (sec3) and append resolveExtraAnimFrame(itemPtr, packedDefault) -> packedFrame
   let fp = 0;
   const [funcCount, fp1] = readUleb(sec3.data, fp);
   const newFuncIndex = numImports + funcCount;
@@ -408,7 +476,19 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
 
   // Fix fid 1941 (Back):
   //  (a) hook all 4 (texX, texY) loads
-  //  (b) suppress 100ms (tx+1) blink toggle on kind==4 capes with (flags & 0x2000) or (fxFlags & 1)
+  //  (b) suppress 100ms (tx+1) blink toggle on kind==4 capes with (flags & 0x2000) or (fxFlags & 1),
+  //      and on any kind==4/7/22 back item whose (tx+1, ty) cell collides with a different item (e.g. Robotic MK.IV Wings 7582 -> Boombox 7670)
+  const collidingBackBlinkIds = [
+    6144, 7104, 7196, 7582, 7734, 7834, 8586, 9408, 9760, 10182,
+    11238, 11288, 11294, 11350, 11352, 11462, 11544, 11588, 11594, 11766,
+    11790, 11992, 12234, 12306, 12354, 12842, 12856, 13002, 13062, 13418,
+    13692, 13968,
+  ];
+  const collidingCheckBytes: number[] = [];
+  for (let i = 0; i < collidingBackBlinkIds.length; i++) {
+    collidingCheckBytes.push(0x20, 0x03, 0x41, ...writeSleb(collidingBackBlinkIds[i]), 0x46);
+    if (i > 0) collidingCheckBytes.push(0x72);
+  }
   patchBody(1941, b => {
     let out = hookTexLoadsInBody(b, 9, [[3, 11], [3, 9], [3, 10], [3, 9]], newFuncIndex);
     out = replaceExactHex(
@@ -420,6 +500,8 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
         0x20, 0x09, 0x2f, 0x01, 0x36, 0x41, ...writeSleb(0x2000), 0x71,
         0x20, 0x09, 0x2d, 0x00, ...writeUleb(164), 0x41, 0x01, 0x71,
         0x72, 0x45, 0x45, 0x71,
+        ...collidingCheckBytes,
+        0x72,
         0x04, 0x40, 0x41, 0x00, 0x21, 0x07, 0x0b,
         0x20, 0x07, 0x22, 0x07, 0x36, 0x02, 0xb4, 0x01, 0x0b,
         0x20, 0x00, 0x28, 0x02, 0x00,
@@ -479,8 +561,8 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
         0x04, 0x40,
           0x20, 0x0d, 0x2d, 0x00, 0x37, 0x41, ...writeSleb(128), 0x71,
           0x04, 0x40,
-            0x43, 0x00, 0x00, 0x80, 0x3f, // 1.0f (facingLeft != 0)
-            0x43, 0x00, 0x00, 0x80, 0xbf, // -1.0f (facingLeft == 0)
+            0x43, 0x00, 0x00, 0x80, 0xbf, // -1.0f (facingLeft != 0)
+            0x43, 0x00, 0x00, 0x80, 0x3f, // +1.0f (facingLeft == 0)
             0x20, 0x07, 0x1b,             // select
             0x20, 0x0b, 0x2a, 0x02, 0xb0, 0x01, 0x94, // * f32[local 11 + 176] (armAngle)
             0x22, 0x19,                   // local.tee 25 (angle)
@@ -548,93 +630,19 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
     return out;
   });
 
-  // Fix fid 1945: emit Goku Aura particle 59 for hair == 6008 (Intergalactic Warrior Hair)
-  patchBody(1945, b => {
-    const fidCall320 = writeUleb(320);
-    const fidCall311 = writeUleb(311);
-    return replaceExactHex(
-      b,
-      "410010c0020b02402006450d0020032d0069",
-      Buffer.from([
-        0x41, 0x00, 0x10, ...fidCall320, 0x0b,
-        0x02, 0x40,
-        0x20, 0x02, 0x45, 0x0d, 0x00, // 0.1s timer (matches v3.52 2x/0.25s cadence)
-        0x20, 0x03, 0x2f, 0x01, 0x0e, // avatarData.hair (offset 14)
-        0x41, ...writeSleb(6008), 0x47, 0x0d, 0x00,
-        0x02, 0x40,
-        0x23, 0x01, 0x28, 0x02, 0x30, 0x22, 0x00,
-        0x04, 0x40, 0x20, 0x00, 0x28, 0x02, 0x00, 0x22, 0x00, 0x0d, 0x01, 0x0b,
-        0x41, ...writeSleb(393364), 0x28, 0x02, 0x00, 0x28, 0x02, ...writeUleb(1800), 0x28, 0x02, ...writeUleb(144), 0x21, 0x00,
-        0x0b,
-        0x20, 0x00, 0x41, ...writeSleb(320), 0x6a,
-        0x41, ...writeSleb(59),
-        0x20, 0x11, 0x20, 0x13, 0x10, ...fidCall311, // rand(left, right)
-        0x20, 0x1a, 0x20, 0x16, 0x10, ...fidCall311, // rand(top, bottom)
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x41, 0x00,
-        0x10, ...fidCall320,
-        0x20, 0x00, 0x41, ...writeSleb(320), 0x6a,
-        0x41, ...writeSleb(59),
-        0x20, 0x11, 0x20, 0x13, 0x10, ...fidCall311,
-        0x20, 0x1a, 0x20, 0x16, 0x10, ...fidCall311,
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x43, 0x00, 0x00, 0x00, 0x00,
-        0x41, 0x00,
-        0x10, ...fidCall320,
-        0x0b,
-        0x02, 0x40, 0x20, 0x06, 0x45, 0x0d, 0x00, 0x20, 0x03, 0x2d, 0x00, 0x69,
-      ]),
-      "fid 1945 hair 6008 Goku Aura"
-    );
-  });
+  // Hat renderer (fid 1262) must not be tinted by hair dye (v3.52 only dyes the Hair slot):
+  // `(color&255)!=255` check -> always true, so the hairColor multiply is skipped.
+  patchBody(1262, b => replaceExactHex(
+    b,
+    "200441ff01714" + "1ff01470d00",
+    Buffer.from([0x20, 0x04, 0x41, 0xff, 0x01, 0x71, 0x1a, 0x41, 0x01, 0x01, 0x0d, 0x00]),
+    "fid 1262 no hair dye on hats"
+  ));
 
-  // Fix fid 339 (Particle::Init) pid 59 (+0x229b): match v3.52 Emitter::Init case 59 (scale 0.45..0.55, rot -75..-35, vel (-50..-25, -50))
-  patchBody(339, b => {
-    const randUleb = writeUleb(311);
-    return replaceExactHex(
-      b,
-      "200042808080f8838080c03f3702182000418080808004360220200043000020c1430000204110b70238020c20004300002041430000a04110b7023802100c3c0b",
-      Buffer.from([
-        0x20, 0x00, 0x43, 0x00, 0x00, 0x80, 0x3f, 0x38, 0x02, 0x1c, // alpha = 1.0f
-        0x20, 0x00, 0x43, 0x66, 0x66, 0xe6, 0x3e, 0x43, 0xcd, 0xcc, 0x0c, 0x3f, 0x10, ...randUleb, 0x38, 0x02, 0x18, // scale = rand(0.45, 0.55)
-        0x20, 0x00, 0x43, 0x00, 0x00, 0x96, 0xc2, 0x43, 0x00, 0x00, 0x0c, 0xc2, 0x10, ...randUleb, 0x38, 0x02, 0x14, // rot = rand(-75, -35)
-        0x20, 0x00, 0x43, 0x00, 0x00, 0x80, 0x40, 0x38, 0x02, 0x20, // fade rate = 4.0f (0.25s lifetime)
-        0x20, 0x00, 0x43, 0x00, 0x00, 0x48, 0xc2, 0x43, 0x00, 0x00, 0xc8, 0xc1, 0x10, ...randUleb, 0x38, 0x02, 0x0c, // vx = rand(-50, -25)
-        0x20, 0x00, 0x43, 0x00, 0x00, 0x48, 0xc2, 0x38, 0x02, 0x10, // vy = -50.0f
-        0x0c, 0x3c, 0x0b, // br 60; end
-      ]),
-      "fid 339 pid 59 flame wisp init"
-    );
-  });
+  // Register owner-supplied `r<id>.xml` ItemRenderer overrides (no-op by default)
+  patchBody(614, b => patchFid614LegacyXmlFallbacks(b, legacyXmlIds));
 
-  // Fix fid 1423 (Particle::Render) pid 59 (+0x60b4): draw flame wisp (13, 2) with additive blend instead of snowflake (15, 3)
-  patchBody(1423, b => {
-    const drawUleb = writeUleb(322);
-    return replaceExactHex(
-      b,
-      "2001410f4103200341880d6a200341800d6a410120174300007f4394fc004180026b2016200341f80c6a4100410010c2020c3f0b",
-      Buffer.from([
-        0x20, 0x01, 0x41, 0x01, 0x36, 0x02, 0x30, // additive blend = 1
-        0x20, 0x01, 0x41, 0x0d, 0x41, 0x02,       // tx=13, ty=2 (flame wisp)
-        0x20, 0x03, 0x41, 0x88, 0x0d, 0x6a,
-        0x20, 0x03, 0x41, 0x80, 0x0d, 0x6a,
-        0x41, 0x01,
-        0x20, 0x17, 0x43, 0x00, 0x00, 0x7f, 0x43, 0x94, 0xfc, 0x00, 0x41, ...writeSleb(-4710400), 0x6a, // golden-orange 0xFFB820AA (RRGGBBAA)
-        0x20, 0x16,
-        0x20, 0x03, 0x41, 0xf8, 0x0c, 0x6a,
-        0x41, 0x00, 0x41, 0x00,
-        0x10, ...drawUleb,
-        0x20, 0x01, 0x41, 0x02, 0x36, 0x02, 0x30, // restore blend = 2
-        0x0c, 0x3f, 0x0b,
-      ]),
-      "fid 1423 pid 59 flame wisp render"
-    );
-  });
-
-  // Append resolveExtraAnimFrame body
+  // Append helper body
   bodies.push(buildResolveExtraAnimBody());
 
   // Re-encode code section
@@ -643,6 +651,43 @@ export function patchClothingAnimations(wasmBytes: Uint8Array): Uint8Array {
     sec10Chunks.push(Buffer.from(writeUleb(body.length)), body);
   }
   sec10.data = Buffer.concat(sec10Chunks);
+
+  // Fix upstream.wasm RiftWings feather flap table (@290512):
+  // Upper wing bone (@290480) runs open->closed: (0,9),(1,9),(2,9),(3,9) matching flapIdx 0=jump..3=ground,
+  // while upstream's 3 feather styles (@290512) ran closed->open, causing bones to lift while feathers stayed down.
+  const sec11 = sections.find(s => s.id === 11);
+  if (sec11) {
+    const packPairs = (pairs: number[][]): Buffer => {
+      const b = Buffer.alloc(pairs.length * 8);
+      for (let i = 0; i < pairs.length; i++) {
+        b.writeInt32LE(pairs[i][0], i * 8);
+        b.writeInt32LE(pairs[i][1], i * 8 + 4);
+      }
+      return b;
+    };
+    const oldRiftTbl = packPairs([
+      [0, 9], [1, 9], [2, 9], [3, 9],
+      [4, 9], [5, 9], [6, 9], [7, 9],
+      [8, 9], [9, 9], [10, 9], [11, 9],
+      [12, 9], [13, 9], [14, 9], [15, 9],
+    ]);
+    const newRiftTbl = packPairs([
+      [0, 9], [1, 9], [2, 9], [3, 9],
+      [7, 9], [6, 9], [5, 9], [4, 9],
+      [11, 9], [10, 9], [9, 9], [8, 9],
+      [15, 9], [14, 9], [13, 9], [12, 9],
+    ]);
+    const sec11Buf = Buffer.from(sec11.data.buffer, sec11.data.byteOffset, sec11.data.byteLength);
+    const rIdx = sec11Buf.indexOf(oldRiftTbl);
+    if (rIdx < 0 || sec11Buf.indexOf(oldRiftTbl, rIdx + 1) >= 0) {
+      throw new Error("RiftWings flap table signature mismatch in WASM data section");
+    }
+    sec11.data = Buffer.concat([
+      sec11Buf.subarray(0, rIdx),
+      newRiftTbl,
+      sec11Buf.subarray(rIdx + oldRiftTbl.length),
+    ]);
+  }
 
   // Reassemble WASM binary
   const outChunks: Buffer[] = [buf.subarray(0, 8)];

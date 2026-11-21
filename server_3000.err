@@ -1,0 +1,13 @@
+[ServerContext] Failed saving worlds.json: Error: EPERM: operation not permitted, rename 'C:\Users\User\Downloads\gt-localhost-main\gt-localhost-snapshot\data_store\worlds.json.tmp-11532' -> 'C:\Users\User\Downloads\gt-localhost-main\gt-localhost-snapshot\data_store\worlds.json'
+    at Object.renameSync (node:fs:1012:11)
+    at ServerContext.atomicWriteJson (C:\Users\User\Downloads\gt-localhost-main\gt-localhost-snapshot\server\server_runtime.cjs:32678:29)
+    at ServerContext.savePersistentState (C:\Users\User\Downloads\gt-localhost-main\gt-localhost-snapshot\server\server_runtime.cjs:32695:12)
+    at Timeout._onTimeout (C:\Users\User\Downloads\gt-localhost-main\gt-localhost-snapshot\server\server_runtime.cjs:32600:14)
+    at listOnTimeout (node:internal/timers:585:17)
+    at process.processTimers (node:internal/timers:521:7) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'C:\\Users\\User\\Downloads\\gt-localhost-main\\gt-localhost-snapshot\\data_store\\worlds.json.tmp-11532',
+  dest: 'C:\\Users\\User\\Downloads\\gt-localhost-main\\gt-localhost-snapshot\\data_store\\worlds.json'
+}

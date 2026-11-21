@@ -2,6 +2,7 @@ import { SERVER_NAME } from "../config/branding";
 import { DialogBuilder } from "../tools/create_dialog";
 import type { PlayerSession } from "../database/peer";
 import { OnDialogRequest } from "./OnDialogRequest";
+import { OnPlayPositioned } from "./OnPlayPositioned";
 import { GAZETTE_NEWS } from "./RequestWorldSelectMenu";
 
 /**
@@ -34,4 +35,8 @@ export function RequestGazette(session: PlayerSession): void {
   }
   dlg.addQuickExit();
   OnDialogRequest(session, dlg.endDialog("gazette", "Close", ""));
+  // Retail Growtopia plays the choir sting as the login gazette opens.
+  // The player is already spawned in a world here (enter_game joins before the
+  // gazette), so netId is valid and OnPlayPositioned resolves to the local avatar.
+  OnPlayPositioned(session, "audio/choir.wav", 400);
 }

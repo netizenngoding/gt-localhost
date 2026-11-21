@@ -3,6 +3,7 @@ import { type ItemDef, isUntradeable } from "../../database/items";
 import { getClothingVector, type PlayerSession } from "../../database/peer";
 import { GTPS3_CRYSTAL_RECIPES, GTPS3_GRINDER_RECIPES } from "../../database/recipes";
 import { canModifyWorldTile, getWorldLockTile, spawnOrMergeWorldDrop, type WorldInstance } from "../../database/world";
+import { PORTRAIT_IDS } from "../../database/portrait";
 import {
   buildTankPacket,
   defaultMannequinExpression,
@@ -41,7 +42,7 @@ export const AUTO_ACTION_IDS = new Set([6950, 6952]);
 export const GRINDER_IDS = new Set([4582, 12196]);
 export const CRYSTAL_IDS = new Set([2242, 2244, 2246, 2248, 2250]);
 export const PAINTING_EASEL_IDS = new Set([3528]);
-export const PORTRAIT_IDS = new Set([3818, 11196, 15950]);
+export { PORTRAIT_IDS };
 
 function getStorageBoxCapacity(itemId: number): number {
   if (itemId === 6288) return 40;
@@ -1785,9 +1786,12 @@ export function handleWorldBlockDialogReturn(
         ex.expression = 1;
         ex.skinColor = target.account.skinColor ?? 0xb88565ff;
         ex.hairColor = target.account.hairColor ?? 0;
+        // clothingType 0 = Hat, 7 = Hair. `hair` goes to the tinted c_hair field and
+        // `mask` to the untinted c_head field, so a hat must never land in `hair` or
+        // Hair Dye would repaint the headwear.
         ex.face = slots[4] || 0;
-        ex.hair = slots[0] || 0;
-        ex.mask = slots[7] || 0;
+        ex.hair = slots[7] || 0;
+        ex.mask = slots[0] || 0;
         ex.label = target.account.name;
       }
     } else if (!isPortraitBlank(ex)) {

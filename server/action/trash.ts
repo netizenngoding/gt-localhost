@@ -7,6 +7,10 @@ import { OnDialogRequest, OnPlayPositioned, OnTextOverlay } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
 import { stripGtColors } from "../tools/string";
 
+// Dialog matches Gurotopia include/action/trash.cpp byte-for-byte:
+//   label  "`4Recycle`` `w{item}``" (icon = item id)
+//   body   "How many to `4destroy``? (you have {count})"
+//   input  "count"  +  embed_data|itemID  ->  end_dialog|trash_item
 export function handleTrash(
   ctx: ServerContext,
   session: PlayerSession,
@@ -29,12 +33,16 @@ export function handleTrash(
   }
   const name = stripGtColors(def.name);
 
-  const supporter = isSuperSupporter(session.account);
+  // Non-supporters still destroy but earn nothing; the dialog label is the
+  // authentic Growtopia "Recycle" either way (Gurotopia trash.cpp).
+  void isSuperSupporter;
+  void recycleValue;
+
   const dialog = new DialogBuilder()
     .setDefaultColor("`o")
-    .addLabelWithIcon("big", `\`4${supporter ? "Recycle" : "Trash"}\`\` \`w${name}\`\``, itemId)
-    .addTextbox(`How many to destroy? (no undo${supporter ? ", " + recycleValue(itemId, 1) + " Gems per item" : ""})`)
-    .addTextInput("trash_count", "", String(slot.count), 5)
+    .addLabelWithIcon("big", `\`4Recycle\`\` \`w${name}\`\``, itemId)
+    .addTextbox(`How many to \`4destroy\`\`? (you have ${slot.count})`)
+    .addTextInput("count", "", String(slot.count), 5)
     .embedData("itemID", itemId)
     .endDialog("trash_item", "Cancel", "OK");
 

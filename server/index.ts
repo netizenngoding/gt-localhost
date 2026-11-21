@@ -9,7 +9,7 @@ import { onPeerConnect, onPeerDisconnect, onPeerReceive } from "./eventType";
 import { createHttpApp } from "./https/routes";
 import { ENetServerPeer } from "./network/enet";
 
-const PORT = Number(process.env.PORT || 8080);
+const PORT = Number(process.env.PORT || 3000);
 const HOST = "0.0.0.0";
 const ROOT_DIR = process.cwd();
 

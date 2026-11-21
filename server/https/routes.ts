@@ -4,6 +4,7 @@ import { patchClient } from "../client/patch-client";
 import { SERVER_NAME } from "../config/branding";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import { CLIENT_SHA256 } from "../client/patch-client";
 import path from "node:path";
 import express, { type Express } from "express";
@@ -24,6 +25,7 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
   const publicDir = path.join(rootDir, "public");
   const publicCacheDir = path.join(publicDir, "cache");
   const diskCacheDir = path.join(rootDir, "data", "cache");
+  const gtAssetsDir = path.join(rootDir, "tools", "gt", "Growtopia");
   const splashesFile = path.join(publicDir, "splashes.txt");
 
   const app = express();
@@ -78,7 +80,7 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
         let bytes:Buffer;
         if(fs.existsSync(file)) bytes=fs.readFileSync(file);
         else throw new Error("Missing data/client/upstream.wasm; provide the compatible client locally");
-        return patchClient(bytes,SERVER_CONFIG.hideLegacyCustomItemWarning, SERVER_CONFIG.autofillLabel, SERVER_CONFIG.serverName);
+        return patchClient(bytes,SERVER_CONFIG.hideLegacyCustomItemWarning, SERVER_CONFIG.autofillLabel, SERVER_CONFIG.serverName, publicCacheDir);
       })().catch(err=>{clientPromise=null;throw err;});
       res.setHeader("Cache-Control","no-store, max-age=0");
       res.setHeader("Pragma","no-cache");
@@ -136,6 +138,35 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
     });
   });
 
+  // Native console autofill candidates (item names only). The WASM client
+  // appends these to its built-in command list, so the dropdown stays 100%
+  // native while `/give 333 1 Indo` completes item names.
+  let autofillItemsCache: { text: string; gzip: Buffer } | null = null;
+  app.get("/api/autofill-items", (req, res) => {
+    if (!autofillItemsCache) {
+      const seen = new Set<string>();
+      const names: string[] = [];
+      for (const item of ctx.itemsDb.items.values()) {
+        const name = item.name.replace(/`./g, "").trim();
+        if (!name || name.startsWith("null_") || /REVOKED/i.test(name)) continue;
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        names.push(name);
+      }
+      const text = names.join("\n") + "\n";
+      autofillItemsCache = { text, gzip: zlib.gzipSync(Buffer.from(text, "utf8"), { level: 9 }) };
+    }
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    if (/\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {
+      res.setHeader("Content-Encoding", "gzip");
+      res.send(autofillItemsCache.gzip);
+      return;
+    }
+    res.send(autofillItemsCache.text);
+  });
+
   app.get(/^\/cache\/(.+)$/, async (req, res) => {
     const rawRel = (req.params as Record<string, string>)[0] || "";
     let decodedRel = rawRel;
@@ -152,7 +183,8 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
     }
     const ownerOverridePath = resolveSafeSubpath(publicCacheDir, relPosix);
     const diskCachePath = resolveSafeSubpath(diskCacheDir, relPosix);
-    if (!ownerOverridePath || !diskCachePath) {
+    const gtAssetPath = resolveSafeSubpath(gtAssetsDir, relPosix);
+    if (!ownerOverridePath || !diskCachePath || !gtAssetPath) {
       res.status(400).end();
       return;
     }
@@ -176,6 +208,12 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
     if (fs.existsSync(diskCachePath) && fs.statSync(diskCachePath).isFile() && fs.statSync(diskCachePath).size > 0) {
       res.setHeader("Cache-Control", "public, max-age=3600");
       res.sendFile(diskCachePath);
+      return;
+    }
+
+    if (fs.existsSync(gtAssetPath) && fs.statSync(gtAssetPath).isFile() && fs.statSync(gtAssetPath).size > 0) {
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.sendFile(gtAssetPath);
       return;
     }
 

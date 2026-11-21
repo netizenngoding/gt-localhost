@@ -4,7 +4,6 @@ import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import {
   OnConsoleMessage,
-  OnPlayPositioned,
   OnSetBux,
   OnEmoticonDataChanged,
   RequestGazette,
@@ -21,7 +20,8 @@ export function handleEnterGame(ctx: ServerContext, session: PlayerSession): voi
   if (acct.isGuest) {
     SetHasGrowID(session, false, "", "");
   }
-  OnPlayPositioned(session, "audio/door_open.wav");
+  // Door sound is sent by enterWorldAtPixel after OnSpawn so the local
+  // NetAvatar exists and the client can resolve the 3D position.
 
   // Exact GTPS3 Source.cpp:4202-4217 welcome console messages
   const friendsCount = (acct.friendIds || []).length;

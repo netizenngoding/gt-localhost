@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ItemRenderer itemID="ITEM_ID_HIDING_HORSE">
+	<Data>
+		<Sprite name="s_OpenHorse" fileName="game/tiles_page17.rttex" textureSize="32" frame="3,21" />
+		<Sprite name="s_ClosedHorse" fileName="game/tiles_page17.rttex" textureSize="32" frame="3,20" />
+		<RenderOptions>
+			<Default>
+				<Set name="IsBed">true</Set>
+				<Set name="SleepHidesPlayer">true</Set>
+			</Default>
+		</RenderOptions>
+
+		<VariableMap>
+			<Set name="isSomeoneSleepingOn">false</Set>
+		</VariableMap>
+	</Data>
+	<RenderRules>
+		<Render>
+			<Group>
+				<StopIf>
+					<CompareCustomVariable operatorType="Equal" VariableNameToCompare="isSomeoneSleepingOn">true</CompareCustomVariable>
+				</StopIf>
+				<SpriteRender name="s_OpenHorse" blend="PREMULTIPLIED_ALPHA"/>
+			</Group>
+			<ArithmethicOperation LeftHandVariableName="isSomeoneSleepingOn" RightHandVariableName="false" OperationType="Set" />
+		</Render>
+		<RenderBedOverlay>
+			<SpriteRender name="s_ClosedHorse" blend="PREMULTIPLIED_ALPHA" alignment="LEFT_CENTER" offset="0,1"/>
+			<ArithmethicOperation LeftHandVariableName="isSomeoneSleepingOn" RightHandVariableName="true" OperationType="Set" />
+		</RenderBedOverlay>
+	</RenderRules>
+</ItemRenderer>

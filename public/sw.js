@@ -1,5 +1,5 @@
 // Growtopia Web Service Worker (PWA Compliance & Fast App Shell)
-const CACHE_NAME = 'growtopia-shell-v13';
+const CACHE_NAME = 'growtopia-shell-v21';
 
 const STATIC_RESOURCES = [
   '/',
@@ -43,6 +43,10 @@ self.addEventListener('fetch', (event) => {
 
   // Large binary files & WebSockets MUST bypass ServiceWorker to avoid mobile RAM exhaustion
   if (
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    url.pathname.startsWith('/WebLoaderData/') ||
+    url.pathname.startsWith('/cache/') ||
     url.pathname.endsWith('client.data') ||
     url.pathname.endsWith('.wasm') ||
     url.hostname.includes('huggingface.co') ||

@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ItemRenderer>
+  <Data>
+    <Sprite name="s_equip" fileName="game/particles_large19.rttex" textureSize="64" frame="0,4"/>
+
+    <Sprite name="s_trail" fileName="game/particles12.rttex" textureSize="32" frame="27,23" />
+
+    <Sprite name="s_Sparkles" fileName="game/particles12.rttex" textureSize="32" frame="29,23" />
+
+    <Animations>
+      <SpriteAnimation name="a_idle" playOnState="Motion.Idle" sprite="s_equip" isLoop="true" animTime="1200">
+				<Frame>0,4</Frame>
+				<Frame>1,4</Frame>
+				<Frame>2,4</Frame>
+				<Frame>3,4</Frame>
+				<Frame>4,4</Frame>
+				<Frame>5,4</Frame>
+			</SpriteAnimation>
+      <SpriteAnimation name="a_move" playOnState="Motion.Move" sprite="s_equip" isLoop="true" animTime="600">
+				<Frame>6,4</Frame>
+				<Frame>7,4</Frame>
+				<Frame>8,4</Frame>
+				<Frame>9,4</Frame>
+				<Frame>10,4</Frame>
+				<Frame>11,4</Frame>
+			</SpriteAnimation>
+      <SpriteAnimation name="a_jump" playOnState="Motion.Jump" sprite="s_equip" isLoop="true" animTime="100">
+				<Frame>12,4</Frame>
+			</SpriteAnimation>
+      <SpriteAnimation name="a_fall" playOnState="Motion.Fall" sprite="s_equip" isLoop="true" animTime="100">
+				<Frame>13,4</Frame>
+			</SpriteAnimation>
+      <SpriteAnimation name="a_trail" sprite="s_trail" animTime="200">
+				<Frame>27,23</Frame>
+				<Frame>28,23</Frame>
+			</SpriteAnimation>
+      <SpriteAnimation name="a_RandomSparkles" sprite="s_Sparkles">
+				<Frame>29,23</Frame>
+				<Frame>30,23</Frame>
+			</SpriteAnimation>
+    </Animations>
+
+    <StateMachines>
+      <StateMachine name="Motion">
+        <States>
+          <State name="Idle" />
+          <State name="Move" />
+          <State name="Jump" />
+          <State name="Fall" />
+        </States>
+        <Transitions>
+          <Transition to="Idle" from="Fall|Move|Jump">
+            <Condition type="and">
+              <IsVariableBool name="onGround">true</IsVariableBool>
+              <IsVariableFloat name="speed.length" operator="Less" abs="true">0.1</IsVariableFloat>
+            </Condition>
+          </Transition>
+          <Transition to="Move" from="Jump|Fall|Idle">
+            <Condition type="and">
+              <IsVariableBool name="onGround">true</IsVariableBool>
+              <IsVariableFloat name="speed.length" operator="Greater" abs="true">0.1</IsVariableFloat>
+            </Condition>
+          </Transition>
+          <Transition to="Jump" from="Idle|Move|Fall">
+            <Condition type="and">
+              <IsVariableBool name="onGround">false</IsVariableBool>
+              <IsVariableFloat name="speed.y" operator="Less">-0.1</IsVariableFloat>
+            </Condition>
+          </Transition>
+          <Transition to="Fall" from="Jump|Idle|Move">
+            <Condition type="and">
+              <IsVariableBool name="onGround">false</IsVariableBool>
+              <IsVariableFloat name="speed.y" operator="Greater">0.1</IsVariableFloat>
+            </Condition>
+          </Transition>
+        </Transitions>
+      </StateMachine>
+    </StateMachines>
+
+    <ParticleSystems>
+      <ParticleSystem name="ps_trail" renderStage="RenderShoes">
+				<Emitter>
+					<Set name="offset">0, -8</Set>
+					<Set name="emissionInterval">0.1</Set>
+					<Set name="infParticles">true</Set>
+					<Set name="infLifeTime">true</Set>
+					<Set name="particlesPerEmission">2</Set>
+					<Set name="offset">-20,-8</Set>
+				</Emitter>
+				<Particle randomSpriteFrame="true">
+					<Set name="sprite">s_trail</Set>
+					<Set name="inSpecificOrder">true</Set>
+					<Random name="offset" min="-8,-8" max="8,8" />
+					<Curve name="initialAlpha">
+						<KeyFrame>0, 1</KeyFrame>
+						<KeyFrame>0.6, 1</KeyFrame>
+						<KeyFrame>1, 0</KeyFrame>
+					</Curve>
+					<Set name="useGravity">true</Set>
+					<Set name="initialScale">0.4, 0.4</Set>
+					<Set name="lifeTime">1.5</Set>
+					<RandomRadial name="initialVelocity" angleRange="230,310" radiusRange="5,25" />
+					<Random name="initialAngle" min="0" max="360" />
+					<Random name="gravityVector" min="0, 15" max="0, 30" />
+					<Random name="initialRotationRate" min="-60" max="60" />
+				</Particle>
+			</ParticleSystem>
+      <ParticleSystem name="ps_Sparkles" renderStage="RenderShoes">
+				<Emitter>
+					<Set name="offset">0, 0</Set>
+					<Set name="emissionInterval">0.05</Set>
+					<Set name="infParticles">true</Set>
+					<Set name="infLifeTime">true</Set>
+					<Set name="particlesPerEmission">1</Set>
+				</Emitter>
+				<Particle randomSpriteFrame="true">
+					<Set name="sprite">s_Sparkles</Set>
+					<Random name="offset" min="-8,-32" max="8,8" />
+					<Set name="inSpecificOrder">true</Set>
+					<Set name="blendingMode">PREMULTIPLIED_ALPHA</Set>
+					<Curve name="initialAlpha">
+						<KeyFrame>0, 0</KeyFrame>
+						<KeyFrame>0.05, 1</KeyFrame>
+						<KeyFrame>0.1, 0</KeyFrame>
+						<KeyFrame>0.15, 1</KeyFrame>
+						<KeyFrame>0.2, 0</KeyFrame>
+						<KeyFrame>0.25, 1</KeyFrame>
+						<KeyFrame>0.3, 0</KeyFrame>
+						<KeyFrame>0.35, 1</KeyFrame>
+						<KeyFrame>0.4, 0</KeyFrame>
+						<KeyFrame>0.45, 1</KeyFrame>
+						<KeyFrame>0.5, 0</KeyFrame>
+						<KeyFrame>0.55, 1</KeyFrame>
+						<KeyFrame>0.6, 0</KeyFrame>
+						<KeyFrame>0.65, 1</KeyFrame>
+						<KeyFrame>0.7, 0</KeyFrame>
+						<KeyFrame>0.75, 1</KeyFrame>
+						<KeyFrame>0.8, 0</KeyFrame>
+						<KeyFrame>0.85, 1</KeyFrame>
+						<KeyFrame>0.9, 0</KeyFrame>
+						<KeyFrame>0.95, 1</KeyFrame>
+						<KeyFrame>1, 0</KeyFrame>
+					</Curve>
+					<Set name="interpolateScale">true</Set>
+					<Random name="initialScale" min="0.25" max="0.75" />
+					<Set name="finalScale">0, 0</Set>
+					<Random name="lifeTime" min="1" max="1.5" />
+					<Select name="initialRotationRate" input="randomNumber">
+						<Item>-720</Item>
+						<Item>-360</Item>
+						<Item>360</Item>
+						<Item>720</Item>
+					</Select>
+				</Particle>
+			</ParticleSystem>
+    </ParticleSystems>
+
+    <RenderOptions>
+      <Default>
+        <Set name="IsToRenderPants">false</Set>
+        <Set name="IgnorePunchTypeCheck">true</Set>
+        <Set name="ShoesShouldIgnoreRaptorLegsOffset">true</Set>
+        <Set name="ClothingOffsetFromShoes">-13</Set>
+        <Set name="UserNameOffset">11</Set>
+        <Set name="RenderShoesWithMermaidTail">true</Set>
+        <Set name="ShoesHidesBodyLegs">true</Set>
+      </Default>
+    </RenderOptions>
+
+  </Data>
+
+  <RenderRules>
+    <Update>
+      <StopIf type="or">
+        <IsZombified>true</IsZombified>
+        <IsAction>PUNCH</IsAction>
+        <IsVariableFloat name="speed.length" operator="Less" abs="true">0.1</IsVariableFloat>
+      </StopIf>
+      <Group onState="Motion.Move">
+        <AvatarTransform class="ArmAngle">
+          <Set name="armName">arm2Angle</Set>
+          <Set name="armAngle">-45</Set>
+        </AvatarTransform>
+        <AvatarTransform class="ArmAngle">
+          <Set name="armName">arm1Angle</Set>
+          <Set name="armAngle">-45</Set>
+        </AvatarTransform>
+      </Group>
+    </Update>
+    <RenderShoes>
+      <SpriteRender name="s_equip" offset="0,14" alignment="DOWN_CENTER"/>
+      <StopIf>
+        <IsRenderMod>RENDER_MOD_MINI_YOU</IsRenderMod>
+      </StopIf>
+    </RenderShoes>
+    <AddClothingParticles>
+			<ParticleSystemUpdate name="ps_trail" onState="Motion.Jump|Motion.Fall|Motion.Move"/>
+			<ParticleSystemUpdate name="ps_Sparkles" onState="Motion.Jump|Motion.Fall|Motion.Move"/>
+		</AddClothingParticles>
+  </RenderRules>
+</ItemRenderer>

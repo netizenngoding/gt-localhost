@@ -10,6 +10,15 @@ export interface ItemDef {
   material: number;
   name: string;
   texture: string;
+  // Real Growtopia sprite cell inside `texture` (items.dat "textureX"/"textureY").
+  // Verified against official ItemRenderers: e.g. Bow Hair Clip (15016) ships
+  // `frame="30,22"` and items.dat carries (30,22) for the same item. The client's
+  // native clothing renderer draws from these bytes, so they are the authoritative
+  // art reference for any item that has no renderer XML.
+  textureX: number;
+  textureY: number;
+  spreadType: number;
+  isStripeyWallpaper: number;
   collisionType: number;
   breakHits: number;
   dropChance: number;
@@ -137,6 +146,10 @@ export class ItemDatabase {
       const name = nameChars.toString("utf8");
 
       const texture = readStr();
+      const textureX = itemsDatBuf[pos + 9];
+      const textureY = itemsDatBuf[pos + 10];
+      const spreadType = itemsDatBuf[pos + 11];
+      const isStripeyWallpaper = itemsDatBuf[pos + 12];
       const collisionType = itemsDatBuf[pos + 13];
       const breakHitsRaw = itemsDatBuf[pos + 14];
       const dropChance = itemsDatBuf.readUInt32LE(pos + 15);
@@ -212,6 +225,10 @@ export class ItemDatabase {
         material,
         name,
         texture,
+        textureX,
+        textureY,
+        spreadType,
+        isStripeyWallpaper,
         collisionType,
         breakHits: Math.max(1, Math.round(breakHitsRaw / 6)),
         dropChance,

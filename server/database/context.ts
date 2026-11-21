@@ -12,6 +12,7 @@ import { staffInteractionReach } from "../ranks/interaction";
 import { displayName, hasPermission } from "../ranks";
 import { RankService } from "../ranks/service";
 import { worldDestination, isPlayableWorldName } from "./world-policy";
+import { PORTRAIT_IDS, normalizePortraitSlots } from "./portrait";
 import { RequestWorldSelectMenu } from "../onVariant/RequestWorldSelectMenu";
 import fs from "node:fs";
 import path from "node:path";
@@ -146,6 +147,11 @@ export class ServerContext {
             for (const tile of world.tiles) {
               if (tile.fg && !this.itemsDb.get(tile.fg)) { tile.fg = 0; tile.extra = undefined; tile.damage = 0; tile.flags = 0; }
               if (tile.bg && !this.itemsDb.get(tile.bg)) tile.bg = 0;
+              // Migrate paintings saved before the portrait hat/hair slots were split:
+              // headwear used to sit in the tinted c_hair field and inherited Hair Dye.
+              if (tile.fg && PORTRAIT_IDS.has(tile.fg) && tile.extra?.kind === "portrait") {
+                if (normalizePortraitSlots(this.itemsDb, tile.extra)) this.dirty = true;
+              }
             }
             world.objects = world.objects.filter(obj => !!this.itemsDb.get(obj.itemId));
             this.worlds.set(world.name.toUpperCase(), world);
@@ -336,25 +342,67 @@ export class ServerContext {
     return true;
   }
 
+  private buildRiftPackets(session: PlayerSession): Buffer[] {
+    const equipped = new Set(
+      session.account.inventory.filter((i) => i.equipped && i.count > 0).map((i) => i.itemId)
+    );
+    const packets: Buffer[] = [];
+    if (equipped.has(10424)) {
+      // Upstream fid 4581 / fid 4389 / fid 4390: 6-arg OnRiftCape
+      // 0x0033 = drawCollar (bits 0,1) + capeMovement (bits 4,5); closedCape=0 (no torso overlap), aura=0 (no giant orb), cycle=0
+      packets.push(
+        makeVariantPacket(
+          [
+            "OnRiftCape",
+            { type: "u32", value: 0x0033 },
+            { type: "u32", value: 0xe258eaff },
+            { type: "u32", value: 0xe258eaff },
+            { type: "u32", value: 0x7e3182ff },
+            { type: "u32", value: 0x7e3182ff },
+            { type: "i32", value: 10 },
+          ],
+          session.netId
+        )
+      );
+    }
+    if (equipped.has(11478)) {
+      // Upstream fid 4580 / fid 2534 / fid 4388: 6-arg OnRiftWings
+      // 0x55f0 = style 0 (Angel/Rift Feathers) on BOTH state0 (bit12) & state1 (bit14), trail 0 on BOTH (bits 8,10),
+      // aura+trail enabled (bits 4..7), cycleTime=0 (bit16=0 so wings never switch to unconfigured/invisible state1)
+      packets.push(
+        makeVariantPacket(
+          [
+            "OnRiftWings",
+            { type: "u32", value: 0x55f0 },
+            { type: "u32", value: 0xc8165dff },
+            { type: "u32", value: 0x2b1e89ff },
+            { type: "u32", value: 0xff48dcff },
+            { type: "u32", value: 0x3f2322ff },
+            { type: "u32", value: 15 },
+          ],
+          session.netId
+        )
+      );
+    }
+    if (equipped.has(14086)) {
+      packets.push(makeVariantPacket(["OnInfinityAura", { type: "i32", value: 1 }], session.netId));
+    }
+    return packets;
+  }
+
   public sendCharacterState(session: PlayerSession): void {
     const state = buildCharacterStateForSession(session, this.itemsDb);
-    const equipped = new Set(session.account.inventory.filter(i=>i.equipped && i.count>0).map(i=>i.itemId));
-    const riftCape = equipped.has(10424), riftWings = equipped.has(11478), infinityAura = equipped.has(14086);
     const pkt = makeSetCharacterStatePacket(state);
+    const riftPkts = this.buildRiftPackets(session);
     session.peer.sendPacket(0, pkt, true);
+    for (const rp of riftPkts) session.peer.sendPacket(0, rp, true);
     if (session.world) {
       for (const other of session.world.peers) {
-        if (other !== session) other.peer.sendPacket(0, pkt, true);
+        if (other !== session) {
+          other.peer.sendPacket(0, pkt, true);
+          for (const rp of riftPkts) other.peer.sendPacket(0, rp, true);
+        }
       }
-    }
-    if (riftCape) {
-      session.peer.sendPacket(0, makeVariantPacket(["OnRiftCape", { type: "i32", value: 1 }], session.netId), true);
-    }
-    if (riftWings) {
-      session.peer.sendPacket(0, makeVariantPacket(["OnRiftWings", { type: "i32", value: 1 }], session.netId), true);
-    }
-    if (infinityAura) {
-      session.peer.sendPacket(0, makeVariantPacket(["OnInfinityAura", { type: "i32", value: 1 }], session.netId), true);
     }
   }
 
@@ -371,6 +419,9 @@ export class ServerContext {
         makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
         true
       );
+      for (const rp of this.buildRiftPackets(other)) {
+        session.peer.sendPacket(0, rp, true);
+      }
       if (other.lastIconStatePacket) {
         session.peer.sendPacket(0, other.lastIconStatePacket, true);
       }
@@ -393,12 +444,15 @@ export class ServerContext {
     const stillJoined = () => session.world === expectedWorld && session.netId === expectedNetId && this.sessions.has(session);
     const synchronizeRemoteOutfits = () => {
       if (!stillJoined()) return;
+      const joinerRifts = this.buildRiftPackets(session);
       for (const p of expectedWorld.peers) {
         if (p === session || p.world !== expectedWorld || !this.sessions.has(p)) continue;
         // Each send uses current equipment. Never reset anyone else's inventory.
         p.peer.sendPacket(0, buildSetClothingPacket(session, this.itemsDb, false), true);
+        for (const rp of joinerRifts) p.peer.sendPacket(0, rp, true);
         session.peer.sendPacket(0, buildSetClothingPacket(p, this.itemsDb, false), true);
         session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(p.account) >>> 0 }], p.netId), true);
+        for (const rp of this.buildRiftPackets(p)) session.peer.sendPacket(0, rp, true);
       }
     };
     const first = setTimeout(() => {
@@ -513,7 +567,9 @@ export class ServerContext {
       }
     }
     logCctvEvent(world, session, "entered");
-    broadcastPositionedSfx(world, session.netId, entrySfx);
+    // Play the entry door sound at the joiner's avatar for everyone (incl.
+    // self). A short delay lets the client finish OnSpawn so netId resolves.
+    broadcastPositionedSfx(world, session.netId, entrySfx, 250);
     for (const peer of world.peers) recordProgress(this, peer, undefined, 0);
 
     if (announceEntry) {
@@ -638,8 +694,8 @@ export class ServerContext {
     const world = session.world;
     if (!world) return;
     logCctvEvent(world, session, "left");
-    OnPlayPositioned(session, "audio/door_shut.wav");
-    for (const other of world.peers) if(other!==session) OnPlayPositioned(other,"audio/door_shut.wav");
+    // Door shut plays at the leaver's avatar for everyone still in the world.
+    broadcastPositionedSfx(world, session.netId, "audio/door_shut.wav");
     session.pullGeneration=(session.pullGeneration||0)+1; session.pullUntil=0; session.pullImmuneUntil=0;
     session.brb = false;
     session.iconState = 0;

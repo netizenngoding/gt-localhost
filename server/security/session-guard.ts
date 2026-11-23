@@ -18,15 +18,15 @@ export class SessionGuard {
   }
   game(type:number):boolean {
     if(type===21||type===22)return this.allow('ping',10,20);
-    if(this.background){this.denied++;return false;}
+    // Visibility/occlusion must never gate gameplay. Chrome can report an
+    // occluded but visible window as hidden; gating on it made the second
+    // browser unable to punch and dropped its pull packets.
     if(type===0)return this.allow('movement',60,120);
     if([3,7,10,11].includes(type))return this.allow('interaction',10,16);
     return true; // Unsupported types are ignored by the existing dispatcher.
   }
   text(text:string, loggedIn:boolean):boolean {
     if(!this.allow('text',8,24))return false;
-    if(!loggedIn||!this.background)return true;
-    // Login/world-selection and explicit exit stay possible, not commands/dialogs.
-    return /^action\|(enter_game|quit|quit_to_exit)(\n|$)/.test(text);
+    return true;
   }
 }

@@ -386,14 +386,72 @@
       <canvas class="emscripten" id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
     </div>
 
-    <script src="WebLoaderData/ViewportLock.js?v=2701"></script>
+    <script src="WebLoaderData/ViewportLock.js?v=2702"></script>
     <script src="WebLoaderData/BrandingAssets.js?v=2701"></script>
     <script src="WebLoaderData/UIAssets.js?v=2701"></script>
     <script src="WebLoaderData/ServerBranding.js?v=2702"></script>
-    <script src="WebLoaderData/GameSDK.js?v=2701"></script>
-    <script src="WebLoaderData/NativeSession.js?v=2701"></script>
+    <script src="WebLoaderData/GameSDK.js?v=2960"></script>
+    <script src="WebLoaderData/FloatingPhysics.js?v=3"></script>
+    <script src="WebLoaderData/NativeSession.js?v=2723"></script>
     <script src="WebLoaderData/NativeChatHeads.js?v=2701"></script>
-    <script src="WebLoaderData/NativeAutofill.js?v=2702"></script>
-    <script src="WebLoaderData/GameInterstitial.js?v=2701"></script>
+    <script src="WebLoaderData/NativeAutofill.js?v=2970"></script>
+    <script src="WebLoaderData/GameInterstitial.js?v=2950"></script>
+    <script>
+      // A repeated refresh of a 325 MB client can make Chrome drop the WebGL
+      // context. When that happens this build draws a flat solid colour (the
+      // "yellow screen") and never recovers on its own, so report it and reload
+      // once instead of leaving the player staring at an empty page.
+      (function () {
+        var canvasEl = document.getElementById("canvas");
+        if (!canvasEl) return;
+        var KEY = "gt-webgl-recover";
+        var showNotice = function (text) {
+          var box = document.getElementById("webglNotice");
+          if (!box) {
+            box = document.createElement("div");
+            box.id = "webglNotice";
+            box.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;" +
+              "background:rgba(0,0,0,0.82);color:#fff;font:600 18px/1.5 CenturyGothicBold,system-ui,sans-serif;" +
+              "text-align:center;padding:32px;white-space:pre-line;";
+            document.body.appendChild(box);
+          }
+          box.textContent = text;
+        };
+        var pendingRecover = null;
+        var recover = function (reason) {
+          // Do not reload a minimized/unfocused tab: Chrome may drop the GL
+          // context of a background client (especially with a second client
+          // open), and reloading it while hidden makes the whole browser look
+          // frozen. Remember it and recover when the player is back.
+          if (document.hidden) { pendingRecover = reason; return; }
+          var last = 0;
+          try { last = parseInt(sessionStorage.getItem(KEY) || "0", 10) || 0; } catch (e) {}
+          var now = Date.now();
+          if (now - last > 60000) {
+            try { sessionStorage.setItem(KEY, String(now)); } catch (e) {}
+            showNotice("Grafis browser ter-reset.\nMemuat ulang game...");
+            setTimeout(function () { location.reload(); }, 1200);
+          } else {
+            showNotice("Grafis browser kehabisan memori.\nTutup tab Growtopia lain, lalu tekan Ctrl+Shift+R sekali saja.");
+          }
+          console.warn("[Client] WebGL lost:", reason);
+        };
+        var retryRecover = function () {
+          if (!pendingRecover || document.hidden) return;
+          var reason = pendingRecover;
+          pendingRecover = null;
+          recover(reason);
+        };
+        document.addEventListener("visibilitychange", retryRecover);
+        window.addEventListener("focus", retryRecover);
+        canvasEl.addEventListener("webglcontextlost", function (e) {
+          e.preventDefault();
+          recover("context lost");
+        }, false);
+        canvasEl.addEventListener("webglcontextcreationerror", function (e) {
+          recover("creation error: " + (e && e.statusMessage ? e.statusMessage : "unknown"));
+        }, false);
+      })();
+    </script>
   </body>
 </html>

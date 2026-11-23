@@ -1,4 +1,4 @@
-import { broadcastIconState } from "./onVariant";
+import { broadcastIconState, OnSetPos } from "./onVariant";
 import type { PlayerSession } from "./database/peer";
 import { SERVER_NAME } from "./config/branding";
 import http from "node:http";
@@ -76,7 +76,17 @@ async function main(): Promise<void> {
               broadcastIconState(session.world,session,2,true);
             }else if(wasBackground&&!peer.activity.background){
               if(session.brb){session.brb=false;broadcastIconState(session.world,session,0,true);}
-              // No OnSetPos on tab return: prevents mid-air snap-back while client gravity finishes landing.
+              // Movement broadcasts were dropped while hidden. Send a fresh
+              // position snapshot instead of replaying the stale backlog.
+              const world=session.world;
+              if(world){
+                OnSetPos(session,session.netId,session.x,session.y);
+                for(const p of world.peers){
+                  if(p===session) continue;
+                  OnSetPos(session,p.netId,p.x,p.y);
+                  OnSetPos(p,session.netId,session.x,session.y);
+                }
+              }
             }
           }
         }

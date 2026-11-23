@@ -4,6 +4,7 @@ import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import {
   OnConsoleMessage,
+  OnPlayPositioned,
   OnSetBux,
   OnEmoticonDataChanged,
   RequestGazette,
@@ -45,4 +46,6 @@ export function handleEnterGame(ctx: ServerContext, session: PlayerSession): voi
   const autoWorld = recent.length > 0 ? recent[0] : "START";
   ctx.joinWorld(session, autoWorld);
   RequestGazette(session);
+  // Play the login choir once on entering the game, not on every Gazette open.
+  OnPlayPositioned(session, "audio/choir.wav", 400);
 }

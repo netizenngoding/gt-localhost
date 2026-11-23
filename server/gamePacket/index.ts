@@ -2,6 +2,7 @@ import {
   buildTankPacket,
   PACKET_ITEM_ACTIVATE_OBJECT_REQUEST,
   PACKET_ITEM_ACTIVATE_REQUEST,
+  PACKET_CALL_FUNCTION,
   PACKET_PING_REPLY,
   PACKET_PING_REQUEST,
   PACKET_SET_ICON_STATE,
@@ -12,6 +13,7 @@ import {
 } from "../proton/packet";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
+import { handleCallFunction } from "./call_function";
 import { handleItemActivateRequest } from "./item_activate";
 import { handleItemActivateObject } from "./item_activate_object";
 import { handlePlayerMoving } from "./player_moving";
@@ -24,6 +26,10 @@ export function handleGamePacket(
   tank: TankPacket
 ): void {
   switch (tank.type) {
+    case PACKET_CALL_FUNCTION:
+      handleCallFunction(ctx, session, tank.extendedData);
+      return;
+
     case PACKET_PING_REQUEST:
       session.peer.sendPacket(
         0,

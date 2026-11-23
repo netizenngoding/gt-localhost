@@ -282,6 +282,10 @@
     var bytes = utf8Enc.encode(String(str == null ? "" : str));
     var u8 = m.HEAPU8;
     var u32 = m.HEAPU32;
+    // A stale or foreign pointer here writes outside the heap, and a single
+    // out-of-bounds store aborts the whole instance (the client then leaves a
+    // half-drawn menu on screen). Refuse instead of crashing the game.
+    if (!(sPtr > 0) || sPtr + 12 > u8.length) return false;
     // Free previous heap buffer if sPtr currently holds a long string
     if ((u8[sPtr + 11] & 0x80) !== 0) {
       var oldBuf = u32[sPtr >> 2];
@@ -298,6 +302,7 @@
     } else {
       var cap = (bytes.length + 16) & ~15;
       var buf = tbl.get(117)(cap);
+      if (!buf || buf + bytes.length + 1 > u8.length) return false;
       u8 = m.HEAPU8;
       u32 = m.HEAPU32;
       u8.set(bytes, buf);

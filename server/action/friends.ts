@@ -2,14 +2,10 @@ import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { OnConsoleMessage, OnDialogRequest, OnPlayPositioned } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
+import { openSocialPortal } from "./social_portal";
 
 // Requests bind to live session objects, not forgeable netids across worlds.
 const requests = new WeakMap<PlayerSession, Set<PlayerSession>>();
-export function handleFriends(_ctx: ServerContext, session: PlayerSession): void {
-  const dlg=new DialogBuilder().setDefaultColor('`o').addLabelWithIcon('big','`wSocial Portal``',1366)
-    .addSpacer('small').addButton('showfriend','`wShow Friends``').addQuickExit();
-  OnDialogRequest(session,dlg.endDialog('socialportal','','Back'));
-}
 export function showFriendList(ctx:ServerContext,s:PlayerSession,all=false):void {
  const ids=s.account.friendIds||[], online=[...ctx.sessions].filter(x=>ids.includes(x.account.userId));
  const d=new DialogBuilder().setDefaultColor('`o').addLabelWithIcon('big',`${online.length} of ${ids.length} \`wFriends Online\`\``,1366).addSpacer('small');
@@ -39,10 +35,10 @@ export function friendRequest(ctx:ServerContext,s:PlayerSession,netid:number):vo
  OnConsoleMessage(s,`Friend request sent to ${b.name}.`);OnConsoleMessage(other,`${a.name} wants to be your friend! Wrench them and choose Add as friend.`);
 }
 export function friendDialogReturn(ctx:ServerContext,s:PlayerSession,dlg:string,button:string):boolean {
- if(dlg==='playerportal' && button==='socialportal'){handleFriends(ctx,s);return true;}
+ if(dlg==='playerportal' && button==='socialportal'){openSocialPortal(ctx,s,'Social');return true;}
  if(dlg==='socialportal'||dlg==='social_portal'){if(button==='showfriend')showFriendList(ctx,s);return true;}
  if(dlg==='friends'){
-  if(button==='back'){handleFriends(ctx,s);return true}if(button==='friend_all'){showFriendList(ctx,s,true);return true}
+  if(button==='back'){openSocialPortal(ctx,s,'Social');return true}if(button==='friend_all'){showFriendList(ctx,s,true);return true}
   const m=/^friend_(\d+)$/.exec(button);if(m){const id=Number(m[1]);if(!(s.account.friendIds||[]).includes(id))return true;
    const a=[...ctx.accounts.values()].find(x=>x.userId===id);const d=new DialogBuilder().addLabelWithIcon('big',`\`w${a?.name||'Friend'}\`\``,1366).addButton(`remove_${id}`,'`4Remove Friend``').addQuickExit();OnDialogRequest(s,d.endDialog('friend_edit','Back',''));}
   return true;

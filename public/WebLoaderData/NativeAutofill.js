@@ -33,6 +33,7 @@
   var injectedBlock = 0;
   var injectedEnd = 0;
   var optionApplied = false;
+  var disabledAfterError = false;
 
   function sdk() { return global.GameSDK && global.GameSDK.ready ? global.GameSDK : null; }
   function memoryReady() {
@@ -87,6 +88,14 @@
   }
 
   function writeRecord(m, abi, rec, name) {
+    // Hard bounds check: writing past the current heap aborts the whole WASM
+    // instance, which used to kill the menu while it was still being built.
+    if (!(rec > 0) || rec + REC_SIZE > m.HEAPU8.length) throw new Error("autofill record out of bounds");
+    // A freshly operator-new'ed record holds uninitialised bytes. writeStdString
+    // reads the "long string" flag at +11 and, when it is set, tries to free the
+    // pointer stored at +0 - freeing a garbage pointer is exactly the
+    // "memory access out of bounds" abort. Zero the slot first.
+    m.HEAPU8.fill(0, rec, rec + REC_SIZE);
     abi.writeStdString(rec, name);
     abi.writeStdString(rec + 12, '');
     abi.writeStdString(rec + 24, '');
@@ -128,6 +137,11 @@
     var capacity = baseCount + names.length + 64;
     var block = m.wasmTable.get(117)(capacity * REC_SIZE); // operator new
     if (!block) return false;
+    if (block + capacity * REC_SIZE > m.HEAPU8.length) return false;
+    // Never hand the client an uninitialised block: a stale "long string" flag
+    // inside it makes writeStdString free a garbage pointer and abort the WASM
+    // instance. Zero first, then copy the native entries in.
+    m.HEAPU8.fill(0, block, block + capacity * REC_SIZE);
     m.HEAPU8.copyWithin(block, beg, end);
     var stopPtr = appendItems(block + baseCount * REC_SIZE);
     u32 = m.HEAPU32;
@@ -140,13 +154,22 @@
   }
 
   function tick() {
-    var g = sdk();
-    if (!g) return;
-    if (!optionApplied) optionApplied = applyOption(enabled());
-    if (!enabled()) return;
-    fetchNames();
-    if (!names) return;
-    inject();
+    if (disabledAfterError) return;
+    try {
+      var g = sdk();
+      if (!g) return;
+      if (!optionApplied) optionApplied = applyOption(enabled());
+      if (!enabled()) return;
+      fetchNames();
+      if (!names) return;
+      inject();
+    } catch (err) {
+      // Never let the autofill helper take the client down with it.
+      disabledAfterError = true;
+      injectedBlock = 0;
+      injectedEnd = 0;
+      console.warn("[Autofill] disabled after error:", err && err.message ? err.message : err);
+    }
   }
 
   global.NativeAutofill = {

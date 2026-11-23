@@ -5,3 +5,15 @@ data/client/client.data
 client.data
 gtps3_ref/
 data_store/*.tmp-*
+
+# Local tools
+/tools/
+
+# Cache
+data/cache/
+public/cache/
+tools/__pycache__/
+
+# Logs
+*.log
+*.err

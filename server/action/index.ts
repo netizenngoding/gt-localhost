@@ -9,7 +9,7 @@ import { handleBuy } from "./buy";
 import { handleDialogReturn } from "./dialog_return";
 import { handleDrop } from "./drop";
 import { handleEnterGame } from "./enter_game";
-import { handleFriends } from "./friends";
+import { openSocialPortal } from "./social_portal";
 import { handleGrowIdAction } from "./growid";
 import { handleInfo } from "./info";
 import { handleInput } from "./input";
@@ -106,7 +106,7 @@ export function handleActionText(
       return;
 
     case "friends":
-      handleFriends(ctx, session);
+      openSocialPortal(ctx, session, "Social");
       return;
 
     case "setSkin": {

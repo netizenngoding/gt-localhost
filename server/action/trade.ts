@@ -98,6 +98,15 @@ function complete(ctx:ServerContext,t:Trade,s:PlayerSession):void {
    for(const viewer of a.world?.peers || [])viewer.peer.sendPacket(0,effect,true);
    for(const player of [a,b])OnPlayPositioned(player,'audio/change_clothes.wav',delay);
  }
+ // AstroVerse keeps a per-account trade history (shown in the Social Portal).
+ for(const [who,otherS] of [[a,b],[b,a]] as const){
+  const give=t.a.session===who?t.a.offer:t.b.offer;
+  const recv=t.a.session===who?t.b.offer:t.a.offer;
+  const fmt=(o:Iterable<[number,number]>):string=>{const parts:string[]=[];for(const [id,n] of o)parts.push(`${n} ${String(ctx.itemsDb.get(id)?.name||('Item #'+id)).replace(/`./g,'')}`);return parts.join(', ')||'nothing';};
+  who.account.tradeHistory??=[];
+  who.account.tradeHistory.push(`Traded with ${otherS.account.name}: gave ${fmt(give)}, received ${fmt(recv)}`);
+  if(who.account.tradeHistory.length>40)who.account.tradeHistory=who.account.tradeHistory.slice(-40);
+ }
  cancelTrade(s,'Trade complete.');
 }
 export function tradeAction(ctx:ServerContext,s:PlayerSession,action:string,kv:Record<string,string>,raw:string):boolean {

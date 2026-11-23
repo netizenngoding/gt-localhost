@@ -71,6 +71,9 @@ export interface PlayerAccount {
   friendIds?: number[];
   lastDailyReward?: number;
   personalNote?: string;
+  borderColor?: string;
+  bgColor?: string;
+  tradeHistory?: string[];
   homeWorld?: string;
   lastKitClaim?: number;
   spawnWorld?: string;
@@ -85,6 +88,10 @@ export interface PlayerAccount {
   storedItems?: Array<{ itemId: number; count: number }>;
   magplantLinks?: Record<string, { x: number; y: number }>;
 }
+
+/** Every live session on the server; names are broadcast through this so a
+ *  name change reaches every viewer in every world instantly (no relog). */
+export const liveSessions = new Set<PlayerSession>();
 
 export interface PendingTradeOffer {
   role: "offering" | "awaiting";
@@ -200,6 +207,9 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
     friendIds: Array.isArray(raw.friendIds) ? [...new Set(raw.friendIds.filter(id => Number.isSafeInteger(id) && id > 0 && id !== raw.userId))].slice(0,200) : [],
     personalNote: typeof raw.personalNote==='string' ? raw.personalNote.replace(/[|\r\n\0]/g,' ').slice(0,128) : '',
+    borderColor: typeof raw.borderColor==='string' && /^[0-9]{1,3}(,[0-9]{1,3}){3}$/.test(raw.borderColor) ? raw.borderColor : (raw.borderColor === 'Default' ? 'Default' : ''),
+    bgColor: typeof raw.bgColor==='string' && /^[0-9]{1,3}(,[0-9]{1,3}){3}$/.test(raw.bgColor) ? raw.bgColor : '',
+    tradeHistory: Array.isArray(raw.tradeHistory) ? raw.tradeHistory.filter((x: unknown) => typeof x === 'string').slice(-40).map((x: string) => x.replace(/[|\r\n\0]/g,' ').slice(0,120)) : [],
     billboard: raw.billboard ?? { itemId: 0, show: false, buying: false, priceWl: 1, perItem: true },
     lastKitClaim: raw.lastKitClaim,
     lastDailyReward: typeof raw.lastDailyReward === "number" ? raw.lastDailyReward : undefined,
@@ -345,11 +355,8 @@ export function buildCharacterStateForSession(
       if (mod.gravity!==undefined) gravity = mod.gravity;
       if (mod.speed!==undefined) moveSpeed = mod.speed;
     }
-    // GTPS3 World.h update_clothes: Infected movement speed & Floating! (-30 gravity).
+    // GTPS3 World.h update_clothes: infected movement speed.
     if (activeMods(session.account).some(m=>m.id==='gtps3-infected')) moveSpeed=(moveSpeed===420||moveSpeed===310||moveSpeed===325)?190:150;
-    if (activeMods(session.account).some((m) => m.group === "floating")) {
-      gravity = -30.0;
-    }
 
     const xeno = session.world?.xenonite?.enabled ? session.world.xenonite : undefined;
     if (xeno) {
@@ -367,7 +374,6 @@ export function buildCharacterStateForSession(
     if (session.world?.tiles.some((t) => t.fg === 4992 && (t.flags & 0x0040) !== 0)) {
       gravity = Math.min(gravity, 400.0);
     }
-
     if (c.noclip) stateFlags |= 1 << 0;
     if (c.speed) moveSpeed = 420.0;
     if (c.fly) {

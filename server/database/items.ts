@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ORIGINAL_ITEMS_BASE64 } from "./original-item-data";
 import { ORIGINAL_ITEM_REFERENCE } from "./original-item-reference";
+import { ANCESTRAL_COLOURS } from "./ancestral-colors";
 
 export interface ItemDef {
   id: number;
@@ -10,15 +11,6 @@ export interface ItemDef {
   material: number;
   name: string;
   texture: string;
-  // Real Growtopia sprite cell inside `texture` (items.dat "textureX"/"textureY").
-  // Verified against official ItemRenderers: e.g. Bow Hair Clip (15016) ships
-  // `frame="30,22"` and items.dat carries (30,22) for the same item. The client's
-  // native clothing renderer draws from these bytes, so they are the authoritative
-  // art reference for any item that has no renderer XML.
-  textureX: number;
-  textureY: number;
-  spreadType: number;
-  isStripeyWallpaper: number;
   collisionType: number;
   breakHits: number;
   dropChance: number;
@@ -26,6 +18,8 @@ export interface ItemDef {
   rarity: number;
   maxAmount: number;
   seedColor: number;
+  /** items.dat seed block +8, 0xFFRRGGBB - for Ancestral * this is the effect colour. */
+  seedColor2: number;
   ing1: number;
   ing2: number;
   growTime: number;
@@ -98,6 +92,22 @@ export const WEATHER_BY_ITEM_ID: Record<number, number> = {
   13070: 68,  // Weather Machine - Nian's Mountains
 };
 
+/** One row of the verified ancestral colour table. */
+export type AncestralColourEntry = (typeof ANCESTRAL_COLOURS)[number & keyof typeof ANCESTRAL_COLOURS];
+
+/** Result of re-checking one ancestral artefact against the parsed items.dat. */
+export interface AncestralColourReport {
+  readonly artefactId: number;
+  readonly seedItemId: number;
+  readonly name: string;
+  readonly ok: boolean;
+  readonly issues: string[];
+  /** Colour parsed out of the seed record (block +4). */
+  readonly color1: number;
+  /** Colour parsed out of the seed record (block +8) - the effect colour. */
+  readonly color2: number;
+}
+
 export class ItemDatabase {
   public readonly version: number;
   public readonly rawItemsDat: Buffer;
@@ -105,6 +115,8 @@ export class ItemDatabase {
   public readonly nameIndex: Map<string, ItemDef> = new Map();
   public readonly spliceIndex: Map<string, number> = new Map();
   public readonly itemsDatHash: number;
+  /** Seed-record colours of the 30 Ancestral * artefacts, keyed by artefact id. */
+  public readonly ancestralColours: Map<number, AncestralColourReport> = new Map();
   public readonly playerTributeHash: number;
 
   constructor(itemsDatBuf: Buffer = Buffer.from(ORIGINAL_ITEMS_BASE64, "base64"), playerTributeBuf?: Buffer) {
@@ -146,10 +158,6 @@ export class ItemDatabase {
       const name = nameChars.toString("utf8");
 
       const texture = readStr();
-      const textureX = itemsDatBuf[pos + 9];
-      const textureY = itemsDatBuf[pos + 10];
-      const spreadType = itemsDatBuf[pos + 11];
-      const isStripeyWallpaper = itemsDatBuf[pos + 12];
       const collisionType = itemsDatBuf[pos + 13];
       const breakHitsRaw = itemsDatBuf[pos + 14];
       const dropChance = itemsDatBuf.readUInt32LE(pos + 15);
@@ -165,7 +173,12 @@ export class ItemDatabase {
       readStr(); // petSuffix
       readStr(); // petAbility
 
-      const seedColor = itemsDatBuf.readUInt32LE(pos + 4);
+      // Seed-record colour block: <count[3]> <pad> <c1 r,g,b> ff <c2 r,g,b> 00 ...
+      // Each triplet is stored big-endian RGB, so it must be read as 0xFFRRGGBB.
+      // `readUInt32LE(pos + 4)` reversed the bytes (0xRRGGBBAA), swapping red and
+      // blue for every seed and for the 30 Ancestral * artefacts.
+      const seedColor = (0xff000000 | (itemsDatBuf.readUInt32BE(pos + 4) & 0xffffff)) >>> 0;
+      const seedColor2 = (0xff000000 | (itemsDatBuf.readUInt32BE(pos + 8) & 0xffffff)) >>> 0;
       const ing1 = itemsDatBuf.readUInt16LE(pos + 12);
       const ing2 = itemsDatBuf.readUInt16LE(pos + 14);
       const growTime = itemsDatBuf.readUInt32LE(pos + 16);
@@ -225,10 +238,6 @@ export class ItemDatabase {
         material,
         name,
         texture,
-        textureX,
-        textureY,
-        spreadType,
-        isStripeyWallpaper,
         collisionType,
         breakHits: Math.max(1, Math.round(breakHitsRaw / 6)),
         dropChance,
@@ -236,6 +245,7 @@ export class ItemDatabase {
         rarity,
         maxAmount,
         seedColor,
+        seedColor2,
         ing1,
         ing2,
         growTime: growTime || 30,
@@ -285,6 +295,7 @@ export class ItemDatabase {
     }
 
     if (pos !== itemsDatBuf.length) throw new Error("Unexpected items.dat trailing data");
+    this.verifyAncestralColours();
     const rebuiltItemsDat = Buffer.concat(recordChunks);
     this.rawItemsDat = rebuiltItemsDat;
     this.itemsDatHash = protonHash(rebuiltItemsDat);
@@ -504,6 +515,54 @@ export class ItemDatabase {
 
   public get(id: number): ItemDef | undefined {
     return this.items.get(id);
+  }
+
+  /**
+   * Cross-checks the hard-coded ancestral colour table against the seed records that
+   * were just parsed. Called from the constructor; a mismatch is a bug in one of the
+   * two (or a replaced items.dat), never something to render through.
+   */
+  private verifyAncestralColours(): void {
+    for (const key of Object.keys(ANCESTRAL_COLOURS)) {
+      const artefactId = Number(key);
+      const expected = ANCESTRAL_COLOURS[artefactId]!;
+      const artefact = this.items.get(artefactId);
+      const seed = this.items.get(expected.seedItemId);
+      const issues: string[] = [];
+      if (!artefact || artefact.actionType !== 107) {
+        issues.push(`artefact ${artefactId} is ${artefact ? "actionType " + artefact.actionType : "absent"}, expected 107`);
+      }
+      if (!seed) {
+        issues.push(`seed record ${expected.seedItemId} is absent`);
+      } else {
+        const hex = (v: number) => `0x${(v >>> 0).toString(16).padStart(8, "0")}`;
+        if ((seed.seedColor >>> 0) !== (expected.color1 >>> 0)) issues.push(`color1 is ${hex(seed.seedColor)}, table says ${hex(expected.color1)}`);
+        if ((seed.seedColor2 >>> 0) !== (expected.color2 >>> 0)) issues.push(`color2 is ${hex(seed.seedColor2)}, table says ${hex(expected.color2)}`);
+      }
+      const name = artefact?.name ?? "(missing artefact record)";
+      const report: AncestralColourReport = {
+        artefactId,
+        seedItemId: expected.seedItemId,
+        name,
+        ok: issues.length === 0,
+        issues,
+        color1: seed?.seedColor ?? 0,
+        color2: seed?.seedColor2 ?? 0,
+      };
+      this.ancestralColours.set(artefactId, report);
+      if (!report.ok) console.warn(`[ances] ${artefactId} ${name}: ${issues.join("; ")}`);
+    }
+  }
+
+  /** Verified colour table entry for an ancestral artefact id. */
+  public getAncestralColours(itemId: number): AncestralColourEntry | undefined {
+    const entry = ANCESTRAL_COLOURS[itemId];
+    if (entry) return entry;
+    // Unknown level/id of a known family: fall back to the parsed seed block so a
+    // custom item still gets the right byte order instead of a guessed tint.
+    const seed = this.items.get(itemId + 1);
+    if (!seed || seed.seedColor === 0xffffffff) return undefined;
+    return { seedItemId: itemId + 1, family: "Unknown", level: 0, color1: seed.seedColor, color2: seed.seedColor2, legacySeedColor: 0 };
   }
 
   public findSpliceSeed(seedA: number, seedB: number): number | null {

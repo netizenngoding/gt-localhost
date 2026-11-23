@@ -11,6 +11,7 @@ import {
 import {
   broadcastConsoleMessage,
   broadcastNameChanged,
+  refreshWorldNames,
   broadcastPositionedSfx,
   broadcastSetCurrentWeather,
   OnConsoleMessage,
@@ -633,6 +634,8 @@ export function handleTileEditDialogReturn(
       }
       ctx.dirty = true;
       ctx.savePersistentState();
+      // Access list changed: refresh every name in the world instantly (globally).
+      refreshWorldNames(world);
       const upd = makeTileUpdatePacket(x, y, tile, Date.now());
       for (const p of world.peers) p.peer.sendPacket(0, upd, true);
       return true;
@@ -647,6 +650,7 @@ export function handleTileEditDialogReturn(
         }
         ctx.dirty = true;
         OnConsoleMessage(session, `\`2Added \`w${target.name}\`2 to lock access!\`\``);
+        refreshWorldNames(world);
       } else {
         OnConsoleMessage(session, "`4Account not found!``");
       }

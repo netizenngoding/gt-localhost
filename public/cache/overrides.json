@@ -43,5 +43,9 @@
   "game/sunset.rttex",
   "game/tile_grid_overlay.rttex",
   "game/tiles_page17.rttex",
-  "game/water.rttex"
+  "game/water.rttex",
+  "interface/font_new_century_gothic.rtfont",
+  "interface/font_new_century_gothic_big.rtfont",
+  "interface/font_new_century_gothic_bigx2.rtfont",
+  "interface/font_new_century_gothicx2.rtfont"
 ]

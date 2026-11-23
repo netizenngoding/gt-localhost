@@ -1181,7 +1181,7 @@ export function handleTileChangeRequest(
       needsFullTileUpdate = true;
       if (isWorldLockTier) {
         world.ownerUserId = session.account.userId;
-        const placedMessage = `\`5[\`w${world.name}\`5 has been World Locked by \`2${session.account.name}\`5!]\`\``;
+        const placedMessage = `\`5[\`\`\`w${world.name}\`\` has been \`$World Locked\`\` by ${session.account.name}\`5]\`\``;
         broadcastConsoleMessage(world, placedMessage);
         broadcastTalkBubble(world, session.netId, placedMessage);
         for (const player of world.peers) broadcastNameChanged(player);
@@ -1439,7 +1439,7 @@ function finalizeTileBreak(
   if (brokenWasWorldLock) {
     world.ownerUserId = 0;
     for (const player of world.peers) broadcastNameChanged(player);
-    broadcastConsoleMessage(world, `\`5World \`w${world.name}\`5 is no longer World Locked!\`\``);
+    broadcastConsoleMessage(world, `\`5[\`\`\`w${world.name}\`\` has had its \`$World Lock\`\` removed!\`5]\`\``);
   }
   if (def.isWeather || WEATHER_BY_ITEM_ID[targetId] !== undefined || brokenWasWorldLock) {
     const nextWeather = recomputeWorldWeather(world, ctx.itemsDb);

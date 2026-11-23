@@ -8,7 +8,7 @@ import {
   NET_MESSAGE_GENERIC_TEXT,
 } from "../proton/packet";
 import type { ServerContext } from "../database/context";
-import { normalizeAccount, type PlayerAccount, type PlayerSession } from "../database/peer";
+import { liveSessions, normalizeAccount, type PlayerAccount, type PlayerSession } from "../database/peer";
 import { OnConsoleMessage, SetHasGrowID } from "../onVariant";
 import { hashPassword, sanitizeAccountName, verifyPassword } from "../tools/string";
 
@@ -114,6 +114,7 @@ function createSessionForAccount(
     if (existingSession.account.userId === account.userId && existingSession.peer !== peer) {
       ctx.leaveCurrentWorld(existingSession, false);
       ctx.sessions.delete(existingSession);
+      liveSessions.delete(existingSession);
       existingSession.peer.userData = null;
       existingSession.peer.sendDisconnect();
     }
@@ -135,6 +136,7 @@ function createSessionForAccount(
   };
   peer.userData = session;
   ctx.sessions.add(session);
+  liveSessions.add(session);
   return session;
 }
 

@@ -496,6 +496,10 @@ export class ENetServerPeer {
   }
 
   public sendPacket(channelId: number, payload: Buffer, reliable = true, allowCompress = true): void {
+    // Hidden/minimized client: do not queue high-frequency unreliable movement.
+    // Reliable state (and all incoming actions) stay intact, so punching/pull
+    // still work and the resume path refreshes positions.
+    if (this.activity.background && !reliable) return;
     const ch = channelId & 0x0f;
     if (!reliable && payload.length <= 1200) {
       const rSeq = this.outgoingReliableSeq[ch];

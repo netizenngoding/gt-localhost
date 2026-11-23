@@ -1,6 +1,7 @@
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
 import { handleSdbDialogReturn } from "../../commands/broadcast";
+import { handleSocialPortalReturn } from "../social_portal";
 import { handleDropItemReturn } from "./drop_item";
 import { handleFindItemDialogReturn } from "./find_item";
 import { handleGrowIdApplyReturn } from "./growid_apply";
@@ -20,6 +21,12 @@ export function handleDialogReturn(
 ): void {
   const dlg = (kv.dialog_name || "").trim();
   if (!dlg) return;
+
+  // Social Portal (AstroVerse dialogMap["SocialPortal"]).
+  if (dlg.toLowerCase() === "socialportal") {
+    handleSocialPortalReturn(ctx, session, kv);
+    return;
+  }
 
   if (handleSdbDialogReturn(ctx, session, dlg, kv)) {
     return;

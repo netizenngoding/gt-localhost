@@ -1,8 +1,10 @@
 import { canWorldAct } from './world-moderation';
 import { activeMods } from '../playmods/model';
+import { WEARABLE_MOD_LABELS_BY_ITEM, WEARABLE_MODS_BY_ITEM } from '../playmods/wearable-mod-catalog';
+import { WEARABLE_MESSAGES } from '../playmods/wearable-messages';
 import { progression } from "../progression/service";
 import { ACHIEVEMENTS } from "../progression/catalog";
-import { equippedAbilities, hasRaymanFist } from "../playmods/equipment";
+import { hasRaymanFist } from "../playmods/equipment";
 import { xpRequired } from "../progression/model";
 import { hasPermission, canModerate, displayName, rankOf, RANKS } from "../ranks";
 import type { ServerContext } from "../database/context";
@@ -41,22 +43,11 @@ export function handleWrenchPlayer(
       .raw(`add_custom_label|(${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`)
       .customButton('emojis','gui_wrench_growmojis')
       .customBreak().addSpacer('small').customSpacing(0,0);
-    const mods=activeMods(acct);
-    const equipmentEffects: Array<{title:string; icon:number}> = [];
-    const abilities=equippedAbilities(acct);
-    if(abilities.damage.length) equipmentEffects.push({title:'Enhanced Digging',icon:abilities.damage[0]});
-    if(abilities.punchRange.length) equipmentEffects.push({title:'Punch Range',icon:abilities.punchRange[0]});
-    if(abilities.buildRange.length) equipmentEffects.push({title:'Build Range',icon:abilities.buildRange[0]});
-    if(abilities.doubleJump.length) equipmentEffects.push({title:'Double Jump',icon:abilities.doubleJump[0]});
-    if(abilities.speedy.length) equipmentEffects.push({title:'Speedy',icon:abilities.speedy[0]});
-    if(acct.inventory.some(i=>i.equipped && i.count>0 && i.itemId===11094)) equipmentEffects.push({title:'Extended Punch and Build Range',icon:11094});
-    if(hasRaymanFist(acct)) equipmentEffects.push({title:"Rayman's Fist",icon:5480});
-    if(mods.length || equipmentEffects.length)dlg.addTextbox('`wActive effects:``');
-    for(const mod of mods){
-      const remaining=Math.max(0,Math.ceil((acct.playmods!.find(m=>m.id===mod.id)!.expiresAt-Date.now())/1000));
-      dlg.addLabelWithIcon('small',`\`w${mod.title}\`\` (\`w${remaining}s\`\` left)`,mod.icon);
+    const effects = getActiveEffectEntries(acct);
+    if (effects.length) dlg.addTextbox('`wActive effects:``');
+    for (const effect of effects) {
+      dlg.addLabelWithIcon('small', `\`w${effect.title}\`\``, effect.icon);
     }
-    for(const effect of equipmentEffects) dlg.addLabelWithIcon('small',`\`w${effect.title}\`\``,effect.icon);
     dlg.addSpacer('small')
       .addButton('backpack_menu', `\`wOpen Backpack Storage (${(acct.storedItems || []).length}/${(acct.backpackLevel || 1) * 10})\`\``)
       .addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`)
@@ -74,6 +65,41 @@ export function handleWrenchPlayer(
   if(canWorldAct(session,target,world)) { dlg.addButton("kick","`4Kick``").addButton("pull","`5Pull``"); if(!hasPermission(target.account,"moderate"))dlg.addButton("worldban","`4World Ban``"); }
   if(!(session.account.friendIds||[]).includes(target.account.userId)) dlg.addButton("friend_add","`wAdd as friend``");
   dlg.addQuickExit();OnDialogRequest(session,dlg.endDialog("popup","","Continue"));
+}
+
+export function getActiveEffectEntries(account: PlayerSession["account"]): Array<{ title: string; icon: number }> {
+  const entries: Array<{ title: string; icon: number }> = [];
+  const seenTitles = new Set<string>();
+  const addEffect = (title: string, icon: number): void => {
+    const key = title.trim().toLocaleLowerCase();
+    if (!key || seenTitles.has(key)) return;
+    seenTitles.add(key);
+    entries.push({ title, icon });
+  };
+
+  for (const mod of activeMods(account)) {
+    const expiresAt = account.playmods?.find(active => active.id === mod.id)?.expiresAt ?? Date.now();
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    addEffect(`${mod.title} (${remaining}s left)`, mod.icon);
+  }
+
+  for (const slot of account.inventory) {
+    if (!slot.equipped || slot.count <= 0) continue;
+    const wikiLabel = WEARABLE_MOD_LABELS_BY_ITEM[slot.itemId];
+    const explicitMessage = WEARABLE_MESSAGES[slot.itemId];
+    // Use the item's exact {{Item/Mod}} display label. A dash means the wiki
+    // intentionally has no named mod; explicit item-message entries cover
+    // named exceptions such as Focused Eyes.
+    const titles = wikiLabel && wikiLabel !== "-"
+      ? [wikiLabel]
+      : explicitMessage
+        ? [explicitMessage[0]]
+        : WEARABLE_MODS_BY_ITEM[slot.itemId] || [];
+    for (const title of titles) addEffect(title, slot.itemId);
+  }
+
+  if (hasRaymanFist(account)) addEffect("Rayman's Fist", 5480);
+  return entries;
 }
 
 export { requestTrade as handleTradeStart } from "./trade";

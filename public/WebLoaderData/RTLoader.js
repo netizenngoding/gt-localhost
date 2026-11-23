@@ -163,7 +163,37 @@ function makeSilentWavBytes() {
   return b;
 }
 
+// Bound every stream step: if a browser stalls DecompressionStream or
+// CompressionStream, the promise below still settles and the client starts.
+function withStreamTimeout(promise, ms, label) {
+  return new Promise(function (resolve, reject) {
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      reject(new Error("timeout: " + label));
+    }, ms);
+    promise.then(function (v) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(v);
+    }, function (e) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+
 async function patchNativeLoadingBackground() {
+  // This step decodes, rewrites and re-encodes the 1024x1024 pre-menu texture
+  // before the engine is allowed to start. On some machines the browser's
+  // DecompressionStream/CompressionStream stalls there and the game never
+  // begins, which looks like a freeze at the menu. The effect is cosmetic only,
+  // so it is opt-in: enable it with ?bgpatch=1.
+  if (!/(?:^|[?&])bgpatch=1/.test(String(location.search || ""))) return false;
   var fsApi = typeof FS !== "undefined" ? FS : Module && Module.FS;
   var path = "/game/load_bg.rttex";
   if (!fsApi || typeof fsApi.readFile !== "function" || typeof fsApi.writeFile !== "function") return false;
@@ -173,7 +203,7 @@ async function patchNativeLoadingBackground() {
     var packed = fsApi.readFile(path);
     if (!(packed instanceof Uint8Array)) packed = new Uint8Array(packed);
     if (packed.length < 32 || String.fromCharCode.apply(null, packed.subarray(0, 6)) !== "RTPACK") throw new Error("expected RTPACK");
-    var raw = new Uint8Array(await new Response(new Blob([packed.subarray(32)]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer());
+    var raw = new Uint8Array(await withStreamTimeout(new Response(new Blob([packed.subarray(32)]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer(), 5000, "decompress load_bg"));
     if (raw.length < 124 || String.fromCharCode.apply(null, raw.subarray(0, 6)) !== "RTTXTR") throw new Error("expected RTTXTR payload");
     var view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
     var width = view.getUint32(8, true), height = view.getUint32(12, true);
@@ -188,7 +218,7 @@ async function patchNativeLoadingBackground() {
       raw[p + 1] = Math.round(1 + 14 * t);
       raw[p + 2] = Math.round(4 + 18 * t);
     }
-    var compressed = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer());
+    var compressed = new Uint8Array(await withStreamTimeout(new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer(), 5000, "compress load_bg"));
     var output = new Uint8Array(32 + compressed.length);
     output.set(packed.subarray(0, 32));
     new DataView(output.buffer).setUint32(8, compressed.length, true);
@@ -1805,12 +1835,23 @@ var Module = {
   onRuntimeInitialized: function () {
     window.__clientRuntimeReady = true;
     if (!loaderEl) loaderEl = document.getElementById("loader");
+    // Keep the loader on screen until the engine actually starts drawing.
+    // mainf can take a long time on slower machines, and hiding the loader the
+    // moment the runtime is ready made that wait look like a freeze.
     if (loaderEl) {
-      loaderEl.style.transition = "opacity 0.4s ease";
-      loaderEl.style.opacity = "0";
-      setTimeout(function () {
-        loaderEl.style.display = "none";
-      }, 420);
+      loaderEl.style.display = "";
+      loaderEl.style.opacity = "1";
+    }
+    if (typeof Module.setStatus === "function") {
+      try { Module.setStatus("Starting game..."); } catch (e) {}
+    }
+    if (!window.__loaderWatchdog) {
+      window.__loaderWatchdog = setTimeout(function () {
+        if (!window.__clientFirstFrame) {
+          var t = document.getElementById("loader-text") || (loaderEl && loaderEl.querySelector(".loadingtext"));
+          if (t) t.textContent = "Masih memuat mesin game... kalau macet, tekan Ctrl+Shift+R untuk muat ulang.";
+        }
+      }, 25000);
     }
 
     // 1. Install server branding/background + missing VFS /audio/*.wav aliases
@@ -1844,6 +1885,15 @@ var Module = {
         Module.ccall("mainf", null, null);
       } catch (e) {
         if (e !== "unwind") console.error(e);
+      }
+      // mainf sets the engine up; only now hide the loading screen.
+      window.__clientFirstFrame = true;
+      if (loaderEl) {
+        loaderEl.style.transition = "opacity 0.4s ease";
+        loaderEl.style.opacity = "0";
+        setTimeout(function () {
+          loaderEl.style.display = "none";
+        }, 420);
       }
     });
   },

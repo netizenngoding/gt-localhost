@@ -14,7 +14,7 @@ export const WEARABLE_MESSAGES: Readonly<Record<number,readonly [string,string,s
   3894: ["Speedy", "You move faster.", "You move at normal speed."],
   496: ["Speedy", "You move faster.", "You move at normal speed."],
   10132: ["Speedy Pendant", "You move faster.", "You move at normal speed."],
-  1204: ["Focused Eyes", "Your gaze sharpens.", "Your eyes relax."],
+  1204: ["Focused Eyes", "Give people the evil eye.", "Your vision is normal."],
   2388: ["Hammer Time", "Hammer time!", "Hammer time is over."],
   9058: ["Cursed Blade", "A curse hums in your hand.", "The curse lifts."],
   4748: ["Extra Reach", "You can build a little farther.", "You can't reach as far."],

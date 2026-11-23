@@ -22,7 +22,6 @@ export function dispatchCommand(
   parts[0]=cmd;
   const argStr = parts.slice(1).join(" ");
   if (!cmd) return;
-  if (handleProgressionCommand(ctx, session, cmd, parts)) return;
   if (cmd === "rank") { OnConsoleMessage(session, `Your rank: ${RANKS[rankOf(session.account)].label}.`); return; }
   if (cmd === "mods") {
     const staff = Array.from(ctx.sessions).filter(p=>hasPermission(p.account,"moderate"));

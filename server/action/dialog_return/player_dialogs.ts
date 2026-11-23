@@ -2,7 +2,7 @@ import { clearAreaLock } from "../../database/world";
 import { makeParticleEffectPacket, makeTileUpdatePacket } from "../../proton/packet";
 import { broadcastBillboardChange, broadcastNameChanged, broadcastPositionedSfx, OnBillboardChange, OnPlayPositioned } from "../../onVariant";
 import { isUntradeable } from "../../database/items";
-import { worldModerate } from '../world-moderation';
+import { worldModerate, canWorldAct } from '../world-moderation';
 import { addTradeItem, confirmTrade } from '../trade';
 import { friendRequest, friendDialogReturn } from '../friends';
 import { showAchievements } from "../../progression/commands";
@@ -31,12 +31,12 @@ export function showGrowmojisDialog(session: PlayerSession): void {
 
   // Exact emoji list from GTPS3 Player.h & World.h
   const emojis = [
-    "wl", "oops", "sleep", "punch", "bheart", "grow", "gems", "gtoken", "cry", "vend",
-    "bunny", "cactus", "pine", "peace", "terror", "troll", "evil", "fireworks", "football",
-    "alien", "party", "pizza", "clap", "song", "ghost", "nuke", "halo", "turkey", "gift",
-    "cake", "heartarrow", "lucky", "shamrock", "grin", "ill", "eyes", "weary", "moyai", "plead",
-    "yes", "no", "love", "shy", "wink", "tongue", "agree", "music", "build", "megaphone",
-    "sigh", "mad", "wow", "dance", "see-no-evil", "heart", "kiss", "lol", "smile", "cool"
+    "wl", "yes", "no", "love", "oops", "shy", "wink", "tongue", "agree", "sleep", "punch", "music",
+    "build", "megaphone", "sigh", "mad", "wow", "dance", "see-no-evil", "bheart", "heart", "grow",
+    "gems", "kiss", "gtoken", "lol", "smile", "cool", "cry", "vend", "bunny", "cactus", "pine", "peace",
+    "terror", "troll", "evil", "fireworks", "football", "alien", "party", "pizza", "clap", "song", "ghost",
+    "nuke", "halo", "turkey", "gift", "cake", "heartarrow", "lucky", "shamrock", "grin", "ill", "eyes",
+    "weary", "moyai", "plead", "fire", "flirty", "lightbulb", "moneymouth", "nerd", "skull", "trophy", "wilted"
   ];
   for (const em of emojis) {
     dlg.raw(`add_smalltext_forced| (${em}) |left|\n`);
@@ -273,6 +273,11 @@ export function handlePlayerDialogsReturn(
       if (btn==='friend_add') friendRequest(ctx,session,target.netId);
       else if (btn==='trade') handleTradeStart(ctx,session,target.netId);
       else if (btn==='kick'||btn==='pull'||btn==='worldban') worldModerate(ctx,session,target,btn);
+      return true;
+    }
+    // Self moderation: a world owner may pull/kick themselves (AstroVerse parity).
+    if ((btn==='kick'||btn==='pull') && session.world && canWorldAct(session,session,session.world)) {
+      worldModerate(ctx,session,session,btn);
       return true;
     }
     // A forged target button must never fall through to self actions.

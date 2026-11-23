@@ -1,6 +1,11 @@
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { WEARABLE_MESSAGES } from "../playmods/wearable-messages";
+import {
+  WEARABLE_MOD_LABELS_BY_ITEM,
+  WEARABLE_MOD_MESSAGES,
+  WEARABLE_MODS_BY_ITEM,
+} from "../playmods/wearable-mod-catalog";
 import { broadcastSetClothing, OnConsoleMessage, OnTalkBubble, OnPlayPositioned, OnSetClothing } from "../onVariant";
 
 /**
@@ -13,10 +18,41 @@ import { broadcastSetClothing, OnConsoleMessage, OnTalkBubble, OnPlayPositioned,
  *   - Therefore we NEVER resend `PACKET_SEND_INVENTORY_STATE` during `toggleWearable`, and we immediately persist
  *     via `ctx.savePlayersNow()` so equipped clothes survive world switches, refreshes, and server restarts 100%!
  */
+function notifyWearableMod(session: PlayerSession, itemId: number, equipped: boolean): void {
+  const known = WEARABLE_MESSAGES[itemId];
+  if (known) {
+    const text = known[equipped ? 1 : 2];
+    if (text) OnConsoleMessage(session, `${text} (\`$${known[0]}\`\` mod ${equipped ? "added" : "removed"})`);
+    return;
+  }
+
+  const modMessage = WEARABLE_MOD_MESSAGES[itemId];
+  if (modMessage) {
+    const [added, removed, modName] = modMessage;
+    const text = equipped ? added : removed;
+    if (text && modName) {
+      OnConsoleMessage(session, `${text} (\`$${modName}\`\` mod ${equipped ? "added" : "removed"})`);
+    }
+    return;
+  }
+
+  // No source Added/Removed line is available for this item; keep the notice
+  // factual and generic rather than inventing an item-specific game message.
+  for (const modName of WEARABLE_MODS_BY_ITEM[itemId] || []) {
+    OnConsoleMessage(session, `\`$${modName}\`\` mod ${equipped ? "added" : "removed"}`);
+  }
+}
+
+function wearableHasPlaymod(itemId: number): boolean {
+  return !!WEARABLE_MOD_LABELS_BY_ITEM[itemId]
+    || !!WEARABLE_MODS_BY_ITEM[itemId]?.length
+    || !!WEARABLE_MESSAGES[itemId];
+}
+
 export function toggleWearableItem(
   ctx: ServerContext,
   session: PlayerSession,
-  itemId: number
+  itemId: number,
 ): void {
   const slot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   const def = ctx.itemsDb.get(itemId);
@@ -24,6 +60,11 @@ export function toggleWearableItem(
 
   const targetSlotIndex = def.actionType === 107 ? 9 : def.clothingType; // 0..9 (`actionType == 107` -> 9)
   const equipping = !slot.equipped;
+  const conflicting = equipping ? session.account.inventory.find(other => {
+    if (other === slot || !other.equipped || other.count <= 0) return false;
+    const otherDef = ctx.itemsDb.get(other.itemId);
+    return !!otherDef?.isClothing && (otherDef.actionType === 107 ? 9 : otherDef.clothingType) === targetSlotIndex;
+  }) : undefined;
 
   if (equipping) {
     for (const other of session.account.inventory) {
@@ -31,17 +72,16 @@ export function toggleWearableItem(
         const otherDef = ctx.itemsDb.get(other.itemId);
         if (otherDef && otherDef.isClothing && (otherDef.actionType === 107 ? 9 : otherDef.clothingType) === targetSlotIndex) {
           other.equipped = false;
-          const old = WEARABLE_MESSAGES[other.itemId];
-          if (old && old[2]) OnConsoleMessage(session, `${old[2]} (\`$${old[0]}\`\` mod removed)`);
+          notifyWearableMod(session, other.itemId, false);
         }
       }
     }
   }
 
   slot.equipped = equipping;
-  const msg = WEARABLE_MESSAGES[itemId];
-  if (msg && msg[equipping ? 1 : 2]) {
-    OnConsoleMessage(session, `${msg[equipping ? 1 : 2]} (\`$${msg[0]}\`\` mod ${equipping ? 'added' : 'removed'})`);
+  notifyWearableMod(session, itemId, equipping);
+  if (wearableHasPlaymod(itemId) || (conflicting && wearableHasPlaymod(conflicting.itemId))) {
+    OnPlayPositioned(session, "audio/dialog_confirm.wav");
   }
   ctx.savePlayersNow();
 

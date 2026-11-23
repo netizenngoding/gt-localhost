@@ -115,14 +115,22 @@
       console.warn('[Chat heads] draw error:', err);
     }
   }
-  function install(m){if(installed||!ex)return;installed=true;module=m;GameSDK.onPacket('OnConsoleMessage',receive);// Cached pixels and the owned template deliberately survive world exit/reconnect.
+  function bootstrapMagnoliaLua(m){
+    fetch('/WebLoaderData/MagnoliaColorPicker.lua',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Lua HTTP '+r.status);return r.text();}).then(source=>{
+      if(!ex||typeof ex.mlua!=='function')throw Error('Server missing mlua export');
+      const sourceString=m._malloc(12),nameString=m._malloc(12);m.HEAPU8.fill(0,sourceString,sourceString+12);m.HEAPU8.fill(0,nameString,nameString+12);
+      try{GameSDK._abi.writeStdString(sourceString,source);GameSDK._abi.writeStdString(nameString,'MagnoliaUI');ex.mlua(sourceString,nameString);}
+      finally{GameSDK._abi.freeStdString(sourceString);GameSDK._abi.freeStdString(nameString);m._free(sourceString);m._free(nameString);}
+    }).catch(error=>console.error('[Magnolia UI]',error));
+  }
+  function install(m){if(installed||!ex)return;installed=true;module=m;GameSDK.onPacket('OnConsoleMessage',receive);setTimeout(()=>bootstrapMagnoliaLua(m),3000);// Cached pixels and the owned template deliberately survive world exit/reconnect.
     let clothes;clothes=m.hookWasmTable(3191,(p,v)=>{const result=clothes(p,v);const next=m._malloc(1056);m.wasmTable.get(1970)(next,p+516);if(template){ex.portraitDestroy(template);m._free(template);}template=next;return result;},'vii');
     let log;log=m.hookWasmTable(3577,(p,v)=>{if(document.hidden)return log(p,v);prepare();ensureOverlay();inLog=true;try{return log(p,v);}finally{inLog=false;}},'vii');
     let font;font=m.hookWasmTable(2416,(f,x,y,t,s,c,format,batch)=>{const result=font(f,x,y,t,s,c,format,batch);if(inLog&&!capturing)draw(f,x,y,GameSDK._abi.readStdString(t),s);return result;},'viffifiii');
     setInterval(()=>{if(overlay&&!document.hidden&&performance.now()-lastDraw>250)paint.clearRect(0,0,overlay.width,overlay.height);},250);
   }
   g.NativeChatHeads={stats,validMeta,install,
-    instantiate(imports,done){fetch('/client/client.wasm',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('WASM HTTP '+r.status);return r.arrayBuffer();}).then(bytes=>WebAssembly.compile(bytes)).then(async mod=>{if(!["portraitDraw","portraitResources","portraitApply","portraitDestroy"].every(name=>WebAssembly.Module.exports(mod).some(e=>e.name===name&&e.kind==="function")))throw Error("Server missing audited portrait exports; rebuild the server");const instance=await WebAssembly.instantiate(mod,imports);ex=instance.exports;done(instance,mod);}).catch(error=>{console.error('[Chat heads]',error);if(g.showClientStartupError)g.showClientStartupError(String(error));});return {};},
+    instantiate(imports,done){fetch('/client/client.wasm',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('WASM HTTP '+r.status);return r.arrayBuffer();}).then(bytes=>WebAssembly.compile(bytes)).then(async mod=>{if(!["portraitDraw","portraitResources","portraitApply","portraitDestroy","mlua"].every(name=>WebAssembly.Module.exports(mod).some(e=>e.name===name&&e.kind==="function")))throw Error("Server missing audited portrait exports; rebuild the server");const instance=await WebAssembly.instantiate(mod,imports);ex=instance.exports;done(instance,mod);}).catch(error=>{console.error('[Chat heads]',error);if(g.showClientStartupError)g.showClientStartupError(String(error));});return {};},
     // Read-only diagnostics: no privilege-changing endpoints or equipment mutation.
     diagnostics(){return {...stats,entries:rows.size,portraits:cache.size};}
   };

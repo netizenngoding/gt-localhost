@@ -5,9 +5,10 @@ import { canModifyWorldTile, spawnOrMergeWorldDrop } from '../database/world';
 import { activeMods, MODS, SIMPLE_FOODS } from './model';
 import { consumableAudio } from './consume-audio';
 import { GTPS3_CONSUME_RECIPES } from './gtps3-recipes';
-import { OnConsoleMessage, applySkinColorUpdate } from '../onVariant';
+import { OnConsoleMessage, OnPlayPositioned, applySkinColorUpdate } from '../onVariant';
 import { buildTankPacket, makeVariantPacket, makeParticleEffectPacket, makeTileUpdatePacket, makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from '../proton/packet';
 import { recordProgress } from '../progression/service';
+
 
 function bubble(s:PlayerSession, text:string, viewers:Iterable<PlayerSession>=[s]):void {
  const packet=makeVariantPacket(['OnTalkBubble',{type:'i32',value:s.netId},text,{type:'i32',value:0},{type:'i32',value:0}]);
@@ -33,6 +34,46 @@ export function gtps3PlaymodTime(seconds:number):string {
 // Hair dyes and eye items handled by tile_change_req in bathtub/mirror
 const HAIR_DYE_ITEMS = new Set([3822, 3824, 3826, 3828, 3830]);
 const EYE_ITEMS = new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
+
+// GTPS3 World.h, default branch of the consume switch: after a "drop" playmod
+// item is used on a player, the server rolls a ground reward on the clicked tile:
+//   int c_ = rand() % (items[p_].max_gems + 1);  if (c_ == 0) -> nothing
+//   rand() % 100 < 5  -> the used block itself
+//   rand() % 100 < 35 -> its seed (p_ + 1)
+//   else              -> gems
+// A nearby drop on the same tile suppresses the matching prize (no_seed /
+// no_block, and no_gems when the drop is gems and the tile block is common).
+// items.dat in this build carries no max_gems field, so the gem cap uses the
+// repo's existing rarity-derived value; the branch odds themselves are exact.
+function rollPlaymodDrop(ctx:ServerContext,s:PlayerSession,itemId:number,tx:number,ty:number):void {
+ const world=s.world;if(!world)return;
+ const def=ctx.itemsDb.get(itemId);
+ const maxGems=Math.max(1,Math.min(25,Math.ceil((def?.rarity||0)/4)));
+ if(Math.floor(Math.random()*(maxGems+1))===0)return;
+ const cx=tx*32,cy=ty*32;
+ const tileRarity=ctx.itemsDb.get(world.tiles[ty*world.width+tx]?.fg||0)?.rarity||0;
+ let noSeed=false,noGems=false,noBlock=false;
+ for(const drop of world.objects){
+  if(!drop.itemId)continue;
+  if(Math.abs(drop.y-cy)>16||Math.abs(drop.x-cx)>16)continue;
+  if(drop.itemId===112 && tileRarity<8)noGems=true;
+  else noSeed=true,noBlock=true;
+ }
+ const roll=Math.random()*100;
+ const scatter=()=>({x:cx+Math.floor(Math.random()*17),y:cy+Math.floor(Math.random()*17)});
+ if(roll<5 && !noBlock){
+  const at=scatter();
+  spawnOrMergeWorldDrop(world,itemId,1,at.x,at.y,s.netId);
+  ctx.dirty=true;
+ }else if(roll<35 && !noSeed){
+  const at=scatter();
+  spawnOrMergeWorldDrop(world,itemId+1,1,at.x,at.y,s.netId);
+  ctx.dirty=true;
+ }else if(!noGems){
+  const gems=Math.floor(Math.random()*(maxGems+1));
+  if(gems>0){spawnOrMergeWorldDrop(world,112,gems,cx+16,cy+16,s.netId);ctx.dirty=true;}
+ }
+}
 
  export function useConsumable(ctx:ServerContext,s:PlayerSession,id:number,tx:number,ty:number):boolean {
  const def=ctx.itemsDb.get(id);if(def?.actionType!==8)return false;
@@ -124,6 +165,7 @@ const EYE_ITEMS = new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766,
  if(!target&&!throwable){bubble(s,'Must be used on a person.');return true;}
  if(xpPotion && target!==s){bubble(s,'This potion can only be used on yourself.');return true;}
  if(!ctx.consumeInventoryItem(s,id,1,true,false))return true;
+ if(mod?.action==='drop' && target && id!==782) rollPlaymodDrop(ctx,s,id,tx,ty);
  const now=Date.now();
  if(mod && target && mod.seconds>0){
   // Expired effects must go through the same cleanup as the periodic sweep.
@@ -152,6 +194,7 @@ const EYE_ITEMS = new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766,
    target.account.playmods.push({id:mod.id,expiresAt:now+mod.seconds*1000});
    if(!wasActive){
     OnConsoleMessage(target,`${mod.onAdd} (\`$${mod.title}\`\` mod added, \`$${gtps3PlaymodTime(mod.seconds)}\`\`left)`);
+    OnPlayPositioned(target,"audio/dialog_confirm.wav");
    }
    ctx.dirty=true;
    ctx.sendCharacterState(target);applySkinColorUpdate(target,false);

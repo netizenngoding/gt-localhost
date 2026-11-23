@@ -428,11 +428,10 @@ export class ServerContext {
       OnSpawn(other, session, false);
       // The caller broadcasts the joiner's outfit once after all spawns are sent.
     }
-    const entry = `\`5<${displayName(session)} entered, \`w${world.peers.size - 1}\`\` others here>\`\``;
+    // The joiner's own "entered" broadcast is sent once by enterWorldAtPixel
+    // (it also respects announceEntry). Only show the other players here.
     for (const other of world.peers) {
       if (other === session) continue;
-      OnConsoleMessage(other, entry);
-      OnTalkBubble(other, session.netId, entry, 1);
       OnTalkBubble(session, other.netId, displayName(other), 1);
     }
   }
@@ -730,6 +729,7 @@ export class ServerContext {
   }
 
   public respawnPlayer(session: PlayerSession, isSpike = false): void {
+    cancelTrade(session);
     const world = session.world;
     if (!world || (session.respawnUntil && Date.now() < session.respawnUntil)) return;
     let spawn = this.findMainDoorPixel(world);
@@ -743,31 +743,24 @@ export class ServerContext {
     session.hp = 100;
     session.lastHazardHitAt = 0;
     session.lastHazardRegenAt = 0;
-    session.respawnUntil = Date.now() + 2020;
-    // Follow the client's death lifecycle: freeze, death, delayed position, unfreeze.
-    if (!isSpike) {
-      session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", {type:"u32",value:2}], netId), true);
-      const killedPkt = makeVariantPacket(["OnKilled"], netId);
-      for (const p of world.peers) p.peer.sendPacket(0, killedPkt, true);
-    }
+    session.respawnUntil = Date.now() + 1000;
     const generation = session.respawnGeneration = (session.respawnGeneration || 0) + 1;
     const valid = () => session.world === world && session.netId === netId && session.respawnGeneration === generation && this.sessions.has(session);
-    // Server-side delays avoid stale position packets reaching a later world.
+    session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", {type:"i32",value:2}], netId), true);
+    const respawnPos = makeVariantPacket(["SetRespawnPos", {type:"i32",value:Math.floor(spawn.y / 32) * world.width + Math.floor(spawn.x / 32)}], netId);
+    session.peer.sendPacket(0, respawnPos, true);
+    // AstroVerse does not print a spike message and only sends OnKilled for a
+    // regular death (respawn_spike passes kill=false). The position goes to the
+    // dying peer; the teleport sound is broadcast to everyone in the world.
+    if (!isSpike) session.peer.sendPacket(0, makeVariantPacket(["OnKilled"], netId), true);
+    session.peer.sendPacket(0, makeVariantPacket(["OnSetPos", {type:"vec2", x:spawn.x, y:spawn.y}], netId, 2000), true);
+    const pearl = makeVariantPacket(["OnSetPearl", {type:"i32", value:100}], netId, 2000);
+    session.peer.sendPacket(0, pearl, true);
+    for (const p of world.peers) p.peer.sendPacket(0, makeVariantPacket(["OnPlayPositioned", "audio/teleport.wav"], netId, 2020), true);
+    session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", {type:"i32",value:0}], netId, 2000), true);
     setTimeout(() => {
-      if (!valid()) return;
-      const position = makeVariantPacket(["OnSetPos", {type:"vec2", x:spawn.x, y:spawn.y}], netId);
-      const pearl = makeVariantPacket(["OnSetPearl", {type:"i32", value:100}], netId);
-      for (const p of world.peers) {
-        p.peer.sendPacket(0, position, true);
-        p.peer.sendPacket(0, pearl, true);
-      }
-      broadcastPositionedSfx(world, netId, "audio/teleport.wav");
-    }, 2000).unref();
-    setTimeout(() => {
-      if (!valid()) return;
-      session.peer.sendPacket(0, makeVariantPacket(["OnSetFreezeState", {type:"u32",value:0}], netId), true);
-      session.respawnUntil = 0;
-    }, 2020).unref();
+      if (valid() && session.respawnUntil) session.respawnUntil = 0;
+    }, 1000).unref();
   }
 
   public sendCustomVariant(session: PlayerSession, fnName: string, ...args: string[]): void {

@@ -9,6 +9,8 @@ import { CLIENT_SHA256 } from "../client/patch-client";
 import path from "node:path";
 import express, { type Express } from "express";
 import type { ServerContext } from "../database/context";
+import {buildSetClothingPacket} from "../onVariant/OnSetClothing";
+import {makeVariantPacket} from "../proton/packet";
 
 function resolveSafeSubpath(baseDir: string, relPosixPath: string): string | null {
   const cleaned = path.posix.normalize("/" + relPosixPath).replace(/^\/+/, "");

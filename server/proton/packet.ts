@@ -301,7 +301,14 @@ export function makeVariantPacket(args: VariantArg[], netId = -1, delayMs = 0): 
   return buildTankPacket({
     type: PACKET_CALL_FUNCTION,
     netId,
-    targetNetId: delayMs,
+    // Variant RPC delay is read from +20 (value), NOT +8 (secondnetId):
+    //   - AstroVerse gamepacket_t: memcpy(packet_data + 24, &delay, 4) = body+20
+    //   - Func #5004 docs above: "delay at +20" for the particle packet
+    //   - PACKET_ITEM_EFFECT (trade.ts): targetNetId holds a real netId,
+    //     value holds the staggered delay
+    // Writing the delay into targetNetId silently zeroes every RPC delay
+    // (respawn freeze/teleport/sfx all applied instantly).
+    value: delayMs,
     flags: TANK_FLAG_EXTENDED,
     extendedData: Buffer.concat(chunks),
   });
@@ -357,7 +364,7 @@ export function makeParticleEffectPacket(
   // +16 is not read by this dispatch path. Do not put effectId in the delay.
   return buildTankPacket({
     type: PACKET_SEND_PARTICLE_EFFECT,
-    netId: -1,
+    netId: 0,
     x,
     y,
     speedY: effectId,
@@ -436,6 +443,8 @@ export function makeItemDropPacket(
   return buildTankPacket({
     type: PACKET_ITEM_CHANGE_OBJECT,
     objType: objFlags & 0xff,
+    // netId MUST be -1: any netId >= 0 is a collect for the client (uid = value)
+    // and never spawns a visible ground object (matches GTPS3 dropas_ / Func #1737).
     netId: -1,
     targetNetId: throwerNetId,
     floatVar: count,

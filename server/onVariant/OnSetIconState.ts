@@ -1,6 +1,7 @@
 import { buildTankPacket, PACKET_SET_ICON_STATE } from "../proton/packet";
 import type { PlayerSession } from "../database/peer";
 import type { WorldInstance } from "../database/world";
+import { canSeePlayer } from "../ranks/visibility";
 
 export function broadcastIconState(
   world: WorldInstance,
@@ -17,6 +18,7 @@ export function broadcastIconState(
   session.iconState = state;
   session.lastIconStatePacket = state === 0 ? undefined : pkt;
   for (const other of world.peers) {
+    if (!canSeePlayer(other, session)) continue;
     if (includeSelf || other !== session) {
       other.peer.sendPacket(0, pkt, true);
     }

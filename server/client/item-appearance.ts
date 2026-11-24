@@ -56,6 +56,14 @@ export function patchItemAppearance(input:Buffer):Buffer {
      if(catAt<0 || body.indexOf(catAnchor,catAt+1)>=0)throw Error('Cat Eyes frame signature changed');
      const cat=Buffer.from('200341c237460440230a2206410036020041d804100a2006280200200641003602004101460d02230a220641003602002d00e403410173210e2006280200200641003602004101460d02230a2206410036020041ca0c200e10032006280200200641003602004101460d0241ac026e210e230c4504404180c00010a903240c230c0440230c41004180c000fc0b000b0b230c0440200841037641ff0771210a4100210602400340230c200a4103746a220d280200450440200d20083602000c020b200d2802002008460d01200a41016a41ff0771210a200641016a2206418008490d00200d2008360200200d41003602040b0b200e200d28020441036a7021092009450440200d410310d40241016a3602040b200941034f0440410021090b0b20082d007c4109460440410221090b0b','hex');
      body=Buffer.concat([body.subarray(0,catAt),cat,body.subarray(catAt)]);
+     // Ghost + invis: when local 10 > 1, the opaque skin colour (low byte 0xFF)
+     // is replaced by the magenta sentinel i32.const 0x00FF00FF, which shows as a
+     // magenta head. Substitute alpha 0 (same 4-byte LEB width) so that head is
+     // transparent. Eyes and overlays are separate draws and are unaffected.
+     const magenta=Buffer.from("41ff81fc07"+"2008"+"2008"+"41ff017141ff0146"+"1b"+"2008200a41014a1b","hex");
+     const magentaAt=body.indexOf(magenta);
+     if(magentaAt<0 || body.indexOf(magenta,magentaAt+1)>=0) throw Error('Face magenta fallback signature changed');
+     body=Buffer.concat([body.subarray(0,magentaAt),Buffer.from("4180808000","hex"),body.subarray(magentaAt+5)]);
      patched=true;
     }
     if(i+308===1940){

@@ -1,10 +1,13 @@
 import { getWorldLockTile } from "../database/world";
 import { makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
-import { displayName, hasPermission } from "../ranks";
+import { chatColorOf, displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { broadcastConsoleMessage, broadcastIconState, broadcastTalkBubble, chatPortrait, OnTalkBubble } from "../onVariant";
+import { broadcastIconState, chatPortrait, makeConsoleMessagePacket, OnTalkBubble } from "../onVariant";
+import { makeVariantPacket } from "../proton/packet";
+import { isIgnored, isMuted } from "./friends";
 import { sanitizeChatText } from "../tools/string";
+import { canSeeInvisChat } from "../ranks/visibility";
 import { dispatchCommand } from "../commands";
 import { activeMods } from "../playmods/model";
 
@@ -58,11 +61,31 @@ export function handleInput(
   const infected=activeMods(session.account).some(m=>m.id==='gtps3-infected');
   const msg=infected ? `\`2${Math.random()<0.25?'Brraaiinnss...':''}${clean}\`\`` : clean;
 
-  // This pinned client renders C++ protocol prefixes literally in bubbles.
-  broadcastTalkBubble(world, session.netId, msg, 0, false);
-  broadcastConsoleMessage(
-    world,
-    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}\`6>\`\` \`$${msg}\`\``,
+  // Ignored or muted senders stay invisible to those viewers (AstroVerse ignore/mute).
+  const bubble = makeVariantPacket([
+    "OnTalkBubble",
+    { type: "u32", value: session.netId >>> 0 },
+    // Bubble colour comes from the rank (`w for player = white).
+    `${chatColorOf(session.account)}${msg}\`\``,
+    { type: "u32", value: 0 },
+  ]);
+  // GTPS3 console tint (World.h chat): player `$`, mod `^, developer `5.
+  const consoleColor = hasPermission(session.account, "debug")
+    ? "`5"
+    : hasPermission(session.account, "moderate")
+      ? "`^"
+      : "`$";
+  const consolePkt = makeConsoleMessagePacket(
+    // displayName() already carries the rank prefix, so the name must not be
+    // prefixed a second time before the bracket.
+    `CP:0_PL:0_OID:_CT:[W]_ \`6<${displayName(session)}>` + `\`\` ${consoleColor}${msg}\`\``,
     chatPortrait(session, ctx.itemsDb)
   );
+  for (const p of world.peers) {
+    if (p !== session && (isIgnored(p.account, session.account.userId) || isMuted(p.account, session.account.userId))) continue;
+    // Invisible staff chat is staff-only: same rank or higher only.
+    if (!canSeeInvisChat(p, session)) continue;
+    p.peer.sendPacket(0, bubble, true);
+    p.peer.sendPacket(0, consolePkt, true);
+  }
 }

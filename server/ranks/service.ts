@@ -1,28 +1,48 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { PlayerAccount } from "../database/peer";
 import { isRank, type RankId } from "./definitions";
+import { assignmentOf, loadRanks, rankExists, saveRanks, setAssignment } from "./registry";
+
+/**
+ * Owns rank persistence. Rank definitions and per-user assignments now live in
+ * `data_store/ranks.json` (schema 2) and are managed at runtime by the
+ * `/createrank`, `/delrank`, `/rankedit`, `/setrank` and `/grole` commands.
+ */
 export class RankService {
-  private readonly assignments = new Map<number,RankId>();
+  private readonly rootDir: string;
   constructor(root: string) {
-    const file = path.join(root,"data_store","ranks.json");
-    if (fs.existsSync(file)) {
-      const config = JSON.parse(fs.readFileSync(file,"utf8"));
-      if (config.schemaVersion !== 1 || !config.assignments || typeof config.assignments !== "object" || Array.isArray(config.assignments)) throw new Error("Invalid ranks.json");
-      for (const [key,rank] of Object.entries(config.assignments)) {
-        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)) || !isRank(rank)) throw new Error("Invalid rank assignment");
-        this.assignments.set(Number(key),rank);
-      }
-    }
-    for (const [variable,rank] of [["MODERATOR_USER_IDS","moderator"],["ADMIN_USER_IDS","developer"],["DEVELOPER_USER_IDS","developer"]] as const) {
-      for (const key of (process.env[variable] || "").split(",").map(s=>s.trim()).filter(Boolean)) {
+    this.rootDir = root;
+    loadRanks(root);
+    // Environment overrides still work: MODERATOR_USER_IDS / DEVELOPER_USER_IDS.
+    for (const [variable, rank] of [
+      ["MODERATOR_USER_IDS", "moderator"],
+      ["ADMIN_USER_IDS", "administrator"],
+      ["DEVELOPER_USER_IDS", "administrator"],
+      ["OWNER_USER_IDS", "owner"],
+    ] as const) {
+      for (const key of (process.env[variable] || "").split(",").map((s) => s.trim()).filter(Boolean)) {
         if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key))) throw new Error(`Invalid ${variable}`);
-        this.assignments.set(Number(key),rank);
+        if (!rankExists(rank)) continue;
+        setAssignment(Number(key), rank);
       }
     }
+    saveRanks();
   }
+
+  /** Applies the stored rank of an account (assignment first, then players.json). */
   apply(account: PlayerAccount): void {
-    account.rank = account.isGuest ? "player" : this.assignments.get(account.userId) || "player";
-    account.moderator = account.rank !== "player"; // Legacy compatibility, never a source of authority.
+    const assigned = assignmentOf(account.userId);
+    const stored = isRank(account.rank) ? (account.rank as RankId) : undefined;
+    const chosen = assigned ?? stored ?? "player";
+    account.rank = chosen;
+    account.moderator = chosen !== "player";
+  }
+
+  get dataFile(): string {
+    return path.join(this.rootDir, "data_store", "ranks.json");
+  }
+
+  save(): void {
+    saveRanks();
   }
 }

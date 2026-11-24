@@ -1,6 +1,7 @@
 import { makeVariantPacket } from "../proton/packet";
 import type { PlayerSession } from "../database/peer";
 import type { WorldInstance } from "../database/world";
+import { canSeePlayer } from "../ranks/visibility";
 
 export function OnBillboardChange(target: PlayerSession, subject: PlayerSession): void {
   const b = subject.account.billboard;
@@ -25,6 +26,7 @@ export function OnBillboardChange(target: PlayerSession, subject: PlayerSession)
 
 export function broadcastBillboardChange(world: WorldInstance, subject: PlayerSession): void {
   for (const p of world.peers) {
+    if (!canSeePlayer(p, subject)) continue;
     OnBillboardChange(p, subject);
   }
 }

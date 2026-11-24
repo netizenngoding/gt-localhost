@@ -1,6 +1,61 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "ranks": {
+    "player": {
+      "id": "player",
+      "label": "Player",
+      "level": 0,
+      "prefix": "`w",
+      "chatColor": "`w",
+      "permissions": []
+    },
+    "vip": {
+      "id": "vip",
+      "label": "VIP",
+      "level": 1,
+      "prefix": "`1",
+      "chatColor": "`1",
+      "permissions": []
+    },
+    "moderator": {
+      "id": "moderator",
+      "label": "Moderator",
+      "level": 3,
+      "prefix": "`#@",
+      "chatColor": "`^",
+      "permissions": [
+        "moderate"
+      ]
+    },
+    "administrator": {
+      "id": "administrator",
+      "label": "Administrator",
+      "level": 4,
+      "prefix": "`8@",
+      "chatColor": "`^",
+      "permissions": [
+        "moderate",
+        "grantItems",
+        "debug",
+        "setRanks"
+      ]
+    },
+    "owner": {
+      "id": "owner",
+      "label": "Owner",
+      "level": 8,
+      "prefix": "`6@",
+      "chatColor": "`5",
+      "permissions": [
+        "moderate",
+        "grantItems",
+        "debug",
+        "setRanks"
+      ]
+    }
+  },
   "assignments": {
-    "1019": "developer"
+    "1019": "owner",
+    "3001": "moderator"
   }
 }

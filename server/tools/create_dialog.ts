@@ -126,6 +126,25 @@ export class DialogBuilder {
     return this;
   }
 
+  /**
+   * Native WASM color/transparency slider (`server/client/color-slider-dialog.ts`):
+   *   `add_color_slider|<name>|<label>|<mode>|<value>|<max>|`
+   */
+  public addColorSlider(
+    name: string,
+    label: string,
+    mode: "h" | "s" | "v" | "a" | "r" | "g" | "b" | "x",
+    value: number,
+    max: number = mode === "h" ? 360 : mode === "r" || mode === "g" || mode === "b" ? 255 : 100
+  ): this {
+    const cleanName = name.replace(/[|\r\n\0]/g, "");
+    const cleanLabel = label.replace(/[|\r\n\0]/g, " ");
+    const m = Math.max(1, Math.min(9999, Math.round(max)));
+    const v = Math.max(0, Math.min(m, Math.round(value)));
+    this.lines.push(`add_color_slider|${cleanName}|${cleanLabel}|${mode}|${v}|${m}|`);
+    return this;
+  }
+
   public addItemPicker(name: string, label: string, promptText = "Choose an item"): this {
     this.lines.push(`add_item_picker|${name}|${label}|${promptText}|`);
     return this;

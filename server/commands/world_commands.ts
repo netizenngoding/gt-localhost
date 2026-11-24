@@ -1,5 +1,7 @@
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
-import { displayName } from "../ranks";
+import { displayName, hasPermission } from "../ranks";
+import { canSeePlayer } from "../ranks/visibility";
+import { isHiddenStaff } from "../ranks/staff_hidden";
 import { worldDestination } from "../database/world-policy";
 import { makeVariantPacket } from "../proton/packet";
 import type { ServerContext } from "../database/context";
@@ -49,9 +51,10 @@ export function handleWorldCommand(
 
   if (cmd === "who") {
     if (!world) return true;
-    const names = Array.from(world.peers).map(displayName);
-    const summary = `\`wWho's in \`$${world.name}\`\`: ${names.join(", ")}\`\``;
-    for (const other of world.peers) {
+    const seen = Array.from(world.peers).filter((p) => canSeePlayer(session, p) && !isHiddenStaff(p));
+    const names = seen.map(displayName);
+    const summary = `>> Who's online in \`$${world.name}\`\`: ${names.join(", ")}`;
+    for (const other of seen) {
       if (other !== session) OnTalkBubble(session, other.netId, displayName(other), 1);
     }
     OnConsoleMessage(session, summary);
@@ -109,7 +112,7 @@ export function handleWorldCommand(
 
   if (cmd === "weather") {
     if (!world) return true;
-    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId && session.account.rank !== "developer") {
+    if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId && !hasPermission(session.account, "debug")) {
       OnConsoleMessage(session, "`4Only the World Lock owner can change weather!``");
       return true;
     }

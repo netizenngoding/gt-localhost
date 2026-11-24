@@ -3,6 +3,7 @@ import { patchItemAppearance } from "./item-appearance";
 import { patchDyeAppearance } from "./dye-appearance";
 import { extendChatPortraitExports } from "./portrait-exports";
 import { patchClothingAnimations } from "./clothing-animation";
+import { patchColorSliderDialog } from "./color-slider-dialog";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -111,7 +112,9 @@ export function patchClient(
   //    and right before batch flush) to render all visible fg tiles with flags & 0x2000.
   const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
   const legacyXmlIds = collectLegacyXmlRendererIds(publicCacheDir);
-  const patched = Buffer.from(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds));
+  const patched = Buffer.from(
+    patchColorSliderDialog(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds))
+  );
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
   return extendChatPortraitExports(patched);
 }

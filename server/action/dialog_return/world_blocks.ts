@@ -1,4 +1,5 @@
 import type { ServerContext } from "../../database/context";
+import { hasPermission } from "../../ranks";
 import { type ItemDef, isUntradeable } from "../../database/items";
 import { getClothingVector, type PlayerSession } from "../../database/peer";
 import { GTPS3_CRYSTAL_RECIPES, GTPS3_GRINDER_RECIPES } from "../../database/recipes";
@@ -74,7 +75,7 @@ function sendFlyEffect(target: PlayerSession, world: WorldInstance, tx: number, 
 
 function hasOwnerAccess(session: PlayerSession, world: WorldInstance, tile: WorldTile): boolean {
   const uid = session.account.userId;
-  if (session.account.rank === "developer" || world.ownerUserId === uid) return true;
+  if (hasPermission(session.account, "debug") || world.ownerUserId === uid) return true;
   if ((tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0) {
     const lt = world.tiles[tile.parentIndex];
     return lt?.extra?.kind === "lock" && lt.extra.ownerUserId === uid;
@@ -640,7 +641,7 @@ export function openStorageBoxDialog(
       `embed_data|tilex|${tx}`,
       `embed_data|tiley|${ty}`,
       "add_textbox|Please enter your password to access the Safe Vault.|left|",
-      `add_text_input_password|storage_password||${session.account.rank === "developer" ? tile.extra.password : ""}|12|`,
+      `add_text_input_password|storage_password||${hasPermission(session.account, "debug") ? tile.extra.password : ""}|12|`,
       "add_button|check_password|`wEnter Password``|noflags|0|0|",
       "add_button|show_recoveryanswer|`wRecover Password``|noflags|0|0|",
       "end_dialog|storageboxpassword|Exit||",

@@ -11,6 +11,8 @@ import {
 import { staffInteractionReach } from "../ranks/interaction";
 import { displayName, hasPermission } from "../ranks";
 import { RankService } from "../ranks/service";
+import { canSeePlayer } from "../ranks/visibility";
+import { isHiddenStaff } from "../ranks/staff_hidden";
 import { worldDestination, isPlayableWorldName } from "./world-policy";
 import { PORTRAIT_IDS, normalizePortraitSlots } from "./portrait";
 import { RequestWorldSelectMenu } from "../onVariant/RequestWorldSelectMenu";
@@ -398,7 +400,7 @@ export class ServerContext {
     for (const rp of riftPkts) session.peer.sendPacket(0, rp, true);
     if (session.world) {
       for (const other of session.world.peers) {
-        if (other !== session) {
+        if (other !== session && canSeePlayer(other, session)) {
           other.peer.sendPacket(0, pkt, true);
           for (const rp of riftPkts) other.peer.sendPacket(0, rp, true);
         }
@@ -411,12 +413,13 @@ export class ServerContext {
     if (!world) return;
     for (const other of world.peers) {
       if (other === session) continue;
+      if (!canSeePlayer(session, other)) continue;
       OnSpawn(session, other, false);
       session.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(other, this.itemsDb)), true);
       session.peer.sendPacket(0, buildSetClothingPacket(other, this.itemsDb, false), true);
       session.peer.sendPacket(
         0,
-        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account) >>> 0 }], other.netId),
+        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(other.account, !!other.invis) >>> 0 }], other.netId),
         true
       );
       for (const rp of this.buildRiftPackets(other)) {
@@ -425,19 +428,25 @@ export class ServerContext {
       if (other.lastIconStatePacket) {
         session.peer.sendPacket(0, other.lastIconStatePacket, true);
       }
-      OnSpawn(other, session, false);
       // The caller broadcasts the joiner's outfit once after all spawns are sent.
+    }
+    for (const other of world.peers) {
+      if (other === session) continue;
+      if (!canSeePlayer(other, session)) continue;
+      OnSpawn(other, session, false);
+      other.peer.sendPacket(0, makeSetCharacterStatePacket(buildCharacterStateForSession(session, this.itemsDb)), true);
     }
     // The joiner's own "entered" broadcast is sent once by enterWorldAtPixel
     // (it also respects announceEntry). Only show the other players here.
     for (const other of world.peers) {
       if (other === session) continue;
+      if (!canSeePlayer(session, other)) continue;
       OnTalkBubble(session, other.netId, displayName(other), 1);
     }
   }
 
   private schedulePostSpawnSkinSync(session: PlayerSession, expectedWorld: WorldInstance, expectedNetId: number): void {
-    const skinU32 = effectiveSkin(session.account) >>> 0;
+    const skinU32 = effectiveSkin(session.account, !!session.invis) >>> 0;
     const skinPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: skinU32 }], expectedNetId);
     session.peer.sendPacket(0, skinPkt, true);
     const stillJoined = () => session.world === expectedWorld && session.netId === expectedNetId && this.sessions.has(session);
@@ -450,7 +459,7 @@ export class ServerContext {
         p.peer.sendPacket(0, buildSetClothingPacket(session, this.itemsDb, false), true);
         for (const rp of joinerRifts) p.peer.sendPacket(0, rp, true);
         session.peer.sendPacket(0, buildSetClothingPacket(p, this.itemsDb, false), true);
-        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(p.account) >>> 0 }], p.netId), true);
+        session.peer.sendPacket(0, makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(p.account, !!p.invis) >>> 0 }], p.netId), true);
         for (const rp of this.buildRiftPackets(p)) session.peer.sendPacket(0, rp, true);
       }
     };
@@ -459,7 +468,7 @@ export class ServerContext {
       // The local inventory packet clears equipped bits; immediately restore.
       this.sendInventory(session, true);
       this.sendCharacterState(session);
-      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account) >>> 0 }], expectedNetId);
+      const refreshPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account, !!session.invis) >>> 0 }], expectedNetId);
       for (const p of expectedWorld.peers) p.peer.sendPacket(0, refreshPkt, true);
       synchronizeRemoteOutfits();
     }, 180);
@@ -568,10 +577,10 @@ export class ServerContext {
     logCctvEvent(world, session, "entered");
     // Play the entry door sound at the joiner's avatar for everyone (incl.
     // self). A short delay lets the client finish OnSpawn so netId resolves.
-    broadcastPositionedSfx(world, session.netId, entrySfx, 250);
+    if (!session.invis) broadcastPositionedSfx(world, session.netId, entrySfx, 250);
     for (const peer of world.peers) recordProgress(this, peer, undefined, 0);
 
-    if (announceEntry) {
+    if (announceEntry && !isHiddenStaff(session) && !session.invis) {
       const owner = world.ownerUserId ? this.findAccountByUserId(world.ownerUserId) : undefined;
       const worldMods: string[] = [];
       let hasJam226 = false;
@@ -718,6 +727,7 @@ export class ServerContext {
     session.world = null;
     broadcastOnRemove(world, session);
     for (const other of world.peers) {
+      if (!canSeePlayer(other, session)) continue;
       OnConsoleMessage(
         other,
         `\`5< \`w${session.account.name}\`5 left, \`w${world.peers.size}\`5 others here >\`\``

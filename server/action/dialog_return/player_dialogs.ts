@@ -4,7 +4,8 @@ import { broadcastBillboardChange, broadcastNameChanged, broadcastPositionedSfx,
 import { isUntradeable } from "../../database/items";
 import { worldModerate, canWorldAct } from '../world-moderation';
 import { addTradeItem, confirmTrade } from '../trade';
-import { friendRequest, friendDialogReturn } from '../friends';
+import { addFriendRequest, friendDialogReturn, ignorePlayer } from '../friends';
+import { handleTileEditDialogReturn, showAcceptAccessDialog } from './tile_edit';
 import { showAchievements } from "../../progression/commands";
 import { SERVER_CONFIG, SERVER_NAME } from "../../config/branding";
 import { hasPermission, canModerate } from "../../ranks";
@@ -129,7 +130,7 @@ export function handlePlayerDialogsReturn(
   kv: Record<string, string>
 ): boolean {
   const btn = kv.buttonClicked || "";
-  if (friendDialogReturn(ctx, session, dlgName, btn)) return true;
+  if (friendDialogReturn(ctx, session, dlgName, btn, kv)) return true;
 
   if (dlgName === "gazette") {
     if (btn === "gazette_get_growid") {
@@ -270,11 +271,15 @@ export function handlePlayerDialogsReturn(
     const targetNetId = Number.parseInt(kv.netID || kv.netid || '',10);
     const target = [...(session.world?.peers || [])].find(p=>p.netId===targetNetId);
     if (target && target !== session) {
-      if (btn==='friend_add') friendRequest(ctx,session,target.netId);
+      if (btn==='friend_add') addFriendRequest(ctx,session,target);
+      else if (btn==='mute_player'||btn==='unmute_player') friendDialogReturn(ctx,session,'friends_edit','mute',{friendID:String(target.account.userId)});
+      else if (btn==='trade_block_player') friendDialogReturn(ctx,session,'friends_edit','trade_block',{friendID:String(target.account.userId)});
+      else if (btn==='ignore_player') ignorePlayer(ctx,session,target);
       else if (btn==='trade') handleTradeStart(ctx,session,target.netId);
       else if (btn==='kick'||btn==='pull'||btn==='worldban') worldModerate(ctx,session,target,btn);
       return true;
     }
+    if (btn==='acceptlock') { showAcceptAccessDialog(ctx, session); return true; }
     // Self moderation: a world owner may pull/kick themselves (AstroVerse parity).
     if ((btn==='kick'||btn==='pull') && session.world && canWorldAct(session,session,session.world)) {
       worldModerate(ctx,session,session,btn);

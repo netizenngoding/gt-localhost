@@ -69,6 +69,16 @@ export interface PlayerAccount {
   recentWorlds: string[];
   billboard: BillboardState;
   friendIds?: number[];
+  /** Per-friend flags, keyed by userId: AstroVerse keeps mute / trade-block / last seen. */
+  friendMeta?: Record<string, { mute?: boolean; blockTrade?: boolean; lastSeen?: number }>;
+  /** Incoming friend requests (userId) waiting for this account to accept. */
+  pendingFriendIds?: number[];
+  /** Ignore list (userId). */
+  ignoredIds?: number[];
+  /** Friend Options: share your current world with friends. */
+  showLocation?: boolean;
+  /** Friend Options: show friend online/offline notifications. */
+  showFriendNotifications?: boolean;
   lastDailyReward?: number;
   personalNote?: string;
   borderColor?: string;
@@ -113,6 +123,12 @@ export interface PlayerSession {
   pullGeneration?: number;
   pullUntil?: number;
   pullImmuneUntil?: number;
+  /** Access offers waiting for THIS player to accept: giver netId + lock tile. */
+  accessOffers?: Array<{ giverNetId: number; x: number; y: number }>;
+  /** Friend ids selected in the Edit Friends dialog. */
+  pendingFriendSelection?: number[];
+  /** Last friend opened in the friend info dialog. */
+  lastFriendEdit?: number;
   lastFindItemIds?: number[];
   findSelectedItemIds?: number[];
   account: PlayerAccount;
@@ -135,6 +151,8 @@ export interface PlayerSession {
     fly: boolean;
   };
   pendingEditTile: { x: number; y: number } | null;
+  /** Target of an open /grole dialog. */
+  pendingRoleTarget?: number;
   pendingTradeOffer: PendingTradeOffer | null;
   lastItemSearchQuery: string;
   fishing?: { baitId: number; tx: number; ty: number; startedAt: number; biteAt: number } | null;
@@ -147,6 +165,8 @@ export interface PlayerSession {
   lastChoosenItem?: number;
   lastChoosenNr?: number;
   invis?: boolean;
+  /** Guards queued /invis timelines against world/relogin races. */
+  invisEpoch?: number;
 }
 
 export type TenClothingSlots = [
@@ -194,8 +214,8 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     gems: typeof raw.gems === "number" ? raw.gems : 0,
     skinColor: typeof raw.skinColor === "number" ? raw.skinColor >>> 0 : DEFAULT_SKIN_COLOR,
     flag: typeof raw.flag === "string" && raw.flag.length >= 2 ? raw.flag : "id",
-    moderator: false,
-    rank: "player",
+    moderator: typeof raw.rank === "string" && raw.rank !== "player",
+    rank: typeof raw.rank === "string" && /^[a-z0-9_]{1,24}$/.test(raw.rank) ? raw.rank : "player",
     banned: !!raw.banned,
     backpackSize: typeof raw.backpackSize === "number" && Number.isSafeInteger(raw.backpackSize) && raw.backpackSize >= 16 ? Math.min(396, raw.backpackSize) : 16,
     inventory: inv,
@@ -206,6 +226,11 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
       : [],
     recentWorlds: Array.isArray(raw.recentWorlds) ? raw.recentWorlds.slice(0, 8) : ["START"],
     friendIds: Array.isArray(raw.friendIds) ? [...new Set(raw.friendIds.filter(id => Number.isSafeInteger(id) && id > 0 && id !== raw.userId))].slice(0,200) : [],
+    friendMeta: raw.friendMeta && typeof raw.friendMeta === 'object' ? Object.fromEntries(Object.entries(raw.friendMeta as Record<string, unknown>).filter(([,v]) => v && typeof v === 'object').map(([k,v]) => [String(k), { mute: !!(v as Record<string, unknown>).mute, blockTrade: !!(v as Record<string, unknown>).blockTrade, lastSeen: Number((v as Record<string, unknown>).lastSeen) || 0 }])) : {},
+    pendingFriendIds: Array.isArray(raw.pendingFriendIds) ? [...new Set(raw.pendingFriendIds.filter(id => Number.isSafeInteger(id) && id > 0))].slice(0,200) : [],
+    ignoredIds: Array.isArray(raw.ignoredIds) ? [...new Set(raw.ignoredIds.filter(id => Number.isSafeInteger(id) && id > 0))].slice(0,200) : [],
+    showLocation: raw.showLocation === undefined ? true : !!raw.showLocation,
+    showFriendNotifications: raw.showFriendNotifications === undefined ? true : !!raw.showFriendNotifications,
     personalNote: typeof raw.personalNote==='string' ? raw.personalNote.replace(/[|\r\n\0]/g,' ').slice(0,128) : '',
     borderColor: typeof raw.borderColor==='string' && /^[0-9]{1,3}(,[0-9]{1,3}){3}$/.test(raw.borderColor) ? raw.borderColor : (raw.borderColor === 'Default' ? 'Default' : ''),
     bgColor: typeof raw.bgColor==='string' && /^[0-9]{1,3}(,[0-9]{1,3}){3}$/.test(raw.bgColor) ? raw.bgColor : '',
@@ -305,6 +330,9 @@ export function getClothingVector(account: PlayerAccount, itemsDb: ItemDatabase)
   return slots;
 }
 
+/** GT client invisibility mask: no hands (3) + no body (5) + extra hide (2). */
+export const INVIS_STATE_BITS = (1 << 2) | (1 << 3) | (1 << 5);
+
 export function buildCharacterStateForSession(
   session: PlayerSession,
   itemsDb: ItemDatabase
@@ -374,6 +402,9 @@ export function buildCharacterStateForSession(
     if (session.world?.tiles.some((t) => t.fg === 4992 && (t.flags & 0x0040) !== 0)) {
       gravity = Math.min(gravity, 400.0);
     }
+    // GTPS3/GT client invisibility: no hands (bit 3) and no body (bit 5), so
+    // the avatar renders as a pair of floating eyes exactly like GT.
+    if (session.invis) stateFlags |= INVIS_STATE_BITS;
     if (c.noclip) stateFlags |= 1 << 0;
     if (c.speed) moveSpeed = 420.0;
     if (c.fly) {

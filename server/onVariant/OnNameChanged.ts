@@ -15,8 +15,14 @@ export function broadcastNameChanged(
   maybeSession?: PlayerSession
 ): void {
   const session = maybeSession ?? (sessionOrWorld as PlayerSession);
-  const pkt = makeVariantPacket(["OnNameChanged", displayName(session)], session.netId);
-  for (const p of liveSessions) p.peer.sendPacket(0, pkt, true);
+  const name = displayName(session);
+  const shown = makeVariantPacket(["OnNameChanged", name], session.netId);
+  // While `/invis` is on, the name plate stays blank for everybody else (the
+  // state mask only hides the body). The owner of the account keeps their name.
+  const blank = makeVariantPacket(["OnNameChanged", ""], session.netId);
+  for (const p of liveSessions) {
+    p.peer.sendPacket(0, session.invis && p !== session ? blank : shown, true);
+  }
 }
 
 /** Re-broadcast every member's name of a world after access/ownership changed. */

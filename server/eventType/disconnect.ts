@@ -10,7 +10,6 @@ export function onPeerDisconnect(ctx: ServerContext, peer: ENetServerPeer): void
   ctx.leaveCurrentWorld(session, false);
   ctx.sessions.delete(session);
   liveSessions.delete(session);
-  if (session.account.isGuest) { session.account.rank = "player"; session.account.moderator = false; }
   // Immediately persist player & world state on disconnect so reconnects NEVER lose equipped items or drops!
   ctx.savePersistentState();
 }

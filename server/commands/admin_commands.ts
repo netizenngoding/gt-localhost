@@ -16,37 +16,6 @@ export function handleAdminCommand(
   parts: string[],
   argStr: string
 ): boolean {
-  // Device IDs are client-controlled; guest ranks are online-session-only.
-  if (cmd === "guestrank") {
-    if (!hasPermission(session.account, "debug") || session.account.isGuest) { OnConsoleMessage(session, "Registered developer permission required."); return true; }
-    const target = ctx.findOnlineSessionByName(parts[1] || "");
-    const rank = parts[2];
-    if (!target || !target.account.isGuest || !["player", "moderator", "developer"].includes(rank)) {
-      OnConsoleMessage(session, "Usage: /guestrank <online guest> <player|moderator|developer>"); return true;
-    }
-    target.account.rank = rank as "player" | "moderator" | "developer";
-    target.account.moderator = rank !== "player";
-    ctx.sendCharacterState(target); broadcastNameChanged(target);
-    OnConsoleMessage(target, `Temporary rank: ${rank}. It expires on disconnect.`);
-    OnConsoleMessage(session, `Guest ${target.account.name} temporarily set to ${rank}.`);
-    return true;
-  }
-
-  if (["mstate", "smstate"].includes(cmd) && !hasPermission(session.account, "debug")) {
-    OnConsoleMessage(session, "Developer permission required."); return true;
-  }
-  if (cmd === "mstate") {
-    session.mstate = Math.max(0, Math.min(255, parseInt(argStr || "0", 10) || 0));
-    OnConsoleMessage(session, `\`2mstate set to \`w${session.mstate}\`\``);
-    return true;
-  }
-
-  if (cmd === "smstate") {
-    session.smstate = Math.max(0, Math.min(255, parseInt(argStr || "0", 10) || 0));
-    OnConsoleMessage(session, `\`2smstate set to \`w${session.smstate}\`\``);
-    return true;
-  }
-
   if (["kick","pull","ban","worldban","unban","worldunban","uba"].includes(cmd)) {
     const world=session.world;if(!world){OnConsoleMessage(session,"Enter a world first.");return true;}
     if (["unban","worldunban","uba"].includes(cmd)) {

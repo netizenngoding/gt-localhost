@@ -1,4 +1,5 @@
 import { hasRaymanFist, hasEnhancedDigging } from "../playmods/equipment";
+import { hasPermission } from "../ranks";
 import { activeMods } from "../playmods/model";
 import { infectByPunch, useConsumable } from "../playmods/service";
 import { recordProgress } from "../progression/service";
@@ -29,6 +30,7 @@ import {
 } from "../proton/packet";
 import type { ServerContext } from "../database/context";
 import {
+  isIllegalItem,
   isUntradeable,
   WEATHER_BY_ITEM_ID,
   ITEM_FLAG_AUTO_PICKUP,
@@ -429,7 +431,7 @@ export function handleTileChangeRequest(
       if (
         tile.extra.ownerUserId === uid ||
         tile.extra.adminIds.includes(uid) ||
-        session.account.rank === "developer"
+        hasPermission(session.account, "debug")
       ) {
         openLockSettingsDialog(ctx, session, tx, ty);
         return;
@@ -703,7 +705,7 @@ export function handleTileChangeRequest(
       }
     }
     infectByPunch(ctx,session,tx,ty);
-    if (tile.fg === 6 && session.account.rank !== "developer") {
+    if (tile.fg === 6 && !hasPermission(session.account, "debug")) {
       // Punch requests are not activation requests. The client sends type 7
       // when entering the door; remote punches must never exit the world.
       OnTalkBubble(session, session.netId, "(stand over and punch to use)", 0, true);
@@ -718,12 +720,12 @@ export function handleTileChangeRequest(
         return false;
       }
       const bDef = ctx.itemsDb.get(bId);
-      if (!bDef || ((bDef.isBedrock || bId === 6 || bId === 8) && session.account.rank !== "developer")) {
+      if (!bDef || ((bDef.isBedrock || bId === 6 || bId === 8) && !hasPermission(session.account, "debug"))) {
         OnPlayPositioned(session, "audio/punch_locked.wav");
         OnTalkBubble(session, session.netId, "It's too strong to break.", 0, true);
         return false;
       }
-      if (session.account.rank !== "developer" && !canModifyWorldTile(session, world, bt, bx, by, "break")) {
+      if (!hasPermission(session.account, "debug") && !canModifyWorldTile(session, world, bt, bx, by, "break")) {
         const allowBuildLockPunch =
           canModifyWorldTile(session, world, bt, bx, by, "place") ||
           (bt.fg === 4994 &&
@@ -989,6 +991,14 @@ export function handleTileChangeRequest(
   if (tile.fg && useItemOnGrinder(ctx, session, tile, tx, ty, itemId)) return;
   if (tile.fg && useCrystalOnCrystal(ctx, session, world, tile, tx, ty, itemId)) return;
 
+  // Illegal blocks stay out of reach for ranks without developer tools.
+  // AstroVerse/GT answer a refused placement with `audio/cant_place_tile.wav`
+  // and no dialog text at all, so the tile is simply never written.
+  if (isIllegalItem(def) && !hasPermission(session.account, "debug")) {
+    OnPlayPositioned(session, "audio/cant_place_tile.wav");
+    return;
+  }
+
   if (!canModifyWorldTile(session, world, tile, tx, ty, "place")) {
     OnPlayPositioned(session, "audio/punch_locked.wav");
     OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "place", session.account.userId), 0, true);
@@ -1157,7 +1167,7 @@ export function handleTileChangeRequest(
     }
 
     // GTPS3 World.h:23264 & 23379: Vending & Sucker require World Lock; Cameras max 8 per world
-    if (world.ownerUserId === 0 && session.account.rank !== "developer" && (itemId === 2978 || itemId === 9268 || itemId === 5638 || itemId === 6946 || itemId === 6948 || itemId === 6950 || itemId === 6952)) {
+    if (world.ownerUserId === 0 && !hasPermission(session.account, "debug") && (itemId === 2978 || itemId === 9268 || itemId === 5638 || itemId === 6946 || itemId === 6948 || itemId === 6950 || itemId === 6952)) {
       OnTalkBubble(session, session.netId, "This item can only be used in World-Locked worlds!", 0, true);
       return;
     }

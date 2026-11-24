@@ -12,6 +12,9 @@ export interface ModDefinition {
  xpMultiplierChance?: number; xpMultiplier?: number; consumableXpMultiplier?: number;
  punchDamage?: boolean; luckyBreaks?: boolean; doubleGemsChance?: number;
 }
+/** Staff toggles (`/ghost`, `/invis`) live for ten years instead of expiring. */
+export const PERMANENT_MOD_SECONDS = 10 * 365 * 24 * 3600;
+
 export const MODS: readonly ModDefinition[] = [
  // GTPS3 ae49cffa World.h info_about_playmods 25/28.
  {id:'gtps3-antidote',item:782,title:'Antidote!',seconds:3600,flags:0,
@@ -420,7 +423,15 @@ export const MODS: readonly ModDefinition[] = [
  },
  // GTPS3 World.h:83 playmod 13 (Megaphone!): broadcast cooldown, 300s in practice.
  {id:'gtps3-megaphone',item:2480,title:'Megaphone!',seconds:600,flags:0,
-  onAdd:'Broadcasting to ALL!',onRemove:'You can broadcast once again.',icon:2480,sound:'',action:'',effect:0,text:''}
+  onAdd:'Broadcasting to ALL!',onRemove:'You can broadcast once again.',icon:2480,sound:'',action:'',effect:0,text:''},
+ // GTPS3 update_clothes / form_state: staff `/ghost` is the "Ghost in the
+ // Shell" playmod (state bit 0, icon 290) and forces skin -2450.
+ {id:'ghost-in-the-shell',item:290,title:'Ghost in the Shell',seconds:PERMANENT_MOD_SECONDS,flags:1,
+  onAdd:'Your atoms are suddenly aware of quantum tunneling.',onRemove:'Your body stops shimmering and returns to normal.',icon:290,sound:'',action:'',effect:0,text:'',skin:-2450},
+ // Staff `/invis`: shown as its own active playmod, body and hands stripped
+ // from the avatar (GT's eyes-only invisible look).
+ {id:'invisibility',item:290,title:'Invisible',seconds:PERMANENT_MOD_SECONDS,flags:0,
+  onAdd:'You are now ninja, invisible at all.',onRemove:'You are once again visible to mortals.',icon:290,sound:'',action:'',effect:0,text:''}
 ];
 export const SIMPLE_FOODS: readonly {item:number;text:string}[] = [
  // Player-consumption behaviour documented by the individual wiki pages.
@@ -581,7 +592,10 @@ export function activeMods(a: PlayerAccount, now=Date.now()) {
   const d=MODS.find(d=>d.id===m.id);return d?[d]:[];
  });
 }
-export function effectiveSkin(a: PlayerAccount): number {
+export function effectiveSkin(a: PlayerAccount, ignoreSkinOverrides = false): number {
  // GTPS3 update_clothes chooses the FIRST active skin override, not latest.
+ // While /invis is on the avatar is stripped down to eyes, so a skin override
+ // (Ghost in the Shell = -2450) would only paint the leftover head.
+ if (ignoreSkinOverrides) return a.skinColor;
  return activeMods(a).find(d=>d.skin!==undefined)?.skin ?? a.skinColor;
 }

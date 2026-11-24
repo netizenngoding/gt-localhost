@@ -1,4 +1,5 @@
 import { SERVER_NAME } from "../config/branding";
+import { hasPermission } from "../ranks";
 import {
   buildTankPacket,
   makeItemDropPacket,
@@ -421,8 +422,8 @@ export function canModifyTile(
   mode: "place" | "break" | "wrench" = "place"
 ): boolean {
   const uid = session.account.userId;
-  // Developer building access matches the existing developer punching bypass.
-  if (session.account.rank === "developer") return true;
+  // Staff build access: moderators and above bypass world permissions.
+  if (hasPermission(session.account, "moderate")) return true;
 
   // Check if this specific tile is a lock itself (only owner can break; owner/admins can wrench)
   if (tile.extra?.kind === "lock") {
@@ -477,7 +478,7 @@ export function canManageVending(
   tile: WorldTile
 ): boolean {
   const uid = session.account.userId;
-  if (world.ownerUserId === uid || session.account.rank === "developer") return true;
+  if (world.ownerUserId === uid || hasPermission(session.account, "debug")) return true;
   const isAreaLocked = (tile.flags & TILE_FLAG_LOCKED) !== 0 && tile.parentIndex > 0;
   if (world.allowAdminVending && !isAreaLocked) {
     const wl = getWorldLockTile(world);

@@ -11,7 +11,7 @@ export function chatPortrait(subject: PlayerSession, items: ItemDatabase): ChatP
   // the portrait hair with their own Hair Dye.
   return {
     clothes: [...getClothingVector(subject.account, items)],
-    skin: effectiveSkin(subject.account) >>> 0,
+    skin: effectiveSkin(subject.account, !!subject.invis) >>> 0,
     hairColor: (subject.account.hairColor ?? 0) >>> 0,
   };
 }

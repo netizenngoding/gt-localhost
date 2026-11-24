@@ -1,4 +1,5 @@
 import { effectiveSkin } from "../playmods/model";
+import { canSeePlayer } from "../ranks/visibility";
 import { makeVariantPacket } from "../proton/packet";
 import type { ItemDatabase } from "../database/items";
 import { getClothingVector, type PlayerSession } from "../database/peer";
@@ -17,7 +18,7 @@ export function buildSetClothingPacket(
   playSfx = false
 ): Buffer {
   const c = getClothingVector(subject.account, itemsDb);
-  const skinU32 = effectiveSkin(subject.account) >>> 0;
+  const skinU32 = effectiveSkin(subject.account, !!subject.invis) >>> 0;
   return makeVariantPacket(
     [
       "OnSetClothing",
@@ -47,7 +48,10 @@ export function broadcastSetClothing(
   playSfx = false
 ): void {
   const pkt = buildSetClothingPacket(subject, itemsDb, playSfx);
-  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+  for (const p of world.peers) {
+    if (!canSeePlayer(p, subject)) continue;
+    p.peer.sendPacket(0, pkt, true);
+  }
 }
 
 export function applySkinColorUpdate(
@@ -56,7 +60,7 @@ export function applySkinColorUpdate(
   maybePlaySfx = false
 ): void {
   const playSfx = typeof worldOrPlaySfx === "boolean" ? worldOrPlaySfx : maybePlaySfx;
-  const skinU32 = effectiveSkin(subject.account) >>> 0;
+  const skinU32 = effectiveSkin(subject.account, !!subject.invis) >>> 0;
   // OnChangeSkin (Func #4597) updates avatar +1572 without XOR-toggling invSlot->flags!
   const skinPkt = makeVariantPacket(["OnChangeSkin", { type: "u32", value: skinU32 }], subject.netId);
   if (subject.world) {

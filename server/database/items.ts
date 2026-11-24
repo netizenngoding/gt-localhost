@@ -640,6 +640,23 @@ export const ITEM_FLAG_FOREGROUND   = 0x2000;
 export const ITEM_FLAG_HOLIDAY      = 0x4000;
 export const ITEM_FLAG_UNTRADABLE   = 0x8000;
 
+/**
+ * Blocks that only developer ranks may ever place, pick up or hand out.
+ * AstroVerse keeps these item definitions out of normal reach (BaseServer.h
+ * marks 6/8/MAIN_DOOR as bedrock blocks) and real Growtopia refuses them
+ * with `audio/cant_place_tile.wav` and no text at all.
+ */
+const ILLEGAL_ITEM_IDS = new Set<number>([
+  6, // Main Door
+  8, // Bedrock
+  9570, // Minecraft Bedrock
+]);
+
+export function isIllegalItem(def?: ItemDef): boolean {
+  if (!def) return false;
+  return def.isBedrock || ILLEGAL_ITEM_IDS.has(def.id);
+}
+
 export function isUntradeable(def?: ItemDef): boolean {
   if (!def) return false;
   return (

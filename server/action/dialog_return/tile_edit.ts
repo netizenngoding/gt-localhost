@@ -1,4 +1,5 @@
 import { worldDestination } from "../../database/world-policy";
+import { hasPermission } from "../../ranks";
 import { makeSendLockPacket, makeTileUpdatePacket, TILE_FLAG_PUBLIC } from "../../proton/packet";
 import type { ServerContext } from "../../database/context";
 import type { PlayerSession } from "../../database/peer";
@@ -21,6 +22,7 @@ import {
 } from "../../onVariant";
 import { DialogBuilder } from "../../tools/create_dialog";
 import { stripGtColors } from "../../tools/string";
+import type { ItemDatabase } from "../../database/items";
 
 export const LOCK_CONVERT_CHAIN: number[] = [242, 1796, 7188, 11550];
 
@@ -238,7 +240,7 @@ export function openLockSettingsDialog(
 
   const lock = tile.extra;
   const name = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
-  const isOwnerOrDev = lock.ownerUserId === session.account.userId || session.account.rank === "developer";
+  const isOwnerOrDev = lock.ownerUserId === session.account.userId || hasPermission(session.account, "debug");
   const isAdmin = lock.adminIds.includes(session.account.userId);
   if (!isOwnerOrDev && !isAdmin) {
     session.pendingEditTile = null;
@@ -312,6 +314,155 @@ export function openLockSettingsDialog(
   // Shatter & Lock Upgrade UI intentionally omitted per design.
   const dlg = dlgBuilder.endDialog("lock_edit", "Cancel", "OK");
   OnDialogRequest(session, dlg);
+}
+
+export function offerLockAccess(
+  ctx: ServerContext,
+  giver: PlayerSession,
+  target: PlayerSession,
+  tile: WorldInstance["tiles"][number],
+  lock: { ownerUserId: number; adminIds: number[] },
+  x: number,
+  y: number
+): void {
+  // AstroVerse WorldInfo.h lock `playerNetID` handling: never grant straight away.
+  const lockName = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
+  if (target === giver) {
+    OnTalkBubble(giver, giver.netId, "I already have access!", 0, true);
+    return;
+  }
+  if (lock.adminIds.length >= 26) {
+    OnTalkBubble(giver, giver.netId, "Lock has reached access limit!", 0, true);
+    return;
+  }
+  if (lock.adminIds.includes(target.account.userId) || lock.ownerUserId === target.account.userId) {
+    OnTalkBubble(giver, giver.netId, `${target.account.name} already has access to the lock.`, 0, true);
+    return;
+  }
+  target.accessOffers ??= [];
+  if (target.accessOffers.some((o) => o.giverNetId === giver.netId && o.x === x && o.y === y)) return;
+  target.accessOffers.push({ giverNetId: giver.netId, x, y });
+  console.log(`[access] offer ${giver.account.name}->${target.account.name} lock=${tile.fg}@${x},${y} admins=${lock.adminIds.length}`);
+  OnTalkBubble(giver, giver.netId, `Offered ${target.account.name} access to lock.`, 0, true);
+  OnPlayPositioned(target, "audio/secret.wav");
+  OnConsoleMessage(
+    target,
+    `${giver.account.name} wants to add you to a ${lockName}. Wrench yourself to accept.`
+  );
+}
+
+export function openAcceptAccessDialog(
+  ctx: ServerContext,
+  session: PlayerSession,
+  offer: { giverNetId: number; x: number; y: number }
+): boolean {
+  const world = session.world;
+  if (!world) return true;
+  const tile = world.tiles[offer.y * world.width + offer.x];
+  if (!tile || tile.extra?.kind !== "lock") return true;
+  const lockName = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
+  OnDialogRequest(
+    session,
+    [
+      "set_default_color|`o",
+      "add_label_with_icon|small|Accept Access To World|left|242|",
+      "add_smalltext|When you have access to a world, you are responsible for anything the world's owners or other admins do.|left|",
+      "add_smalltext|Don't accept access to a world unless it is from people you trust.|left|",
+      "add_smalltext|You can remove your access later by either wrenching the lock, or typing `2/unaccess`` to remove yourself from all locks in the world.|left|",
+      "add_spacer|small|",
+      `add_textbox|Are you sure you want to be added to this ${lockName}?|left|`,
+      "end_dialog|acceptaccess|No|Yes|",
+    ].join("\n")
+  );
+  return true;
+}
+
+/** True when this session has a pending access offer it can accept right now. */
+export function pendingAccessOffer(
+  ctx: ServerContext,
+  session: PlayerSession
+): { giverNetId: number; x: number; y: number } | undefined {
+  const world = session.world;
+  if (!world || !session.accessOffers?.length) return undefined;
+  // Keep offers until they are accepted: only drop ones whose lock vanished.
+  session.accessOffers = session.accessOffers.filter((offer) => {
+    const tile = world.tiles[offer.y * world.width + offer.x];
+    return !!tile && tile.extra?.kind === "lock";
+  });
+  return session.accessOffers[0];
+}
+
+export function showAcceptAccessDialog(ctx: ServerContext, session: PlayerSession): boolean {
+  const offer = pendingAccessOffer(ctx, session);
+  console.log(`[access] acceptclick ${session.account.name} offers=${JSON.stringify(session.accessOffers)} picked=${JSON.stringify(offer)}`);
+  if (!offer) { OnTalkBubble(session, session.netId, "The lock owner has left!", 0, true); return true; }
+  return openAcceptAccessDialog(ctx, session, offer);
+}
+
+/** Grants the newest pending lock-access offer. Returns false when it cannot. */
+export function grantPendingAccess(ctx: ServerContext, session: PlayerSession): boolean {
+  const world = session.world;
+  if (!world) return false;
+  const offers = session.accessOffers || [];
+  if (!offers.length) {
+    OnTalkBubble(session, session.netId, "The lock owner has left!", 0, true);
+    return false;
+  }
+  const offer = offers[offers.length - 1];
+  session.accessOffers = offers.filter((o) => o !== offer);
+  const tile = world.tiles[offer.y * world.width + offer.x];
+  if (!tile || tile.extra?.kind !== "lock") return false;
+  const lock = tile.extra;
+  const giver = [...world.peers].find((p) => p.netId === offer.giverNetId);
+  const giverStillControls =
+    !!giver && (lock.ownerUserId === giver.account.userId || lock.adminIds.includes(giver.account.userId));
+  if (!giver || !giverStillControls) {
+    OnTalkBubble(session, session.netId, "The lock owner has left!", 0, true);
+    return false;
+  }
+  if (lock.adminIds.length >= 26) {
+    OnTalkBubble(session, session.netId, "Lock has reached access limit!", 0, true);
+    return false;
+  }
+  if (lock.adminIds.includes(session.account.userId)) {
+    OnTalkBubble(session, session.netId, "I already have access!", 0, true);
+    return false;
+  }
+  lock.adminIds.push(session.account.userId);
+  console.log(
+    `[access] granted ${session.account.name} uid=${session.account.userId} tile=${tile.fg}@${offer.x},${offer.y} admins=${JSON.stringify(lock.adminIds)}`
+  );
+  const lockName = stripGtColors(ctx.itemsDb.get(tile.fg)?.name || "Lock");
+  for (const p of world.peers) {
+    OnConsoleMessage(p, `${session.account.name} was given access to a ${lockName}.`);
+  }
+  OnPlayPositioned(session, "audio/secret.wav");
+  ctx.dirty = true;
+  ctx.savePersistentState();
+  refreshWorldNames(world);
+  const upd = makeTileUpdatePacket(offer.x, offer.y, tile, Date.now());
+  for (const p of world.peers) p.peer.sendPacket(0, upd, true);
+  return true;
+}
+
+/** AstroVerse acceptaccess dialog: Yes grants, anything else cancels. */
+export function handleAcceptAccessDialog(
+  ctx: ServerContext,
+  session: PlayerSession,
+  kv: Record<string, string>
+): boolean {
+  const btn = (kv.buttonClicked || "").trim();
+  console.log(`[access] acceptanswer ${session.account.name} btn=${btn} offers=${(session.accessOffers || []).length}`);
+  if (btn === "accept_yes" || btn === "Yes") {
+    grantPendingAccess(ctx, session);
+    return true;
+  }
+  if (btn === "accept_no" || btn === "No" || btn === "Cancel") {
+    session.accessOffers = [];
+    return true;
+  }
+  // Anything else (closing with the X) keeps the offer so it can be accepted later.
+  return true;
 }
 
 export function handleTileEditDialogReturn(
@@ -478,7 +629,7 @@ export function handleTileEditDialogReturn(
     if (tile.extra?.kind !== "lock") return true;
     const lock = tile.extra;
     const btn = kv.buttonClicked || "";
-    const isOwnerOrDev = lock.ownerUserId === session.account.userId || session.account.rank === "developer";
+    const isOwnerOrDev = lock.ownerUserId === session.account.userId || hasPermission(session.account, "debug");
 
     // Self-removal from admin list ("Remove My Access")
     if (btn === "removeaccess") {
@@ -500,7 +651,7 @@ export function handleTileEditDialogReturn(
     if (!isOwnerOrDev) return true;
 
     if (dlgName === "sessionlength_dialog") {
-      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer")) return true;
+      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && !hasPermission(session.account, "debug"))) return true;
       const mins = Math.max(0, Math.min(180, Number.parseInt(kv.session_minutes || "0", 10) || 0));
       world.worldTimerEndMs = mins > 0 ? Date.now() + mins * 60_000 : 0;
       ctx.dirty = true;
@@ -509,7 +660,7 @@ export function handleTileEditDialogReturn(
     }
 
     if (dlgName === "changecat") {
-      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && session.account.rank !== "developer")) return true;
+      if (tile.extra?.kind !== "lock" || (tile.extra.ownerUserId !== session.account.userId && !hasPermission(session.account, "debug"))) return true;
       const cats = ["None", "Trade", "Social", "Parkour", "Farm", "Shop", "Game", "Art", "Story", "Music", "Storage"];
       const picked = cats.find((c) => btn === `cat_${c}` || kv.category === c);
       if (picked) {
@@ -616,9 +767,7 @@ export function handleTileEditDialogReturn(
       }
       const netId = Number(kv.playerNetID);
       const target = [...world.peers].find((p) => p.netId === netId);
-      if (target && target.account.userId !== lock.ownerUserId && !lock.adminIds.includes(target.account.userId)) {
-        lock.adminIds.push(target.account.userId);
-      }
+      if (target) offerLockAccess(ctx, session, target, tile, lock, x, y);
       if (btn === "recalcLock" && (tile.fg === 202 || tile.fg === 204 || tile.fg === 206 || tile.fg === 4994)) {
         const lockedIndices = applyAreaLock(world, x, y);
         const lockPkt = makeSendLockPacket(lock.ownerUserId, tile.fg, x, y, lockedIndices);

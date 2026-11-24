@@ -11,6 +11,7 @@ import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { OnConsoleMessage, OnDialogRequest } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
+import { pendingAccessOffer } from "./dialog_return/tile_edit";
 
 export function handleWrenchPlayer(
   ctx: ServerContext,
@@ -34,13 +35,22 @@ export function handleWrenchPlayer(
     const acct=session.account,p=progression(acct);
     const dlg=new DialogBuilder().setDefaultColor("`o")
       .addPlayerInfo(displayName(session),p.level,p.xp,xpRequired(p.level))
-      .addSpacer('small').addSpacer('small')
+      .addSpacer('small');
+    // Pending lock access offer, rendered exactly like AstroVerse:
+    // add_button|acceptlock|`2Accept Access on <item>``|noflags|0|0|
+    const accessOffer = pendingAccessOffer(ctx, session);
+    if (accessOffer) {
+      const offeredTile = world.tiles[accessOffer.y * world.width + accessOffer.x];
+      const offeredName = offeredTile ? (ctx.itemsDb.get(offeredTile.fg)?.name || 'Lock').replace(/`./g, '') : 'Lock';
+      dlg.raw('add_button|acceptlock|`2Accept Access on ' + offeredName + '``|noflags|0|0|');
+      dlg.addSpacer('small');
+    }
+    dlg.addSpacer('small')
       .customSpacing(5,10)
       .customButton('notebook_edit','gui_wrench_notebook')
       .customButton('billboard_edit','gui_wrench_edit_billboard')
       .customButton('my_worlds','gui_wrench_my_worlds')
       .customButton('alist','gui_wrench_achievements')
-      .raw(`add_custom_label|(${ACHIEVEMENTS.filter(a=>p.earned[a.id]).length}/${ACHIEVEMENTS.length})|target:alist;top:0.72;left:0.5;size:small|`)
       .customButton('emojis','gui_wrench_growmojis')
       .customBreak().addSpacer('small').customSpacing(0,0);
     const effects = getActiveEffectEntries(acct);
@@ -53,7 +63,6 @@ export function handleWrenchPlayer(
       .addTextbox(`You have \`w${acct.backpackSize}\`\` backpack slots.`)
       .addTextbox(`Current world: \`w${world.name}\`\` (${Math.floor(session.x/32)}, ${Math.floor(session.y/32)}) (${world.peers.size} person)`)
       .addTextbox(p.superSupporter?'You are a `5Super Supporter`` and have the `wRecycler`` and `w/warp``.':'You are not yet a `2Supporter`` or `5Super Supporter``.');
-    if(acct.isGuest)dlg.addButtonWithIcon('acct_growid','`2Get Free GrowID!``',206);
     OnDialogRequest(session,dlg.addQuickExit().endDialog('popup','','Continue'));
     return;
   }
@@ -63,7 +72,15 @@ export function handleWrenchPlayer(
     .addLabelWithIcon("big", `${displayName(target)} \`0(\`\`\`2${progression(target.account).level}\`\`\`0)\`\``,18)
     .addSpacer("small").addButton("trade", "`wTrade``");
   if(canWorldAct(session,target,world)) { dlg.addButton("kick","`4Kick``").addButton("pull","`5Pull``"); if(!hasPermission(target.account,"moderate"))dlg.addButton("worldban","`4World Ban``"); }
-  if(!(session.account.friendIds||[]).includes(target.account.userId)) dlg.addButton("friend_add","`wAdd as friend``");
+  const alreadyFriend = (session.account.friendIds||[]).includes(target.account.userId);
+  if(!alreadyFriend) dlg.addButton("friend_add","`wAdd as friend``");
+  if(alreadyFriend) {
+    const fm = session.account.friendMeta?.[String(target.account.userId)];
+    dlg.addButton("mute_player", fm?.mute ? "Unmute Player" : "Mute Player");
+    dlg.addButton("trade_block_player", fm?.blockTrade ? "Enable Trade" : "Disable Trade");
+  } else {
+    dlg.addButton("ignore_player", "Ignore Player");
+  }
   dlg.addQuickExit();OnDialogRequest(session,dlg.endDialog("popup","","Continue"));
 }
 
@@ -80,7 +97,8 @@ export function getActiveEffectEntries(account: PlayerSession["account"]): Array
   for (const mod of activeMods(account)) {
     const expiresAt = account.playmods?.find(active => active.id === mod.id)?.expiresAt ?? Date.now();
     const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
-    addEffect(`${mod.title} (${remaining}s left)`, mod.icon);
+    const permanent = mod.id === "ghost-in-the-shell" || mod.id === "invisibility";
+    addEffect(permanent ? mod.title : `${mod.title} (${remaining}s left)`, mod.icon);
   }
 
   for (const slot of account.inventory) {

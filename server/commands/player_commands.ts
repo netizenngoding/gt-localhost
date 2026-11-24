@@ -2,10 +2,12 @@ import { requestTrade } from '../action/trade';
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
-import type { PlayerSession } from "../database/peer";
+import { buildCharacterStateForSession, type PlayerSession } from "../database/peer";
+import { makeSetCharacterStatePacket } from "../proton/packet";
 import {
   applySkinColorUpdate,
   broadcastIconState,
+  broadcastSetClothing,
   broadcastTextOverlay,
   OnConsoleMessage,
   OnDialogRequest,
@@ -18,6 +20,8 @@ import { rgbHexToGtSkinColor, sanitizeChatText, stripGtColors } from "../tools/s
 import { openItemFinderDialog } from "../action/dialog_return/find_item";
 import { openCheatsMenu, openBackpackMenu } from "../action/dialog_return/player_dialogs";
 import { progression } from "../progression/service";
+import { togglePermanentMod } from "../playmods/service";
+import { isHiddenStaff } from "../ranks/staff_hidden";
 import { showGrowIdApplyModal } from "../action/growid";
 
 const KIT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -145,14 +149,30 @@ export function handlePlayerCommand(
   }
 
   if (cmd === "ghost") {
-    session.cheats.noclip = !session.cheats.noclip;
-    ctx.sendCharacterState(session);
-    OnConsoleMessage(
-      session,
-      session.cheats.noclip
-        ? "You can now walk through blocks (`2Ghost ON``)!"
-        : "Ghost mode disabled (`4OFF``)."
+    // GTPS3 `/ghost` is the "Ghost in the Shell" playmod: state bit 0 plus the
+    // -2450 shimmer skin. It is not a noclip cheat.
+    const active = (session.account.playmods || []).some(
+      (m) => m.id === "ghost-in-the-shell" && m.expiresAt > Date.now()
     );
+    togglePermanentMod(ctx, session, "ghost-in-the-shell", !active);
+    ctx.dirty = true;
+    ctx.savePlayersNow();
+    applySkinColorUpdate(session, false);
+    ctx.sendCharacterState(session);
+    if (session.world) {
+      if (session.invis) {
+        // Invisible accounts must never receive a full outfit broadcast: that
+        // packet re-registers the body (purple ghost head included). Push the
+        // cleared state mask instead so the avatar stays hidden.
+        const statePkt = makeSetCharacterStatePacket(buildCharacterStateForSession(session, ctx.itemsDb));
+        for (const p of session.world.peers) {
+          if (p === session) continue;
+          p.peer.sendPacket(0, statePkt, true);
+        }
+      } else {
+        broadcastSetClothing(session.world, session, ctx.itemsDb, false);
+      }
+    }
     return true;
   }
 
@@ -185,8 +205,12 @@ export function handlePlayerCommand(
     const lower = username.toLowerCase();
     const online = [...ctx.sessions];
     // GTPS3: exact name first, then a prefix match that needs at least 5 letters.
-    let target = online.find((p) => p.account.name.toLowerCase() === lower);
-    if (!target && username.length >= 5) target = online.find((p) => p.account.name.toLowerCase().startsWith(lower));
+    // Hidden staff stay unreachable unless the sender is staff too.
+    const reachable = hasPermission(session.account, "moderate")
+      ? online
+      : online.filter((p) => !isHiddenStaff(p));
+    let target = reachable.find((p) => p.account.name.toLowerCase() === lower);
+    if (!target && username.length >= 5) target = reachable.find((p) => p.account.name.toLowerCase().startsWith(lower));
     if (!target) {
       OnConsoleMessage(
         session,
@@ -403,7 +427,7 @@ export function handlePlayerCommand(
     return true;
   }
 
-  if (cmd === "roles") {
+  if (cmd === "quests") {
     const p = progression(session.account);
     const placed = p.counters.blocks_placed || 0;
     const harvested = p.counters.trees_harvested || 0;

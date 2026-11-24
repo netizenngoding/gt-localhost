@@ -247,6 +247,40 @@ function expireSessionMods(ctx:ServerContext,s:PlayerSession,now:number):void {
  ctx.sendCharacterState(s);applySkinColorUpdate(s,false);
  if(expired.some(m=>MODS.find(d=>d.id===m.id && (d.flags & (1<<11))!==0)) && !isFrozen(s) && (!s.pullImmuneUntil || Date.now()>=s.pullImmuneUntil) && overlapsHazard(ctx,s))ctx.respawnPlayer(s,false);
 }
+/**
+ * Adds or removes a permanent staff mod (`/ghost`, `/invis`).
+ *
+ * This is the ordinary playmod path: the mod is stored on the account like any
+ * consumable buff, the console line uses the standard "mod added/removed"
+ * wording and the same `audio/dialog_confirm.wav` cue is played.
+ */
+export function togglePermanentMod(
+ ctx: ServerContext,
+ s: PlayerSession,
+ id: string,
+ on: boolean
+): void {
+ const now = Date.now();
+ const def = MODS.find((d) => d.id === id);
+ if (!def) return;
+ if (!s.account.playmods) s.account.playmods = [];
+ const wasActive = s.account.playmods.some((m) => m.id === id && m.expiresAt > now);
+ s.account.playmods = s.account.playmods.filter((m) => m.id !== id);
+ if (on) {
+  s.account.playmods.push({ id, expiresAt: now + def.seconds * 1000 });
+  if (!wasActive) {
+   OnConsoleMessage(s, def.onAdd + " (`$" + def.title + "`` mod added, `$permanent`` left)");
+   OnPlayPositioned(s, "audio/dialog_confirm.wav");
+  }
+ } else if (wasActive) {
+  OnConsoleMessage(s, def.onRemove + " (`$" + def.title + "`` mod removed)");
+  OnPlayPositioned(s, "audio/dialog_confirm.wav");
+ }
+ ctx.dirty = true;
+ ctx.sendCharacterState(s);
+ applySkinColorUpdate(s, false);
+}
+
 export function expireMods(ctx:ServerContext):void {
  const now=Date.now();
  for(const s of ctx.sessions){

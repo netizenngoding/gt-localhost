@@ -1,5 +1,7 @@
 import { recordProgress } from "../progression/service";
 import { logCctvEvent } from "../database/world";
+import { isIllegalItem } from "../database/items";
+import { hasPermission } from "../ranks";
 import { makeItemCollectPacket, makeItemModifyObjectPacket } from "../proton/packet";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
@@ -29,6 +31,11 @@ export function handleItemActivateObject(
   const obj = world.objects[idx];
 
   if (!forceDistance && Math.hypot(session.x - obj.x, session.y - obj.y) > 160) return;
+
+  // Illegal items never leave the ground for normal accounts: no collect
+  // packet, no `object_collect` sound, no console line. It simply is not
+  // collectable, exactly like the client's own locked-item handling.
+  if (isIllegalItem(ctx.itemsDb.get(obj.itemId)) && !hasPermission(session.account, "debug")) return;
 
   // 1. Gems pickup
   if (obj.itemId === GEM_ITEM_ID) {

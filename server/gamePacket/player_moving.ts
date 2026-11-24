@@ -1,4 +1,5 @@
 import {processMovementHazard,tickSessionHazardRegen} from "../action/hazards";
+import { INVIS_STATE_BITS } from "../database/peer";
 import type {ServerContext} from "../database/context";
 import { TANK_FLAG_FACING_LEFT, type TankPacket } from "../proton/packet";
 import type { PlayerSession } from "../database/peer";
@@ -79,10 +80,20 @@ export function handlePlayerMoving(
     }
   }
 
-  // Relay movement packet to all other players in the same world with netId stamped
+  // Relay movement packet to all other players in the same world with netId stamped.
+  // An invisible player still needs this: their avatar stays registered on the
+  // client (spawned with invis|1) so OnTalkBubble keeps tracking them, and the
+  // avatar itself never renders. Clothes/state/billboards stay filtered.
   if (world.peers.size > 1) {
     const relay = Buffer.from(rawData);
     relay.writeInt32LE(session.netId, 4 + 4);
+    // The client reads the avatar state mask from this packet, so an invisible
+    // player's own movement must keep the invis bits or the body pops back.
+    if (session.invis) {
+      const stateOff = 4 + 12;
+      const bits = relay.readUInt32LE(stateOff) | INVIS_STATE_BITS;
+      relay.writeUInt32LE(bits >>> 0, stateOff);
+    }
     for (const other of world.peers) {
       if (other !== session) {
         other.peer.sendPacket(0, relay, false);

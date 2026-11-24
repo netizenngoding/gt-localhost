@@ -1,25 +1,31 @@
-import { hasPermission, canModerate } from "../ranks";
+import { hasPermission, canModerate, displayName, rankLevel } from "../ranks";
+import { canSeePlayer } from "../ranks/visibility";
+import { toggleHiddenStaff } from "../ranks/staff_hidden";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { generateFreshWorld } from "../database/world";
-import { makeTextPacket, makeVariantPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
+import { buildCharacterStateForSession } from "../database/peer";
+import { togglePermanentMod } from "../playmods/service";
+import { effectiveSkin } from "../playmods/model";
+import { makeSetCharacterStatePacket, makeTextPacket, makeVariantPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
 import { expireMods } from "../playmods/service";
 import { isFrozen } from "../action/hazards";
 import { toggleWearableItem } from "../gamePacket/item_activate";
 import {
   OnConsoleMessage, OnTextOverlay, OnTalkBubble, OnDialogRequest, OnSetPos,
   broadcastConsoleMessage, broadcastNameChanged, broadcastSetPos, applySkinColorUpdate,
+  OnSpawn, buildSetClothingPacket, broadcastSetClothing,
 } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
 import { stripGtColors } from "../tools/string";
 
 // GTPS3 flags that have no persistent column here: m_h (/hide) and the
 // /kickall cooldown. Both are session-scoped, like pInfo() fields.
-const hidden = new WeakSet<PlayerSession>();
+/** Staff account notes: /note adds, /notes lists. Kept for the server lifetime. */
+const accountNotes = new Map<number, string[]>();
 const lastKickAll = new WeakMap<PlayerSession, number>();
 const resetConfirm = new WeakMap<PlayerSession, number>();
 const modTagOff = new WeakSet<PlayerSession>();
-export const isHiddenStaff = (s: PlayerSession): boolean => hidden.has(s);
 
 const UNKNOWN = "`4Unknown command.`` Enter `$/?`` for a list of valid commands.";
 const sfx = (s: PlayerSession, file: string) =>
@@ -66,23 +72,163 @@ export function handleGtps3Admin(ctx: ServerContext, session: PlayerSession, cmd
   const deny = (): boolean => { OnConsoleMessage(session, UNKNOWN); return true; };
 
   switch (cmd) {
-    case "invis": case "invis2": {
+    case "invis": {
       if (!mod) return deny();
       sfx(session, "audio/dialog_confirm.wav");
       session.invis = !session.invis;
-      OnConsoleMessage(session, session.invis ? "`oYou are now ninja, invisible at all." : "`oYou are once again visible to mortals.");
-      const pkt = makeVariantPacket(["OnInvis", { type: "i32", value: session.invis ? 1 : 0 }], session.netId);
-      for (const p of world ? world.peers : [session]) {
-        p.peer.sendPacket(0, pkt, true);
-        if (cmd === "invis2") sfx(p, "audio/already_used.wav");
-      }
+      const on = session.invis;
+      // Active-playmod entry, like GTPS3's ninja stealth listing.
+      togglePermanentMod(ctx, session, "invisibility", on);
+      const epoch = (session.invisEpoch = (session.invisEpoch || 0) + 1);
+      const targetNetId = session.netId;
+      const removePkt = makeVariantPacket(["OnRemove", `netID|${targetNetId}\npId|${session.account.userId}\n`]);
+      const invisFlag = makeVariantPacket(["OnInvis", { type: "i32", value: on ? 1 : 0 }], targetNetId);
+      const valid = (): boolean =>
+        session.invisEpoch === epoch && session.invis === on && session.netId === targetNetId && session.world === world;
+      const after = (delay: number, fn: () => void): void => {
+        const timer = setTimeout(() => {
+          if (valid()) fn();
+        }, delay);
+        if (typeof timer.unref === "function") timer.unref();
+      };
+      const others = world ? [...world.peers].filter((p) => p !== session) : [];
+      for (const p of others) p.peer.sendPacket(0, invisFlag, true);
+      for (const p of others) p.peer.sendPacket(0, removePkt, true);
+
+      // The avatar is registered again with `invis|1` so the netId survives and
+      // OnTalkBubble still renders, but the client only hides what the state
+      // mask tells it to: the mask and an empty outfit must be pushed to every
+      // viewer explicitly (sendCharacterState is filtered for invisible
+      // players, so it never reached them - that is why wings/tags reappeared).
+      const statePkt = makeSetCharacterStatePacket(buildCharacterStateForSession(session, ctx.itemsDb));
+      const blankClothing = makeVariantPacket(
+        [
+          "OnSetClothing",
+          { type: "vec3", x: 0, y: 0, z: 0 },
+          { type: "vec3", x: 0, y: 0, z: 0 },
+          { type: "vec3", x: 0, y: 0, z: 0 },
+          { type: "u32", value: 0 },
+          { type: "vec3", x: 0, y: 0, z: 0 },
+        ],
+        targetNetId
+      );
+      after(120, () => {
+        for (const p of others) {
+          if (!world || p.world !== world) continue;
+          OnSpawn(p, session, false);
+          if (on) {
+            // Invisible: strip the whole outfit and apply the invis state mask.
+            p.peer.sendPacket(0, blankClothing, true);
+            p.peer.sendPacket(0, statePkt, true);
+            // Blank the name plate as well: the state mask hides the body but
+            // the client keeps rendering the label.
+            p.peer.sendPacket(0, makeVariantPacket(["OnNameChanged", ""], targetNetId), true);
+          }
+        }
+        if (on) return;
+        // Becoming visible again: restore the full outfit with the joiner's
+        // proven retry window.
+        const outfit = (): void => {
+          for (const p of others) {
+            if (!world || p.world !== world || !world.peers.has(p)) continue;
+            p.peer.sendPacket(
+              0,
+              makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account, !!session.invis) >>> 0 }], targetNetId),
+              true
+            );
+            p.peer.sendPacket(0, buildSetClothingPacket(session, ctx.itemsDb, false), true);
+            p.peer.sendPacket(0, statePkt, true);
+            // Restore the name plate that invisibility blanked.
+            p.peer.sendPacket(0, makeVariantPacket(["OnNameChanged", displayName(session)], targetNetId), true);
+          }
+        };
+        for (const delay of [180, 1000, 3000]) after(delay, outfit);
+      });
       ctx.sendCharacterState(session);
+      // Own avatar: no ghost skin while invisible, otherwise the leftover head
+      // keeps the -2450 tint.
+      session.peer.sendPacket(0, buildSetClothingPacket(session, ctx.itemsDb, false), true);
+      session.peer.sendPacket(
+        0,
+        makeVariantPacket(["OnChangeSkin", { type: "u32", value: effectiveSkin(session.account, !!session.invis) >>> 0 }], session.netId),
+        true
+      );
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      return true;
+    }
+    case "getpos": {
+      if (!mod) return deny();
+      const px = Math.round(session.x);
+      const py = Math.round(session.y);
+      OnConsoleMessage(
+        session,
+        ">> Position: `w" + px + ", " + py + "`` in `$" + (world ? world.name : "?") +
+          "`` (tile " + Math.floor(session.x / 32) + ", " + Math.floor(session.y / 32) + ")."
+      );
+      return true;
+    }
+    case "note": {
+      if (!mod) return deny();
+      const bits = argStr.trim().split(/\s+/).filter(Boolean);
+      const who = bits.shift() || "";
+      const text = bits.join(" ").trim();
+      if (!who || text.length < 3) {
+        OnConsoleMessage(session, ">> Usage: /note <player name> <text>");
+        return true;
+      }
+      const target =
+        ctx.findOnlineSessionByName(who) ??
+        [...ctx.accounts.values()].find((a) => a.name.toLowerCase() === who.toLowerCase());
+      if (!target) {
+        OnConsoleMessage(session, ">> `$" + who + "`` was not found.``");
+        return true;
+      }
+      const account = "account" in target ? target.account : target;
+      const list = accountNotes.get(account.userId) || [];
+      list.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " by " + pname(session) + ": " + text);
+      accountNotes.set(account.userId, list.slice(-50));
+      OnConsoleMessage(session, ">> Note saved for `w" + account.name + "``.");
+      return true;
+    }
+    case "notes": {
+      if (!mod) return deny();
+      const who = argStr.trim();
+      if (!who) {
+        OnConsoleMessage(session, ">> Usage: /notes <player name>");
+        return true;
+      }
+      const target =
+        ctx.findOnlineSessionByName(who) ??
+        [...ctx.accounts.values()].find((a) => a.name.toLowerCase() === who.toLowerCase());
+      if (!target) {
+        OnConsoleMessage(session, ">> `$" + who + "`` was not found.``");
+        return true;
+      }
+      const account = "account" in target ? target.account : target;
+      const list = accountNotes.get(account.userId) || [];
+      const body = list.length
+        ? list.map((n) => "add_smalltext|`o" + n + "``|left|").join("\n")
+        : "add_smalltext|`oNo account notes yet.``|left|";
+      OnDialogRequest(
+        session,
+        [
+          "set_default_color|`o",
+          "add_label_with_icon|big|`w" + account.name + " - Notes``|left|6016|",
+          "add_spacer|small|",
+          body,
+          "add_spacer|small|",
+          "add_button||Close|noflags|0|0|",
+          "add_quick_exit|",
+          "end_dialog|staff_notes|||",
+        ].join("\n")
+      );
       return true;
     }
     case "hide": {
       if (!mod) return deny();
-      if (hidden.has(session)) hidden.delete(session); else hidden.add(session);
-      OnConsoleMessage(session, hidden.has(session)
+      const nowHidden = toggleHiddenStaff(session);
+      OnConsoleMessage(session, nowHidden
         ? "`o>> You hide yourself from everyone (You `4won't`` be visible in /mods, /msg etc.)``"
         : "`o>> You un-hide yourself from everyone (You `2will`` be visible in /mods, /msg etc.)``");
       return true;

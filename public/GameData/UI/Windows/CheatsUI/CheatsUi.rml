@@ -1,0 +1,82 @@
+<rml>
+  <head>
+    <title>DungeonStartUi</title>
+    <link type="text/template" href="../Base/BasePopup.rml" />
+    <link type="text/rcss" href="../Base/WindowTitle.rcss" />
+    <link type="text/rcss" href="CheatsUi.rcss" />
+  </head>
+  <body template="BasePopup" class="show-scrollbar wondow-content-full wondow-content-horizontal">
+    <div data-model="CheatsUiModel" id="cheatsui-popup" class="font-content">
+      <div>
+        <div id="window-title">
+          <div class="title-icon"/>
+          <div class="title-text font-title label">Cheats</div>
+        </div>
+
+        <div id="search-container" class="info-panel color_dreamsicle">
+          <div id="search-label">Search:</div>
+          <input class="input" type="text" maxlength="120" onkeyup="OnEvent(event, 'CheatsUi.HandleSearchInput')"/>
+        </div>
+
+        <p class="font-contentnormal color_brown" 
+           data-if="CheatsUiModel.IsCheatsList">Left-clicking any row on Windows will copy the cheat into the clipboard.</p>
+
+        <div data-if="!CheatsUiModel.IsCheatsList">
+          <div id="table-copy-button"
+               onclick="OnEvent(event, 'CheatsUi.CopyTable')"
+               class="img-button button-green-color">
+            <span class="label">Copy table to clipboard</span>
+          </div>
+          <div class="font-contentnormal color_brown">
+            This will copy the displayed table to your clipboard as-is (filtered/un-filtered). Works only on Windows.
+          </div>
+        </div>
+
+        <div data-if="CheatsUiModel.IsCheatsList"
+             data-for="cheat : CheatsUiModel.CheatsList"
+             class="cheats-row-container"
+             data-class-alternate="IsOdd(it_index)"
+             onclick="OnEvent(event, 'CheatsUi.RowClicked')"
+             data-attr-index="it_index">
+          <div class="index" data-rml="ToRMLText((it_index + 1) + '.')"/>
+          <div class="cheat-str" data-rml="ToRMLText(cheat)"/>
+        </div>
+
+        <div data-if="!CheatsUiModel.IsCheatsList"
+             id="results-container">
+          <table>
+            <colgroup>
+              <col />
+              <col />
+              <col />
+              <col />
+              <col />
+            </colgroup>
+            <thead class="color_dreamsicle">
+              <tr id="header" class="results-row-container">
+                <td class="col-drop" >Drop</td>
+                <td class="col-item-img"/>
+                <td class="col-item">Item Name</td>
+                <td class="col-qty" >Qty</td>
+                <td class="col-percent" >%</td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr  data-for="result : CheatsUiModel.Results"
+                   class="results-row-container"
+                   data-class-alternate="IsOdd(it_index)">
+                <td class="col-drop" data-rml="ToRMLText(result.TimesDropped)"/>
+                <td class="col-item-img">
+                  <div class="item-img" data-style-decorator="'itemidimage(' + result.Id + ')'"/>
+                </td>
+                <td class="col-item" data-rml="ItemName(result.Id)"/>
+                <td class="col-qty" data-rml="ToRMLText(result.CountEachTime)"/>
+                <td class="col-percent" data-rml="ToRMLText(result.Percentage)"/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </body>
+</rml>

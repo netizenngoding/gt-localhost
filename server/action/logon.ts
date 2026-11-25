@@ -11,6 +11,8 @@ import type { ServerContext } from "../database/context";
 import { liveSessions, normalizeAccount, type PlayerAccount, type PlayerSession } from "../database/peer";
 import { OnConsoleMessage, SetHasGrowID } from "../onVariant";
 import { hashPassword, sanitizeAccountName, verifyPassword } from "../tools/string";
+import { notifyDiscordLogin } from "../discord/service";
+import { sendWelcomeMail } from "../sidebar/service";
 
 // Bound expensive password work even when an attacker reconnects with a new peer.
 let authWindowStart = 0, authWindowCount = 0;
@@ -79,6 +81,11 @@ function allocateGuestDisplayName(
     seq++;
   }
   return `${baseName}_${seq}`;
+}
+
+function peerIp(peer: ENetServerPeer): string {
+  const socket = (peer.ws as unknown as { _socket?: { remoteAddress?: string } })._socket;
+  return String(socket?.remoteAddress || "");
 }
 
 function sendLogonFail(peer: ENetServerPeer, message: string, showDiscord = false): void {
@@ -150,6 +157,11 @@ export function handleLogon(
     sendLogonFail(peer, "`4Invalid GrowID or password.``"); return;
   }
   const deviceKey = extractPersistentDeviceKey(peer, kv);
+  if (deviceKey && [...ctx.accounts.values()].some(a => a.ridBanned && a.deviceKey === deviceKey)) {
+    peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GENERIC_TEXT, "`4This device is banned!``"), true);
+    peer.sendDisconnect();
+    return;
+  }
   const rawTankId = sanitizeAccountName(kv.tankIDName || "", 18);
   const rawPass = kv.tankIDPass || "";
 
@@ -180,7 +192,12 @@ export function handleLogon(
       return;
     }
 
+    if (deviceKey && acct.deviceKey !== deviceKey) {
+      acct.deviceKey = deviceKey;
+      ctx.dirty = true;
+    }
     const session = createSessionForAccount(ctx, peer, acct);
+    if (acct.discordId) void notifyDiscordLogin(ctx, acct, deviceKey, peerIp(peer)).catch(() => {});
     SetHasGrowID(session, true, acct.growId || acct.name, rawPass);
     sendSuperMainAccept(ctx, peer);
     return;
@@ -195,6 +212,7 @@ export function handleLogon(
   // ------------------------------------------------------------------
   const requestedBase = extractGuestBaseName(kv.requestedName || "");
   let guestAcct: PlayerAccount | undefined;
+  let createdNewGuest = false;
 
   if (deviceKey) {
     const byDev = ctx.accountsByDevice.get(deviceKey);
@@ -232,6 +250,7 @@ export function handleLogon(
       ctx.accountsByDevice.set(deviceKey, guestAcct);
     }
     ctx.savePlayersNow();
+    createdNewGuest = true;
   }
 
   if (guestAcct.banned) {
@@ -241,6 +260,7 @@ export function handleLogon(
   }
 
   const session = createSessionForAccount(ctx, peer, guestAcct);
+  if (guestAcct.discordId) void notifyDiscordLogin(ctx, guestAcct, deviceKey, peerIp(peer)).catch(() => {});
   // Tell client this is a Guest Account so PauseMenu shows `"Get GrowID (#It's free!)"`!
   SetHasGrowID(session, false, "", "");
   OnConsoleMessage(
@@ -248,4 +268,5 @@ export function handleLogon(
     `\`2Logged in as \`#Guest Account\`2 (\`w${guestAcct.name}\`2)! Your items & clothes are saved automatically.\`\``
   );
   sendSuperMainAccept(ctx, peer);
+  if (createdNewGuest) sendWelcomeMail(ctx, guestAcct);
 }

@@ -1,0 +1,83 @@
+.window {
+    width: 90vw;
+    height: 90vh;
+}
+
+#window-title .title-icon {
+    decorator: image(dungeon_start_ui_title_icon);
+}
+
+#cheatsui-popup .cheats-row-container {
+    display: flex;
+    flex-direction: row ;
+    padding: 5dp 10dp 10dp 10dp;
+    background-color: rgba(0, 0, 0, 50);
+}
+
+#cheatsui-popup .cheats-row-container:active {
+    filter: brightness(0.5);
+}
+
+#cheatsui-popup .cheats-row-container.alternate {
+    background-color: rgba(0, 0, 0, 100);
+}
+
+#cheatsui-popup .cheats-row-container .index {
+    width: 75dp;
+}
+
+#cheatsui-popup .cheats-row-container .cheat-str {
+    word-break: break-word;
+    flex-basis: 100%;
+}
+
+#cheatsui-popup #results-container {
+    width: 100%;
+    height: 100%;
+    padding: 10dp 0dp;
+}
+
+#cheatsui-popup .results-row-container {
+    background-color: rgba(0, 0, 0, 50);
+}
+
+#cheatsui-popup .results-row-container.alternate,
+#cheatsui-popup #header {
+    background-color: rgba(0, 0, 0, 100);
+}
+
+#cheatsui-popup .results-row-container td {
+    vertical-align: middle;
+    border: 1dp;
+    padding: 10dp;
+}
+
+#cheatsui-popup .results-row-container .col-item-img {
+    width: 50dp;
+}
+
+#cheatsui-popup .results-row-container .col-item-img .item-img {
+    width: 40dp;
+    height: 40dp;
+    margin: auto;
+}
+
+#cheatsui-popup .results-row-container .col-drop,
+#cheatsui-popup .results-row-container .col-qty,
+#cheatsui-popup .results-row-container .col-percent {
+    width: 100dp;
+    text-align: center;
+}
+
+#cheatsui-popup #search-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 5dp;
+    margin: 0dp 0dp 10dp 0dp;
+    width: 100%;
+}
+
+#cheatsui-popup #search-container .input{
+    width: 85%;
+}

@@ -1,4 +1,5 @@
 import { OnPlayPositioned } from "../onVariant/OnPlayPositioned";
+import { sendSidebarHudState } from "../sidebar/service";
 import { cancelTrade } from '../action/trade';
 import { effectiveSkin } from "../playmods/model";
 import { expireMods } from "../playmods/service";
@@ -16,6 +17,7 @@ import { isHiddenStaff } from "../ranks/staff_hidden";
 import { worldDestination, isPlayableWorldName } from "./world-policy";
 import { PORTRAIT_IDS, normalizePortraitSlots } from "./portrait";
 import { RequestWorldSelectMenu } from "../onVariant/RequestWorldSelectMenu";
+import { refreshLocalDiscordRpc } from "../discord/rpc";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -303,6 +305,7 @@ export class ServerContext {
       if (syncClient) {
         if (session.world) {
           session.peer.sendPacket(0, makeModifyInventoryPacket(itemId, added, 0), true);
+          sendSidebarHudState(this, session);
         } else {
           this.sendInventory(session, false);
         }
@@ -537,6 +540,7 @@ export class ServerContext {
     session.y = y;
     session.netId = this.nextNetId++;
     world.peers.add(session);
+    refreshLocalDiscordRpc(this);
 
     // Record in recentWorlds
     session.account.recentWorlds = [
@@ -566,6 +570,7 @@ export class ServerContext {
     this.schedulePostSpawnSkinSync(session, world, session.netId);
     OnSetBux(session);
     this.sendCharacterState(session);
+    sendSidebarHudState(this, session);
     if (session.account.billboard?.show && session.account.billboard.itemId) {
       broadcastBillboardChange(world, session);
     }
@@ -725,6 +730,7 @@ export class ServerContext {
     }
     world.peers.delete(session);
     session.world = null;
+    refreshLocalDiscordRpc(this);
     broadcastOnRemove(world, session);
     for (const other of world.peers) {
       if (!canSeePlayer(other, session)) continue;

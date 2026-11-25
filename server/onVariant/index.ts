@@ -2,6 +2,7 @@ export * from "./OnConsoleMessage";
 export * from "./OnTalkBubble";
 export * from "./OnTextOverlay";
 export * from "./OnDialogRequest";
+export * from "./OnModernDialogRequest";
 export * from "./OnSpawn";
 export * from "./OnRemove";
 export * from "./OnSetPos";

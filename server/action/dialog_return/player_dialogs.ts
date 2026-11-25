@@ -24,6 +24,13 @@ import { handleBuy } from "../buy";
 import { showGrowIdApplyModal } from "../growid";
 import { handleTradeStart, handleWrenchPlayer } from "../wrench";
 import { openItemFinderDialog } from "./find_item";
+import { dispatchCommand } from "../../commands/index";
+import { expireMods } from "../../playmods/service";
+import { isFrozen } from "../hazards";
+import { applySkinColorUpdate } from "../../onVariant";
+import { makeTextPacket, NET_MESSAGE_GENERIC_TEXT } from "../../proton/packet";
+import { displayName } from "../../ranks";
+import { resetDiscordLink, sendDiscordLinkDialog } from "../../discord/service";
 
 export function showGrowmojisDialog(session: PlayerSession): void {
   const dlg = new DialogBuilder()
@@ -277,6 +284,26 @@ export function handlePlayerDialogsReturn(
       else if (btn==='ignore_player') ignorePlayer(ctx,session,target);
       else if (btn==='trade') handleTradeStart(ctx,session,target.netId);
       else if (btn==='kick'||btn==='pull'||btn==='worldban') worldModerate(ctx,session,target,btn);
+      else if (btn==='ban_rid_public'||btn==='ban_rid_private'||btn==='freeze_start'||btn==='freeze_cancel'||btn==='punish_view') {
+        if (!hasPermission(session.account,'moderate') || !canModerate(session.account,target.account)) { OnConsoleMessage(session,'You cannot do that to this player.'); return true; }
+        if (btn==='punish_view') dispatchCommand(ctx,session,'info '+target.account.name);
+        else if (btn==='freeze_start') dispatchCommand(ctx,session,'freeze '+target.account.name);
+        else if (btn==='freeze_cancel') dispatchCommand(ctx,session,'unfreeze '+target.account.name);
+        else {
+          if (target.account.ridBanned) { OnConsoleMessage(session,'That RID is already banned.'); return true; }
+          target.account.ridBanned=true; target.account.banned=true; ctx.dirty=true; ctx.savePlayersNow();
+          if (btn==='ban_rid_public') {
+            // Public Ban RID announces the banned RID in the world it happened.
+            const w = session.world || target.world;
+            const msg = `${displayName(session).replace(/``$/,'')} \`4banned\`\` RID \`w${target.account.deviceKey}\`\` (${target.account.name})!`;
+            if (w) broadcastConsoleMessage(w, msg); else OnConsoleMessage(session, msg);
+          } else {
+            OnConsoleMessage(session,`\`>You banned RID \`w${target.account.deviceKey}\`\` (${target.account.name}).`);
+          }
+          target.peer.sendPacket(0,makeTextPacket(NET_MESSAGE_GENERIC_TEXT,'`4This account is banned!``'),true);
+          target.peer.sendDisconnect();
+        }
+      }
       return true;
     }
     if (btn==='acceptlock') { showAcceptAccessDialog(ctx, session); return true; }
@@ -286,9 +313,10 @@ export function handlePlayerDialogsReturn(
       return true;
     }
     // A forged target button must never fall through to self actions.
-    if (['friend_add','trade','kick','pull','worldban'].includes(btn)) return true;
+    if (['friend_add','trade','kick','pull','worldban','ban_rid_public','ban_rid_private','freeze_start','freeze_cancel','punish_view'].includes(btn)) return true;
     if(btn==='alist'){showAchievements(session);return true;}
     if(btn==='emojis'){showGrowmojisDialog(session);return true;}
+    if(btn==='discord_link'){sendDiscordLinkDialog(session);return true;}
     if(btn==='notebook_edit'){
       OnDialogRequest(session,new DialogBuilder().addLabel('big','Notebook')
         .addTextBoxInput('personal_note','',session.account.personalNote||'',128,5)
@@ -303,6 +331,18 @@ export function handlePlayerDialogsReturn(
     if(btn==='billboard_edit'){openBillboardDialog(ctx,session);return true;}
     if(btn==='backpack_menu'){openBackpackMenu(ctx,session);return true;}
     if(btn==='acct_growid')showGrowIdApplyModal(session);
+    return true;
+  }
+
+  if (dlgName === "discord_link_dialog") {
+    if (btn === "discord_unlink") {
+      resetDiscordLink(session.account);
+      ctx.dirty = true;
+      ctx.savePlayersNow();
+      OnConsoleMessage(session, "Discord account unlinked.");
+      OnTalkBubble(session, session.netId, "I've removed my access!", 0, true);
+      sendDiscordLinkDialog(session);
+    }
     return true;
   }
 

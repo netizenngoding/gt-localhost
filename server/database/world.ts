@@ -130,25 +130,26 @@ export interface PersistedWorld {
   spawnY: number;
 }
 
-export function generateFreshWorld(name: string): WorldInstance {
-  const width = 100;
-  const height = 60;
+export function generateFreshWorld(name: string, width = 100, height = 60): WorldInstance {
+  const big = width >= 100 && height >= 60;
   const tiles: WorldTile[] = new Array(width * height);
 
-  const doorX = 48;
-  const doorY = 36;
+  // Keep the main door inside tiny custom world sizes instead of writing
+  // negative or out-of-range tile indexes.
+  const doorX = Math.max(0, Math.min(width - 1, Math.floor(width / 2) - 2));
+  const doorY = Math.max(0, Math.min(height - 1, height - 24));
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let fg = 0;
       let bg = 0;
-      if (y >= 54) {
+      if (y >= height - 6) {
         fg = 8; // Bedrock
         bg = 14;
-      } else if (y >= 50) {
+      } else if (y >= height - 10) {
         fg = Math.random() < 0.2 ? 4 : 2; // Lava + Dirt
         bg = 14;
-      } else if (y >= 37) {
+      } else if (y >= height - 23) {
         fg = Math.random() < 0.06 ? 10 : 2; // Rock + Dirt
         bg = 14;
       }
@@ -164,14 +165,16 @@ export function generateFreshWorld(name: string): WorldInstance {
     flags: 0,
     extra: { kind: "door", label: "EXIT", destination: "EXIT", locked: false },
   };
-  tiles[(doorY + 1) * width + doorX] = {
-    fg: 8,
-    bg: 14,
-    parentIndex: 0,
-    flags: 0,
-  };
+  if (doorY + 1 < height) {
+    tiles[(doorY + 1) * width + doorX] = {
+      fg: 8,
+      bg: 14,
+      parentIndex: 0,
+      flags: 0,
+    };
+  }
 
-  if (name === "START") {
+  if (name === "START" && doorX + 2 < width) {
     tiles[doorY * width + (doorX + 2)] = {
       fg: 20,
       bg: 0,
@@ -182,7 +185,7 @@ export function generateFreshWorld(name: string): WorldInstance {
         label: `\`wWelcome to \`2${SERVER_NAME}\`\`! Type \`5/find\`\` or \`5/help\`\`!`,
       },
     };
-  } else if (name === "FARM") {
+  } else if (big && name === "FARM") {
     const now = Date.now();
     for (const rowY of [36, 32, 28]) {
       for (let x = 15; x < 85; x++) {
@@ -197,7 +200,7 @@ export function generateFreshWorld(name: string): WorldInstance {
         }
       }
     }
-  } else if (name === "PARKOUR") {
+  } else if (big && name === "PARKOUR") {
     let px = 44;
     let py = 34;
     for (let step = 0; step < 22; step++) {

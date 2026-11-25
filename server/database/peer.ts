@@ -48,6 +48,22 @@ export interface BillboardState {
   perItem: boolean;
 }
 
+export interface MailMessage {
+  id: string;
+  sender: string;
+  subject: string;
+  body: string;
+  createdAt: number;
+  expiresAt?: number;
+  read: boolean;
+  claimed: boolean;
+  iconItemId?: number;
+  iconUrl?: string;
+  rewardGems?: number;
+  rewardItemId?: number;
+  rewardItemCount?: number;
+}
+
 export interface PlayerAccount {
   progression?: Progression;
   playmods?: TimedMod[];
@@ -63,6 +79,8 @@ export interface PlayerAccount {
   moderator: boolean;
   rank?: RankId;
   banned: boolean;
+  /** Device (RID) ban: every login from this account's deviceKey is refused. */
+  ridBanned?: boolean;
   backpackSize: number;
   inventory: InventorySlot[];
   unavailableInventory?: InventorySlot[];
@@ -93,10 +111,30 @@ export interface PlayerAccount {
   eyeColor?: number;
   pupilColor?: number;
   lastDailyQuestDay?: number;
+  dungeonScrolls?: number;
+  dungeonScrollUpdatedAt?: number;
+  dungeonPoints?: number;
+  dungeonPassUntil?: number;
+  dungeonChallengeDay?: number;
+  dungeonChallenges?: Record<string, { progress: number; claimed: boolean }>;
+  piggybankGems?: number;
+  mailbox?: MailMessage[];
   nickname?: string;
   backpackLevel?: number;
   storedItems?: Array<{ itemId: number; count: number }>;
   magplantLinks?: Record<string, { x: number; y: number }>;
+  discordId?: string;
+  discordName?: string;
+  discordLinkedAt?: number;
+  discordLinkCode?: string;
+  discordLinkExpires?: number;
+  discordKnownDevices?: string[];
+  discordLastIp?: string;
+  discordLastVerifiedAt?: number;
+  /** Announcement message posted when the account was first linked. */
+  discordLinkMessageId?: string;
+  /** One-time Discord first-link reward already granted. */
+  discordFirstLinkRewarded?: boolean;
 }
 
 /** Every live session on the server; names are broadcast through this so a
@@ -217,6 +255,7 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     moderator: typeof raw.rank === "string" && raw.rank !== "player",
     rank: typeof raw.rank === "string" && /^[a-z0-9_]{1,24}$/.test(raw.rank) ? raw.rank : "player",
     banned: !!raw.banned,
+    ridBanned: !!raw.ridBanned,
     backpackSize: typeof raw.backpackSize === "number" && Number.isSafeInteger(raw.backpackSize) && raw.backpackSize >= 16 ? Math.min(396, raw.backpackSize) : 16,
     inventory: inv,
     // Retain disabled/unknown inventory separately so a save never destroys it.
@@ -239,6 +278,61 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     lastKitClaim: raw.lastKitClaim,
     lastDailyReward: typeof raw.lastDailyReward === "number" ? raw.lastDailyReward : undefined,
     lastDailyQuestDay: typeof raw.lastDailyQuestDay === "number" ? raw.lastDailyQuestDay : undefined,
+    dungeonScrolls:
+      typeof raw.dungeonScrolls === "number" && Number.isFinite(raw.dungeonScrolls)
+        ? Math.max(0, Math.min(20, Math.floor(raw.dungeonScrolls)))
+        : 20,
+    dungeonScrollUpdatedAt:
+      typeof raw.dungeonScrollUpdatedAt === "number" && Number.isFinite(raw.dungeonScrollUpdatedAt)
+        ? raw.dungeonScrollUpdatedAt
+        : Date.now(),
+    dungeonPoints:
+      typeof raw.dungeonPoints === "number" && Number.isFinite(raw.dungeonPoints)
+        ? Math.max(0, Math.floor(raw.dungeonPoints))
+        : undefined,
+    dungeonPassUntil:
+      typeof raw.dungeonPassUntil === "number" && Number.isFinite(raw.dungeonPassUntil)
+        ? raw.dungeonPassUntil
+        : undefined,
+    dungeonChallengeDay:
+      typeof raw.dungeonChallengeDay === "number" && Number.isFinite(raw.dungeonChallengeDay)
+        ? raw.dungeonChallengeDay
+        : undefined,
+    dungeonChallenges:
+      raw.dungeonChallenges && typeof raw.dungeonChallenges === "object"
+        ? Object.fromEntries(
+            Object.entries(raw.dungeonChallenges as Record<string, unknown>)
+              .filter(([k, v]) => /^[a-z0-9_]{1,40}$/i.test(k) && v && typeof v === "object")
+              .map(([k, v]) => {
+                const c = v as Record<string, unknown>;
+                return [k, { progress: Math.max(0, Math.floor(Number(c.progress) || 0)), claimed: !!c.claimed }];
+              })
+          )
+        : undefined,
+    piggybankGems:
+      typeof raw.piggybankGems === "number" && Number.isFinite(raw.piggybankGems)
+        ? Math.max(0, Math.floor(raw.piggybankGems))
+        : undefined,
+    mailbox: Array.isArray(raw.mailbox)
+      ? raw.mailbox
+          .filter((m): m is MailMessage => !!m && typeof m === "object" && typeof m.id === "string" && typeof m.subject === "string")
+          .slice(-40)
+          .map((m) => ({
+            id: String(m.id).slice(0, 36),
+            sender: typeof m.sender === "string" ? m.sender.replace(/[|\r\n\0]/g, " ").slice(0, 32) : "Growtopia",
+            subject: String(m.subject).replace(/[|\r\n\0]/g, " ").slice(0, 64),
+            body: typeof m.body === "string" ? m.body.replace(/[|\r\n\0]/g, " ").slice(0, 360) : "",
+            createdAt: typeof m.createdAt === "number" ? m.createdAt : Date.now(),
+            expiresAt: typeof m.expiresAt === "number" && Number.isFinite(m.expiresAt) ? m.expiresAt : undefined,
+            read: !!m.read,
+            claimed: !!m.claimed,
+            iconItemId: typeof m.iconItemId === "number" && m.iconItemId > 0 ? Math.floor(m.iconItemId) : undefined,
+            iconUrl: typeof m.iconUrl === "string" && /^\/branding\/modern-ui\/[A-Za-z0-9_.-]+\.png$/.test(m.iconUrl) ? m.iconUrl : undefined,
+            rewardGems: typeof m.rewardGems === "number" && m.rewardGems > 0 ? Math.floor(m.rewardGems) : undefined,
+            rewardItemId: typeof m.rewardItemId === "number" && m.rewardItemId > 0 ? Math.floor(m.rewardItemId) : undefined,
+            rewardItemCount: typeof m.rewardItemCount === "number" && m.rewardItemCount > 0 ? Math.min(200, Math.floor(m.rewardItemCount)) : undefined,
+          }))
+      : [],
     hairColor: typeof raw.hairColor === "number" ? raw.hairColor >>> 0 : undefined,
     eyeColor: typeof raw.eyeColor === "number" ? raw.eyeColor >>> 0 : undefined,
     pupilColor: typeof raw.pupilColor === "number" ? raw.pupilColor >>> 0 : undefined,
@@ -250,6 +344,17 @@ export function normalizeAccount(raw: Partial<PlayerAccount> & { userId: number;
     storedItems: Array.isArray(raw.storedItems)
       ? raw.storedItems.filter((s) => s && Number.isSafeInteger(s.itemId) && s.itemId > 0 && Number.isSafeInteger(s.count) && s.count > 0)
       : [],
+    discordId: typeof raw.discordId === "string" && /^\d{5,32}$/.test(raw.discordId) ? raw.discordId : undefined,
+    discordName: typeof raw.discordName === "string" ? raw.discordName.replace(/[|\r\n\0]/g, " ").slice(0, 40) : undefined,
+    discordLinkedAt: typeof raw.discordLinkedAt === "number" && Number.isFinite(raw.discordLinkedAt) ? raw.discordLinkedAt : undefined,
+    discordLinkCode: typeof raw.discordLinkCode === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(raw.discordLinkCode) ? raw.discordLinkCode : undefined,
+    discordLinkExpires: typeof raw.discordLinkExpires === "number" && Number.isFinite(raw.discordLinkExpires) ? raw.discordLinkExpires : undefined,
+    discordKnownDevices: Array.isArray(raw.discordKnownDevices)
+      ? raw.discordKnownDevices.filter((v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 160).slice(-20)
+      : [],
+    discordLastIp: typeof raw.discordLastIp === "string" ? raw.discordLastIp.slice(0, 80) : undefined,
+    discordLastVerifiedAt: typeof raw.discordLastVerifiedAt === "number" && Number.isFinite(raw.discordLastVerifiedAt) ? raw.discordLastVerifiedAt : undefined,
+    discordFirstLinkRewarded: raw.discordFirstLinkRewarded === true ? true : undefined,
     magplantLinks:
       raw.magplantLinks && typeof raw.magplantLinks === "object"
         ? Object.fromEntries(

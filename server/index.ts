@@ -8,6 +8,8 @@ import { ItemDatabase } from "./database/items";
 import { onPeerConnect, onPeerDisconnect, onPeerReceive } from "./eventType";
 import { createHttpApp } from "./https/routes";
 import { ENetServerPeer } from "./network/enet";
+import { discordConfig, startDiscordPresence } from "./discord/service";
+import { startLocalDiscordRpc } from "./discord/rpc";
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = "0.0.0.0";
@@ -109,6 +111,8 @@ async function main(): Promise<void> {
 
   httpServer.listen(PORT, HOST, () => {
     console.log(`[${SERVER_NAME}] Modular Server listening on http://${HOST}:${PORT}`);
+    startDiscordPresence(() => ctx.sessions.size, ctx);
+    startLocalDiscordRpc(ctx, discordConfig().clientId, discordConfig().publicBaseUrl);
   });
 }
 

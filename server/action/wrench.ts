@@ -10,8 +10,10 @@ import { hasPermission, canModerate, displayName, rankOf, RANKS } from "../ranks
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
 import { OnConsoleMessage, OnDialogRequest } from "../onVariant";
+import { isFrozen } from "./hazards";
 import { DialogBuilder } from "../tools/create_dialog";
 import { pendingAccessOffer } from "./dialog_return/tile_edit";
+import { discordStatus } from "../discord/service";
 
 export function handleWrenchPlayer(
   ctx: ServerContext,
@@ -52,6 +54,8 @@ export function handleWrenchPlayer(
       .customButton('my_worlds','gui_wrench_my_worlds')
       .customButton('alist','gui_wrench_achievements')
       .customButton('emojis','gui_wrench_growmojis')
+      .customButton('discord_link','gui_wrench_auction')
+      .raw(`add_custom_label|${discordStatus(acct).linked ? `\`w@${discordStatus(acct).username}\`\`` : '`wNot Linked``'}|target:discord_link;top:0.80;left:0.5;size:${discordStatus(acct).username.length > 12 ? 'tiny' : 'small'}|`)
       .customBreak().addSpacer('small').customSpacing(0,0);
     const effects = getActiveEffectEntries(acct);
     if (effects.length) dlg.addTextbox('`wActive effects:``');
@@ -72,6 +76,17 @@ export function handleWrenchPlayer(
     .addLabelWithIcon("big", `${displayName(target)} \`0(\`\`\`2${progression(target.account).level}\`\`\`0)\`\``,18)
     .addSpacer("small").addButton("trade", "`wTrade``");
   if(canWorldAct(session,target,world)) { dlg.addButton("kick","`4Kick``").addButton("pull","`5Pull``"); if(!hasPermission(target.account,"moderate"))dlg.addButton("worldban","`4World Ban``"); }
+  // Staff moderation buttons, like GTPS3's wrench panel. Account bans set the
+  // persistent `banned` flag; the public variant also announces the target RID.
+  if (hasPermission(session.account,"moderate") && target!==session && canModerate(session.account,target.account)) {
+    if (!target.account.ridBanned) {
+      dlg.addButton("ban_rid_public","`4Public Ban RID``");
+      dlg.addButton("ban_rid_private","`4Private Ban RID``");
+    }
+    if (isFrozen(target)) dlg.addButton("freeze_cancel","`oUnfreeze``");
+    else dlg.addButton("freeze_start","`2Freeze``");
+    dlg.addButton("punish_view","`5Punish/View``");
+  }
   const alreadyFriend = (session.account.friendIds||[]).includes(target.account.userId);
   if(!alreadyFriend) dlg.addButton("friend_add","`wAdd as friend``");
   if(alreadyFriend) {

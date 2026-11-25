@@ -1,0 +1,8 @@
+{
+  "botToken": "DISCORD_BOT_TOKEN",
+  "clientId": "DISCORD_APPLICATION_CLIENT_ID",
+  "publicBaseUrl": "https://your-public-domain.example",
+  "redirectUri": "https://your-public-domain.example/discord/callback",
+  "channelId": "1575034325945024593",
+  "guildInvite": "https://discord.gg/magnolia"
+}

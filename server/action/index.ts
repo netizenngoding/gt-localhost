@@ -22,6 +22,7 @@ import { handleRespawn } from "./respawn";
 import { handleStore } from "./store";
 import { handleTrash } from "./trash";
 import { handleTradeStart, handleWrenchPlayer } from "./wrench";
+import { handleSidebarHudAction } from "../sidebar/service";
 
 export function handleActionText(
   ctx: ServerContext,
@@ -86,6 +87,10 @@ export function handleActionText(
 
     case "info":
       handleInfo(ctx, session, kv);
+      return;
+
+    case "sidebar_hud":
+      handleSidebarHudAction(ctx, session, kv);
       return;
 
     case "wrench":

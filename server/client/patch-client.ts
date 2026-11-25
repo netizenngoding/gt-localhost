@@ -4,6 +4,7 @@ import { patchDyeAppearance } from "./dye-appearance";
 import { extendChatPortraitExports } from "./portrait-exports";
 import { patchClothingAnimations } from "./clothing-animation";
 import { patchColorSliderDialog } from "./color-slider-dialog";
+import { patchRmlUiNativeBridge } from "./rmlui-native-patch";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -113,7 +114,9 @@ export function patchClient(
   const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
   const legacyXmlIds = collectLegacyXmlRendererIds(publicCacheDir);
   const patched = Buffer.from(
-    patchColorSliderDialog(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds))
+    patchRmlUiNativeBridge(
+      patchColorSliderDialog(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds))
+    )
   );
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
   return extendChatPortraitExports(patched);

@@ -16,9 +16,9 @@ export function canWorldAct(s:PlayerSession,t:PlayerSession,w:WorldInstance):boo
 }
 export function worldModerate(ctx:ServerContext,s:PlayerSession,t:PlayerSession,kind:'kick'|'pull'|'worldban'):void {
  const w=s.world;
- if(kind==='worldban' && s===t){OnConsoleMessage(s,'`4You cannot world ban yourself.``');return;}
- if(kind==='worldban' && hasPermission(t.account,'moderate')){OnConsoleMessage(s,'`4Ranked players cannot be world banned.``');return;}
- if(!w||!canWorldAct(s,t,w)){OnConsoleMessage(s,'`4You cannot do that to this player.``');return;}
+ if(kind==='worldban' && s===t){OnConsoleMessage(s,'You cannot world ban yourself.');return;}
+ if(kind==='worldban' && hasPermission(t.account,'moderate')){OnConsoleMessage(s,'Ranked players cannot be world banned.');return;}
+ if(!w||!canWorldAct(s,t,w)){OnConsoleMessage(s,'You cannot do that to this player.');return;}
  if(kind==='pull'){
   // Instant pull: no tween. A short movement lock stops the target's old
   // in-flight position packets from overwriting the teleport.
@@ -38,8 +38,8 @@ export function worldModerate(ctx:ServerContext,s:PlayerSession,t:PlayerSession,
   sendSpark(s.x,s.y);
   t.x=s.x;t.y=s.y;
   broadcastSetPos(w,net,t.x,t.y);
-  OnTextOverlay(t,`You were pulled by ${s.account.name}`);
-  broadcastConsoleMessage(w,s.account.name+' `5pulls`` '+t.account.name+'!');
+  OnTextOverlay(t,`You were pulled by ${s.account.name}.`);
+  broadcastConsoleMessage(w,`${s.account.name} pulls ${t.account.name}!`);
   broadcastPositionedSfx(w,net,'audio/teleport.wav');
  }
  else if(kind==='kick'){broadcastConsoleMessage(w,`${s.account.name} kicks ${t.account.name}!`);ctx.respawnPlayer(t,false);OnPlayPositioned(t,'audio/teleport.wav');}

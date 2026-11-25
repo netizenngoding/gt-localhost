@@ -16,6 +16,8 @@ export function chatPortrait(subject: PlayerSession, items: ItemDatabase): ChatP
   };
 }
 export function makeConsoleMessagePacket(message: string, portrait?: ChatPortrait): Buffer {
+  // Colour codes stay active until reset; close every coloured line with `o so the colour cannot leak.
+  if (message.includes("`") && !message.endsWith("`o")) message += "`o";
   if (!portrait) return makeVariantPacket(["OnConsoleMessage", message]);
   const id = String(++nextPortraitId % 10000000000).padStart(10, "0");
   // Zero-width native color controls identify this log row without changing its

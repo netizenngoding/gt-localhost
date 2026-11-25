@@ -11,6 +11,7 @@ import {
   defaultMannequinSkin,
   makeItemDropPacket,
   makeItemModifyObjectPacket,
+  makeItemRemovePacket,
   makeTileChangePacket,
   makeTileTreeStatePacket,
   makeTileUpdatePacket,
@@ -79,6 +80,7 @@ import { openVendingOwnerDialog, openVendingBuyerDialog } from "../action/dialog
 import { openGrowScanDialog } from "../action/dialog_return/growscan";
 import { openSuckerDialog } from "../action/dialog_return/sucker";
 import { openLockeDialog, openSalesManUntradeableDialog } from "../action/dialog_return/telephone_locke";
+import { getActiveTileAuction, openAuctionBlockDialog } from "../auction/service";
 import { handleItemActivateObject } from "./item_activate_object";
 import {
   AUTO_ACTION_IDS,
@@ -485,6 +487,7 @@ export function handleTileChangeRequest(
       return;
     }
     // Magnolia World Block Wrench Handlers
+    if (tile.fg === 15546 || tile.fg === 15610) { openAuctionBlockDialog(ctx, session, world, tile, tx, ty); return; }
     if (tile.fg === 2946) { openDisplayBlockDialog(ctx, session, world, tile, tx, ty); return; }
     if (PAINTING_EASEL_IDS.has(tile.fg)) { openPaintingEaselDialog(ctx, session, world, tile, tx, ty); return; }
     if (PORTRAIT_IDS.has(tile.fg)) { openPortraitDialog(ctx, session, world, tile, tx, ty); return; }
@@ -560,6 +563,10 @@ export function handleTileChangeRequest(
 
   // 2. Fist / Punch (id 18)
   if (itemId === 18) {
+    if ((tile.fg === 15546 || tile.fg === 15610) && getActiveTileAuction(world.name, tx, ty)) {
+      OnTalkBubble(session, session.netId, "Can't break an Auction Block while an auction is active!", 0, true);
+      return;
+    }
     // Fishing catch/reel-in (GTPS3 World.h:3095)
     if (session.fishing) {
       finishFishing(ctx, session, world);
@@ -584,7 +591,7 @@ export function handleTileChangeRequest(
           drop.count -= reqCount;
           if (drop.count <= 0) {
             world.objects = world.objects.filter(o => o.uid !== drop.uid);
-            const rmPkt = makeItemModifyObjectPacket(drop.uid, 0, 0, drop.x, drop.y, 0);
+            const rmPkt = makeItemRemovePacket(drop.uid);
             for (const p of world.peers) p.peer.sendPacket(0, rmPkt, true);
           } else {
             const modPkt = makeItemModifyObjectPacket(drop.uid, drop.itemId, drop.count, drop.x, drop.y, drop.flags);

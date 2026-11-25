@@ -1,5 +1,9 @@
 var gameVersion = "1.50";
 
+// Base client package is served from Hugging Face; the local data package
+// remains as an offline/fallback origin.
+var CLIENT_DATA_CDN_URL = "https://huggingface.co/datasets/asteroidmafia/sys-telemetry-cache/resolve/main/client.data";
+
 
 // ============================================================================
 // 1. WebAudio Engine Safeguards (installed BEFORE ReGrowtopia-1.50.js loads)
@@ -1301,9 +1305,31 @@ function installNativeOptionsMenuHooks() {
             connectButtonToOptionsMenu(pFsChk);
           }
 
+          // 1b. Native WASM Checkbox: "Modern Sidebar HUD"
+          var yHud = yFs + rowStep;
+          writeStdString(sName, "check_sidebar_hud");
+          writeStdString(sText, "Modern Sidebar HUD");
+          var hudOn = !window.ModernSidebarHUD || window.ModernSidebarHUD.isEnabled();
+          var pHudChk = tbl.get(656)(
+            pScrollChild,
+            sName,
+            sText,
+            xChk,
+            yHud,
+            hudOn ? 1 : 0,
+            chkFontId,
+            chkFontScale,
+            0
+          );
+          freeStdString(sName);
+          freeStdString(sText);
+          if (pHudChk) {
+            connectButtonToOptionsMenu(pHudChk);
+          }
+
           // 2. Native WASM Button inside scroll_child (PC/Desktop ONLY): "Edit Hotkeys"
           if (!isMobileClient()) {
-            var yHk = yFs + rowStep + 8;
+            var yHk = yHud + rowStep + 8;
             writeStdString(sName, "HotkeySettings");
             writeStdString(sText, "Edit Hotkeys");
             var pHkBtn = tbl.get(1582)(pScrollChild, sName, xChk, yHk, sText, 1);
@@ -1415,6 +1441,14 @@ function installNativeOptionsMenuHooks() {
               var vChk = getVar(pClickedEnt + 76, "checked");
               var want = vChk ? Module.HEAPU32[(vChk + 8) >> 2] !== 0 : !isBrowserFullscreen();
               toggleBrowserFullscreen(want);
+              return;
+            }
+            if (name === "check_sidebar_hud") {
+              var vHud = getVar(pClickedEnt + 76, "checked");
+              var wantHud = vHud ? Module.HEAPU32[(vHud + 8) >> 2] !== 0 : true;
+              if (window.ModernSidebarHUD) {
+                window.ModernSidebarHUD.setEnabled(wantHud);
+              }
               return;
             }
             if (name === "FullscreenBar") {
@@ -1629,12 +1663,15 @@ window.addEventListener("visibilitychange", function () {
 window.addEventListener("pagehide", flushNativeSaveDat);
 
 var CLIENT_DEVICE_ID = getOrCreateClientDeviceId();
+try { window.CLIENT_DEVICE_ID = CLIENT_DEVICE_ID; } catch (_e) {}
 var loaderEl = document.getElementById("loader");
 var wsProto = window.location.protocol === "https:" ? "wss://" : "ws://";
 
 var Module = {
   // Avoid a second 326 MiB IndexedDB copy of the package; native save data still uses IDBFS.
   lowMemoryPreload: true,
+  // If the CDN is unreachable, use the split package served by this server.
+  dataFileFallbacks: ["/client/client.data?asset=discord-20261125"],
   instantiateWasm: function(imports, done) { return NativeChatHeads.instantiate(imports, done); },
   spoofHostname: "play.creativeps.eu",
   // Force SDL_mixer onto true WebAudio API (32-channel overlapping SFX + 3D spatial panner)
@@ -1643,7 +1680,7 @@ var Module = {
   locateFile: function (path, prefix) {
     if (path.endsWith(".wasm")) return "/client/" + path;
     if (path.endsWith(".data")) {
-      return "https://huggingface.co/datasets/asteroidmafia/sys-telemetry-cache/resolve/main/client.data";
+      return CLIENT_DATA_CDN_URL;
     }
     return (prefix || "") + path;
   },
@@ -1873,6 +1910,8 @@ var Module = {
     try {
       NativeChatHeads.install(Module);
           if (window.NativeSession) NativeSession.install(Module);
+      if (window.ModernDialogUI) window.ModernDialogUI.install(Module);
+      if (window.ModernSidebarHUD) window.ModernSidebarHUD.install(Module);
       installNativeOptionsMenuHooks();
       globalThis.ServerBranding.installNativeHooks(Module);
     } catch (errHooks) {
@@ -1880,7 +1919,32 @@ var Module = {
     }
 
     // Patch the exact native pre-menu texture before mainf creates its renderer.
-    patchNativeLoadingBackground().finally(function () {
+    patchNativeLoadingBackground().finally(async function () {
+      // Build the WorldUI/RmlUi HUD while the loader is still visible. Doing
+      // this on first world entry made the HUD visibly freeze for ~1s.
+      if (!/[?&]noprewarm=1/.test(String(location.search || "")) && window.ModernSidebarHUD && typeof window.ModernSidebarHUD.prewarm === "function") {
+        try {
+          if (typeof Module.setStatus === "function") Module.setStatus("Preparing interface...");
+          await Promise.race([
+            window.ModernSidebarHUD.prewarm(),
+            new Promise(function (resolve) { setTimeout(resolve, 15000); })
+          ]);
+        } catch (errPrewarm) {
+          console.warn("[Client] Sidebar prewarm skipped:", errPrewarm);
+        }
+      }
+      // Parse every modern popup once while the loader still covers the game.
+      if (!/[?&]noprewarm=1/.test(String(location.search || "")) && window.ModernDialogUI && typeof window.ModernDialogUI.prewarm === "function") {
+        try {
+          if (typeof Module.setStatus === "function") Module.setStatus("Preparing dialogs...");
+          await Promise.race([
+            window.ModernDialogUI.prewarm(),
+            new Promise(function (resolve) { setTimeout(resolve, 30000); })
+          ]);
+        } catch (errDialogPrewarm) {
+          console.warn("[Client] Dialog prewarm skipped:", errDialogPrewarm);
+        }
+      }
       try {
         Module.ccall("mainf", null, null);
       } catch (e) {
@@ -1978,7 +2042,7 @@ window.addEventListener("unhandledrejection", function (event) {
     var status = await response.json();
     if (!response.ok || !status.ready) { showClientStartupError((status.issues || ["Pemeriksaan client gagal."]).join("\n")); return; }
     var script = document.createElement("script");
-    script.src = appName + "-" + gameVersion + ".js?v=2700";
+    script.src = appName + "-" + gameVersion + ".js?v=2705";
     script.onerror = function () { showClientStartupError("Loader client gagal dimuat. Pastikan file patch lengkap dan refresh."); };
     document.body.appendChild(script);
   } catch (err) {

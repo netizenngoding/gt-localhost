@@ -7,7 +7,7 @@ function leb(n:number):Buffer {const a:number[]=[];do {const v=n&127;n>>>=7;a.pu
  * Renderer+32 carries effective skin/status/lighting for world AND portraits.
  */
 export function patchItemAppearance(input:Buffer):Buffer {
- const parts:Buffer[]=[input.subarray(0,8)];let p=8,patched=false,neckPatched=false;
+ const parts:Buffer[]=[input.subarray(0,8)];let p=8,patched=false,neckPatched=false,ghostInvisHeadPatched=false;
  while(p<input.length) {
   const id=input[p++],[len,start]=read(input,p);p=start+len;
   let section=input.subarray(start,p);
@@ -87,12 +87,33 @@ export function patchItemAppearance(input:Buffer):Buffer {
      body=Buffer.concat([body.subarray(0,at),offset,body.subarray(at)]);
      neckPatched=true;
     }
+    if(i+308===5463){
+     // AvatarRenderData::RenderBody (Func #5463 @ 356..524, Table[2988]):
+     // When CHAR_STATE_INVISIBLE (statePtr+52 & 4) is active and the local
+     // moderator has Ghost in the Shell (localPlayer+156 & 1), upstream draws
+     // player_head.rttex with hardcoded magenta/purple 0xFF01F2FF (41ffe58778).
+     // Elide that standalone void block so ghost + invis keeps the head
+     // completely transparent while leaving eyes and equipped items untouched.
+     if(crypto.createHash('sha256').update(body).digest('hex')!=='9236f92f63695cf522fb4e33072ab8857253efe235d9b1572f3fe55ff3b8a1c6') throw Error('Avatar body renderer signature changed');
+     const ghostInvisHeadBlock=Buffer.from(
+      '0240200028022c0d0020062d0034410471450d00419481182802002802880e2802b8012207450d00'+
+      '20072d008d0245044020072d008e024101470d010b20072d009c01410171450d0010bb0220052001'+
+      '3802482005200243000080c19238024c200520002a023838024020002a023c211020054200370238'+
+      '20052010380244200e41004100200541c8006a200541406b410241ffe58778430000000020054138'+
+      '6a2004410010c2020b',
+      'hex'
+     );
+     const blockAt=body.indexOf(ghostInvisHeadBlock);
+     if(blockAt<0 || body.indexOf(ghostInvisHeadBlock,blockAt+1)>=0) throw Error('Ghost+invis magenta head block signature changed');
+     body=Buffer.concat([body.subarray(0,blockAt),body.subarray(blockAt+ghostInvisHeadBlock.length)]);
+     ghostInvisHeadPatched=true;
+    }
     bodies.push(leb(body.length),body);
    }
    section=Buffer.concat(bodies);
   }
   parts.push(Buffer.from([id]),leb(section.length),section);
  }
- if(!patched || !neckPatched)throw Error('Appearance renderer not found');
+ if(!patched || !neckPatched || !ghostInvisHeadPatched)throw Error('Appearance renderer not found');
  const result=Buffer.concat(parts);if(!WebAssembly.validate(result))throw Error('Invalid appearance patch');return result;
 }

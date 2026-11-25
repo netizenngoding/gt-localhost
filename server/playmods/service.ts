@@ -161,7 +161,7 @@ function rollPlaymodDrop(ctx:ServerContext,s:PlayerSession,itemId:number,tx:numb
  // The native OnAction handler recognizes /popcorn and starts animation 23.
  const popcorn = id === 4256, xpPotion = id === 1488, coin = id === 752;
  if(!mod&&!food&&!popcorn&&!xpPotion&&!coin){OnConsoleMessage(s,'This consumable is not implemented yet. Your item was not consumed.');return true;}
- const target=consumableTarget(s,tx,ty),throwable=mod?.action==='throw';
+ const target=xpPotion ? s : consumableTarget(s,tx,ty),throwable=mod?.action==='throw';
  if(!target&&!throwable){bubble(s,'Must be used on a person.');return true;}
  if(xpPotion && target!==s){bubble(s,'This potion can only be used on yourself.');return true;}
  if(!ctx.consumeInventoryItem(s,id,1,true,false))return true;
@@ -227,7 +227,7 @@ function rollPlaymodDrop(ctx:ServerContext,s:PlayerSession,itemId:number,tx:numb
   }
   OnConsoleMessage(target,`You found ${ctx.itemsDb.get(prize)?.name || 'a prize'} in the popcorn!`);
  }
- if(xpPotion) recordProgress(ctx,s,undefined,0,10000);
+ if(xpPotion){bubble(s,'`5GULP! You got smarter!``',world.peers);recordProgress(ctx,s,undefined,0,10000);}
  // The source's "drop" random reward branch needs external max_gems data.
  // It is deliberately NOT fabricated; see consumable audit for that limitation.
  recordProgress(ctx,s,'consumables_used',1,1);

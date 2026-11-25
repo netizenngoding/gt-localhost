@@ -3,7 +3,7 @@ import { makeTextPacket, NET_MESSAGE_GAME_MESSAGE } from "../proton/packet";
 import { chatColorOf, displayName, hasPermission } from "../ranks";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { broadcastIconState, chatPortrait, makeConsoleMessagePacket, OnTalkBubble } from "../onVariant";
+import { broadcastIconState, chatPortrait, makeConsoleMessagePacket, OnConsoleMessage, OnTalkBubble } from "../onVariant";
 import { makeVariantPacket } from "../proton/packet";
 import { isIgnored, isMuted } from "./friends";
 import { sanitizeChatText } from "../tools/string";
@@ -26,7 +26,7 @@ export function handleInput(
   timestamps.push(now);
   session.chatTimestamps = timestamps.slice(-5);
   if (timestamps.length >= 5) {
-    session.peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|log\nmsg|`6>>`4Spam detected! ``Please wait a bit before typing anything else.\n"), true);
+    OnConsoleMessage(session, "`6>>`4Spam detected! ``Please wait a bit before typing anything else.  Please note, any form of bot/macro/auto-paste will get all your accounts banned, so don't do it!");
     return;
   }
 

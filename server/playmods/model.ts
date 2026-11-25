@@ -594,8 +594,9 @@ export function activeMods(a: PlayerAccount, now=Date.now()) {
 }
 export function effectiveSkin(a: PlayerAccount, ignoreSkinOverrides = false): number {
  // GTPS3 update_clothes chooses the FIRST active skin override, not latest.
- // While /invis is on the avatar is stripped down to eyes, so a skin override
- // (Ghost in the Shell = -2450) would only paint the leftover head.
- if (ignoreSkinOverrides) return a.skinColor;
- return activeMods(a).find(d=>d.skin!==undefined)?.skin ?? a.skinColor;
+ // While /invis is on, keep Ghost in the Shell (-2450) so blinking eyelids
+ // match ghost skin (Func #5463 magenta head block is already removed in WASM).
+ const mods = activeMods(a);
+ if (ignoreSkinOverrides) return mods.find(d=>d.id==='ghost-in-the-shell')?.skin ?? a.skinColor;
+ return mods.find(d=>d.skin!==undefined)?.skin ?? a.skinColor;
 }

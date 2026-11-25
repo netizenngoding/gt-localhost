@@ -1,0 +1,135 @@
+<rml>
+  <head>
+    <title>WardrobeSaveLoad</title>
+    <link type="text/template" href="../Base/BasePopup.rml" />
+    <link type="text/template" href="../Templates/ItemIconWithText.rml" />
+    <link type="text/rcss" href="../Base/WindowTitle.rcss" />
+    <link type="text/rcss" href="WardrobeSaveLoad.rcss" />
+    <link type="text/template" href="../Templates/CircularLoader.rml" />
+  </head>
+  <body template="BasePopup" class=" show-scrollbar">
+    <div data-model="WardrobeSaveLoadModel" id="wardrobe-load-popup" class="font-content">
+      <div class="content">
+        <div id="window-title">
+          <div class="title-icon" />
+          <div class="title-text font-title label">
+            <span data-class-hidden="WardrobeSaveLoadModel.IsSaveUi">Load Outfit</span>
+          </div>
+          <div class="title-text font-title label" data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi">
+            <span data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi">Save Outfit</span>
+          </div>
+        </div>
+        <div class="color_dreamsicle"
+             style="font-size: 24dp;"
+             data-class-hidden="WardrobeSaveLoadModel.IsSaveUi">
+          <p data-rml="ToRMLText(Localize('[WARDROBE_LOAD_UI_DESC]'))"/>
+          <p class="color_brown" 
+                data-class-hidden="!WardrobeSaveLoadModel.ShowMissingClothError || WardrobeSaveLoadModel.Loading"
+                data-rml="ToRMLText(Localize('[WARDROBE_LOAD_UI_WARNING]'))"/>
+        </div>
+        <p class="color_dreamsicle" 
+              style="font-size: 24dp;"
+              data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi"
+              data-rml="ToRMLText(Localize('[WARDROBE_SAVE_UI_DESC]'))"/>
+
+        <div id="load-icon" data-if="WardrobeSaveLoadModel.Loading">
+          <template src="CircularLoader"/>
+        </div>
+        
+        <div data-for="PresetItem : WardrobeSaveLoadModel.Presets" 
+             class="table-holder wondow-content-full wondow-content-horizontal"
+             data-if="!WardrobeSaveLoadModel.Loading">
+          <table data-attr-class="'full-width-table' + (PresetItem.Locked ? ' locked' : '')" rows="2" columns="9">
+            <tr class="item-row">
+              <td class="central-cell" colspan="4" rowspan="2">
+                <RenderPlayer class="portrait" data-attr-clothing="PresetItem.PresetStr"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[9]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[0]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[7]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[1]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[5]">
+                <template src="ItemIconWithText"/>
+              </td>
+            </tr>
+            <tr class="item-row">
+              <!-- Central cell is already merged -->
+            
+              <td data-alias-model="PresetItem.Preset[6]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[4]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[8]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[2]">
+                <template src="ItemIconWithText"/>
+              </td>
+              <td data-alias-model="PresetItem.Preset[3]">
+                <template src="ItemIconWithText"/>
+              </td>
+            </tr>
+            <tr class="button-row">
+              <td class="button-cell" colspan="4">
+                <div onclick="OnEvent(event, 'WardrobeSaveLoad.ButtonClicked')"
+                     data-attr-btn_index="it_index + 1"
+                     class="equip-button img-button button-default-color">
+                  <div class="label">
+                    <span data-if="ServerProtocol() >= 226">
+                      <span data-class-hidden="WardrobeSaveLoadModel.IsSaveUi"
+                            data-rml="ToRMLText(Localize('[WARDROBE_LOAD_UI_BTN]')) + ' ' + (it_index + 1)"/>
+                      <span data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi"
+                            data-rml="ToRMLText(Localize('[WARDROBE_SAVE_UI_BTN]')) + ' ' + (it_index + 1)"/>
+                    </span>
+                    <span data-if="ServerProtocol() &lt; 226">
+                      <span data-if="it_index == 0">
+                        <span data-class-hidden="WardrobeSaveLoadModel.IsSaveUi"
+                              data-rml="ToRMLText(Localize('[WARDROBE_LOAD_UI_BTN_1]'))"/>
+                        <span data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi"
+                              data-rml="ToRMLText(Localize('[WARDROBE_SAVE_UI_BTN_1]'))"/>
+                      </span>
+                      <span data-if="it_index == 1">
+                        <span data-class-hidden="WardrobeSaveLoadModel.IsSaveUi"
+                              data-rml="ToRMLText(Localize('[WARDROBE_LOAD_UI_BTN_2]'))"/>
+                        <span data-class-hidden="!WardrobeSaveLoadModel.IsSaveUi"
+                              data-rml="ToRMLText(Localize('[WARDROBE_SAVE_UI_BTN_2]'))"/>
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </td>
+              <td/>
+              <td/>
+              <td/>
+              <td/>
+              <td/>
+            </tr>
+          </table>
+          <div data-if="PresetItem.Locked" class="slot-blocker">
+            <div class="button-container">
+              <div onclick="OnEvent(event, 'WardrobeSaveLoad.PurchaseSlot')"
+                   class="purchase-button img-button button-green-color">
+                <div class="label">
+                  <span data-rml="ToRMLText(Localize('[WARDROBE_PURCHASE_SLOT_BTN]'))"/>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="back-button" onclick="OnEvent(event, 'WardrobeSaveLoad.OnBack')" class="img-button button-default-color">
+          <span class="label">Back</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</rml>

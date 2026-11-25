@@ -198,7 +198,7 @@ export function openPlayerRoleDialog(ctx: ServerContext, session: PlayerSession,
   if (!mayManageRanks(session)) return;
   const account = [...ctx.accounts.values()].find((a) => a.userId === userId);
   if (!account) {
-    OnConsoleMessage(session, "`4That player could not be found.``");
+    OnConsoleMessage(session, "That player could not be found.");
     return;
   }
   const currentDef = rankDef(rankOf(account));
@@ -336,7 +336,7 @@ export function handleRankEditorDialog(ctx: ServerContext, session: PlayerSessio
     if (!rankExists(id)) return true;
     const mine = actorLevel(session);
     if (rankDef(id).level > mine) {
-      OnConsoleMessage(session, "`4You cannot edit a rank above your own level.``");
+      OnConsoleMessage(session, "You cannot edit a rank above your own level.");
       openRanksTab(ctx, session);
       return true;
     }
@@ -350,9 +350,9 @@ export function handleRankEditorDialog(ctx: ServerContext, session: PlayerSessio
     if (color) patch.chatColor = color;
     if (level && /^\d+$/.test(level)) patch.level = Math.min(mine, Number(level));
     // A rank can never be given a power its editor does not hold itself.
-    patch.permissions = ALL_PERMISSIONS.filter((p: Permission) => kv[`perm_${p}`] === "1" && hasPermission(session.account, p));
+    patch.permissions = ALL_PERMISSIONS.filter((p: Permission) => kv[`$erm_${p}`] === "1" && hasPermission(session.account, p));
     const error = updateRank(id, patch);
-    OnConsoleMessage(session, error ? `\`4${error}\`\`` : `Saved the ${id} rank.`);
+    OnConsoleMessage(session, error ? `>> ${error}` : `>> Saved the ${id} rank.`);
     refreshRankHolders(ctx, id);
     openRanksTab(ctx, session);
     return true;
@@ -361,12 +361,12 @@ export function handleRankEditorDialog(ctx: ServerContext, session: PlayerSessio
     const id = btn.slice("role_del_".length);
     if (!rankExists(id)) return true;
     if (rankDef(id).level >= actorLevel(session)) {
-      OnConsoleMessage(session, "`4You cannot delete a rank at or above your own level.``");
+      OnConsoleMessage(session, "You cannot delete a rank at or above your own level.");
       openRanksTab(ctx, session);
       return true;
     }
     const error = deleteRank(id);
-    OnConsoleMessage(session, error ? `\`4${error}\`\`` : `Deleted the ${id} rank.`);
+    OnConsoleMessage(session, error ? `>> ${error}` : `>> Deleted the ${id} rank.`);
     openRanksTab(ctx, session);
     return true;
   }
@@ -393,7 +393,7 @@ export function handlePlayerRoleDialog(ctx: ServerContext, session: PlayerSessio
   if (!account) return true;
   // Refuse anything the client was not entitled to send, whatever it clicked.
   if (!mayAssign(session, account, rankId)) {
-    OnConsoleMessage(session, "`4You cannot give a rank at or above your own level.``");
+    OnConsoleMessage(session, "You cannot give a rank at or above your own level.");
     openPlayerRoleDialog(ctx, session, userId);
     return true;
   }
@@ -428,9 +428,9 @@ export function handleRoleManageDialog(ctx: ServerContext, session: PlayerSessio
   const prefix = CLEAN(kv.role_prefix) || "`w";
   const color = CLEAN(kv.role_color) || prefix;
   const label = CLEAN(kv.role_label) || id;
-  const permissions = ALL_PERMISSIONS.filter((p: Permission) => kv[`perm_${p}`] === "1" && hasPermission(session.account, p));
+  const permissions = ALL_PERMISSIONS.filter((p: Permission) => kv[`$erm_${p}`] === "1" && hasPermission(session.account, p));
   const error = createRank({ id, label, level, prefix, chatColor: color, permissions });
-  OnConsoleMessage(session, error ? `\`4${error}\`\`` : `Created the ${prefix}${label}\`\` rank (id ${id}, level ${level}).`);
+  OnConsoleMessage(session, error ? `>> ${error}` : `>> Created the ${prefix}${label} rank (id ${id}, level ${level}).`);
   openRanksTab(ctx, session);
   return true;
 }
@@ -449,11 +449,11 @@ export function handleRankCommand(ctx: ServerContext, session: PlayerSession, cm
     const onlineTarget = ctx.findOnlineSessionByName(targetName);
     const account = onlineTarget?.account ?? ctx.accounts.get(targetName.toLowerCase());
     if (!targetName || !rankId || !rankExists(rankId) || !account) {
-      OnConsoleMessage(session, "`4Unknown command.``  Enter `$/?`` for a list of valid commands.");
+      OnConsoleMessage(session, "Usage: /setrank `$<player name> <rank id>`o - Gives a player one of the ranks in /ranks.");
       return true;
     }
     if (!mayAssign(session, account, rankId)) {
-      OnConsoleMessage(session, "`4You cannot give a rank at or above your own level.``");
+      OnConsoleMessage(session, "You cannot give a rank at or above your own level.");
       return true;
     }
     applyRank(account, rankId);
@@ -475,7 +475,7 @@ export function handleRankCommand(ctx: ServerContext, session: PlayerSession, cm
       ctx.sendCharacterState(s);
       broadcastNameChanged(s);
     }
-    OnConsoleMessage(session, `Reloaded ${count} ranks.`);
+    OnConsoleMessage(session, `>> Reloaded ${count} ranks.`);
     return true;
   }
   return false;

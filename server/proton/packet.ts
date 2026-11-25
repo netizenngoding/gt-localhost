@@ -476,6 +476,19 @@ export function makeItemModifyObjectPacket(
   });
 }
 
+//   - netId == 0 with plantingTree = uid: removes a dropped WorldObject in
+//     realtime. This is the removal packet used by the reference server for
+//     grinder/object cleanup; do not use a -3 modify with item id 0, which
+//     leaves an empty dropped object on the client.
+export function makeItemRemovePacket(uid: number): Buffer {
+  return buildTankPacket({
+    type: PACKET_ITEM_CHANGE_OBJECT,
+    netId: 0,
+    targetNetId: 0,
+    value: uid,
+  });
+}
+
 //   - netId >= 0: collects dropped WorldObject (uid = value), removes from world, adds to local
 //     player's inventory (or gems if itemId == 112) when netId == localAvatar->netId, and plays
 //     audio/object_collect.wav natively!

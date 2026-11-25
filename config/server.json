@@ -4,7 +4,9 @@
   "skipIntro": true,
   "enableDeveloperMenu": false,
   "minecraftHealthBar": true,
-  "growtopiaLoadingScreen": true,
+  "growtopiaLoadingScreen": false,
+  "modernSidebarHud": true,
+  "modernSidebarHudScale": 0.9,
   "hideLegacyCustomItemWarning": true,
   "splashes": [
     "Welcome to {serverName}!",

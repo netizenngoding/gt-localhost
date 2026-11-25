@@ -6,8 +6,31 @@
   let wanted = new Map(), template=0;
   const marker = /`o`o`o((?:`[0-9]){10})`o {4,6}/;
   let ex, module, overlay, paint, inLog=false, installed=false, lastDraw=0, capturing=false;
+  let localCanvas=null, localKey='', localNextAt=0, uploadedHeadKey='';
   const stats={rendered:0,errors:0,visible:0};
   function key(meta){return meta.clothes.join(',')+':'+(meta.skin>>>0)+':'+((meta.hairColor||0)>>>0);}
+  function uploadLocalHead(image,k){
+    const device=g.CLIENT_DEVICE_ID||g.__GT_CLIENT_DEVICE_ID;
+    if(!device||!image||uploadedHeadKey===k)return;
+    uploadedHeadKey=k;
+    try{image.toBlob(function(blob){
+      if(!blob)return;
+      fetch('/api/player-head?device='+encodeURIComponent(device),{method:'POST',headers:{'Content-Type':'image/png'},body:blob,cache:'no-store'}).catch(function(){});
+    },'image/png');}catch(_e){}
+  }
+  function readLocalMeta(){
+    if(!module||!module.HEAPU8||!module.HEAPU32||!template)return null;
+    const app=module.HEAPU32[393364>>2];if(!app)return null;
+    const glc=module.HEAPU32[(app+1800)>>2];if(!glc)return null;
+    const av=module.HEAPU32[(glc+184)>>2];if(!av)return null;
+    const dv=new DataView(module.HEAPU8.buffer);
+    const rawSkin=dv.getUint32(av+1572,true)>>>0;
+    const skin=(rawSkin&0xff)!==0?rawSkin:0xB4D2FAFF;
+    const hairColor=dv.getUint32(av+564,true)>>>0;
+    const clothes=new Array(10);
+    for(let i=0;i<10;i++)clothes[i]=dv.getUint16(av+1576+i*2,true);
+    return {v:1,id:'0000000000',skin,hairColor,clothes};
+  }
   function validMeta(meta){return meta&&meta.v===1&&typeof meta.id==='string'&&/^\d{10}$/.test(meta.id)&&Array.isArray(meta.clothes)&&meta.clothes.length===10&&meta.clothes.every(n=>Number.isInteger(n)&&n>=0&&n<=65535)&&Number.isInteger(meta.skin)&&meta.skin>=0&&meta.skin<=4294967295&&(meta.hairColor===undefined||(Number.isInteger(meta.hairColor)&&meta.hairColor>=0&&meta.hairColor<=4294967295));}
   function receive(args){if(typeof args[2]!=='string'||args[2].length>512)return;let meta;try{meta=JSON.parse(args[2]);}catch(_){return;}if(!validMeta(meta))return;rows.set(meta.id,meta);while(rows.size>400)rows.delete(rows.keys().next().value);}
   function cropHead(pixels,w,h){let left=w,right=-1,top=h,bottom=-1;
@@ -54,7 +77,7 @@
       if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Portrait framebuffer incomplete');
       gl.bindTexture(gl.TEXTURE_2D,saved.texture);gl.disable(gl.SCISSOR_TEST);gl.viewport(0,256-gl.drawingBufferHeight,gl.drawingBufferWidth,gl.drawingBufferHeight);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.clearDepth(1);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       ex.portraitDraw(resource,state,0,0,0,scale);m.wasmTable.get(1336)(392580,0);
-      const pixels=new Uint8Array(256*256*4);gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+      const pixels=new Uint8Array(256*256*4);try{gl.pixelStorei(gl.PACK_ALIGNMENT,1);gl.flush();gl.finish();}catch(_e){}gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
       // Below the chin retain face/neck attachments, NOT mask/hat costume bodies.
       // Cultist Hood is slot 7 and otherwise contributes its torso/legs.
       dv.setUint16(fake+1576,0,true);dv.setUint16(fake+1576+14,0,true);
@@ -62,7 +85,7 @@
       dv.setUint32(state+40,meta.skin&0xffffff00,true);dv.setUint32(state+44,meta.skin&0xffffff00,true);
       dv.setUint32(state+48,(meta.hairColor||0)>>>0,true);
       gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);ex.portraitDraw(resource,state,0,0,0,scale);m.wasmTable.get(1336)(392580,0);
-      const accessories=new Uint8Array(256*256*4);gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,accessories);
+      const accessories=new Uint8Array(256*256*4);try{gl.flush();gl.finish();}catch(_e){}gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,accessories);
       mergeHeadLayers(pixels,accessories,256,256,208);
       const image=cropHead(pixels,256,256);if(image)stats.rendered++;return image;
     }finally{
@@ -79,7 +102,7 @@
       overlay=document.createElement('canvas');
       overlay.id='native-chat-heads';
       overlay.setAttribute('aria-hidden','true');
-      Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'10002',imageRendering:'pixelated'});
+      Object.assign(overlay.style,{position:'fixed',pointerEvents:'none',zIndex:'10030',imageRendering:'pixelated'});
       host.appendChild(overlay);
       paint=overlay.getContext('2d');
     }else if(overlay.parentElement!==host){
@@ -87,14 +110,28 @@
     }
     if(!c) return;
     const r=c.getBoundingClientRect();
-    const gl=module&&module.ctx;
-    const bw=(gl&&gl.drawingBufferWidth)||c.width;
-    const bh=(gl&&gl.drawingBufferHeight)||c.height;
+    // CSS-resolution overlay: a DPR=3 phone backing store can exceed mobile
+    // canvas limits, which silently hides every chat head.
+    const bw=Math.max(1,Math.round(r.width)||c.width);
+    const bh=Math.max(1,Math.round(r.height)||c.height);
     if(overlay.width!==bw||overlay.height!==bh){overlay.width=bw;overlay.height=bh;}
     Object.assign(overlay.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
     paint.clearRect(0,0,overlay.width,overlay.height);stats.visible=0;wanted=new Map();lastDraw=performance.now();
   }
-  function prepare(){if(document.hidden)return;let budget=1;for(const meta of wanted.values()){
+  function prepare(){if(document.hidden)return;let budget=1;
+    const lm=readLocalMeta();
+    if(lm){
+      const lk=key(lm),now=Date.now();
+      if((lk!==localKey||!localCanvas)&&now>=localNextAt&&budget>0){
+        budget--;
+        try{
+          const img=capture(lm);
+          if(img){localCanvas=img;localKey=lk;localNextAt=now+400;uploadLocalHead(img,lk);}
+          else{localNextAt=now+1000;}
+        }catch(_e){localNextAt=now+2500;}
+      }
+    }
+    for(const meta of wanted.values()){
     const k=key(meta),item=cache.get(k),now=Date.now();
     if(item&&(item.at>now||(item.image&&item.tries>=3)))continue;
     if(!budget--)break;
@@ -110,7 +147,9 @@
       const clip=gl.getParameter(gl.SCISSOR_BOX),prefix=text.slice(0,hit.index),reserved=measure(font,hit[0].match(/ +$/)[0],scale),height=new DataView(module.HEAPU8.buffer).getInt16(font+14,true)*scale,size=Math.max(1,Math.min(reserved-1,height));
       const vw=(module.HEAP32&&module.HEAP32[392500>>2])||overlay.width,vh=(module.HEAP32&&module.HEAP32[392496>>2])||overlay.height;
       const sx=overlay.width/vw,sy=overlay.height/vh;
-      paint.save();if(gl.isEnabled(gl.SCISSOR_TEST)&&clip){paint.beginPath();paint.rect(clip[0],overlay.height-clip[1]-clip[3],clip[2],clip[3]);paint.clip();}paint.imageSmoothingEnabled=false;paint.drawImage(item.image,(x+measure(font,prefix,scale))*sx,(y+(height-size)/2)*sy,size*sx,size*sy);paint.restore();stats.visible++;
+      const cw=gl.drawingBufferWidth||overlay.width,ch=gl.drawingBufferHeight||overlay.height;
+      const cx=overlay.width/cw,cy=overlay.height/ch;
+      paint.save();if(gl.isEnabled(gl.SCISSOR_TEST)&&clip){paint.beginPath();paint.rect(clip[0]*cx,overlay.height-(clip[1]+clip[3])*cy,clip[2]*cx,clip[3]*cy);paint.clip();}paint.imageSmoothingEnabled=false;paint.drawImage(item.image,(x+measure(font,prefix,scale))*sx,(y+(height-size)/2)*sy,size*sx,size*sy);paint.restore();stats.visible++;
     } catch(err) {
       console.warn('[Chat heads] draw error:', err);
     }
@@ -122,7 +161,10 @@
     setInterval(()=>{if(overlay&&!document.hidden&&performance.now()-lastDraw>250)paint.clearRect(0,0,overlay.width,overlay.height);},250);
   }
   g.NativeChatHeads={stats,validMeta,install,
-    instantiate(imports,done){fetch('/client/client.wasm',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('WASM HTTP '+r.status);return r.arrayBuffer();}).then(bytes=>WebAssembly.compile(bytes)).then(async mod=>{if(!["portraitDraw","portraitResources","portraitApply","portraitDestroy"].every(name=>WebAssembly.Module.exports(mod).some(e=>e.name===name&&e.kind==="function")))throw Error("Server missing audited portrait exports; rebuild the server");const instance=await WebAssembly.instantiate(mod,imports);ex=instance.exports;done(instance,mod);}).catch(error=>{console.error('[Chat heads]',error);if(g.showClientStartupError)g.showClientStartupError(String(error));});return {};},
+    localPortrait(){return {canvas:localCanvas,key:localKey};},
+    localPortraitFresh(){try{const lm=readLocalMeta();if(!lm||!template)return null;const img=capture(lm);if(img){localCanvas=img;localKey=key(lm);}return localCanvas?{canvas:localCanvas,key:localKey}:null;}catch(_e){return null;}},
+    wasmExports(){return ex||null;},
+    instantiate(imports,done){fetch('/client/client.wasm',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('WASM HTTP '+r.status);return r.arrayBuffer();}).then(bytes=>WebAssembly.compile(bytes)).then(async mod=>{const reqExports=["portraitDraw","portraitResources","portraitApply","portraitDestroy","rmlSyncConsoleLayout","rmlSetHudEnabled","rmlSetModalOpen","rmlIsInWorld","rmlGetPlayerGems","rmlGetDisplayedGems","rmlOpenStore","rmlSendPacket","rmlPlayClickSound","rmlIsAudioEnabled"];if(!reqExports.every(name=>WebAssembly.Module.exports(mod).some(e=>e.name===name&&e.kind==="function")))throw Error("Server missing audited portrait/RmlUi WASM exports; rebuild the server");const instance=await WebAssembly.instantiate(mod,imports);ex=instance.exports;g.__RML_WASM_EXPORTS=ex;done(instance,mod);}).catch(error=>{console.error('[Chat heads]',error);if(g.showClientStartupError)g.showClientStartupError(String(error));});return {};},
     // Read-only diagnostics: no privilege-changing endpoints or equipment mutation.
     diagnostics(){return {...stats,entries:rows.size,portraits:cache.size};}
   };

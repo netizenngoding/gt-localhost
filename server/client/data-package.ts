@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import type { Express } from "express";
 
 export const DATA_SIZE = 341708818;
-export const DATA_SHA256 = "f7f126b0a56d096006dd26f16a4cf6b1d3ab76f641d39b38c8a47081046719a7";
+export const DATA_SHA256 = "1c55542f952093ec0547ca8b78733231182532d1e36d5ebcb9a69fae4a011c61";
 export const PART_SIZE = 20 * 1024 * 1024;
 type Part = { file: string; size: number; sha256?: string; offset: number };
 export function createDataPackage(rootDir: string) {

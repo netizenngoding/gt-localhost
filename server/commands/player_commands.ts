@@ -1,3 +1,4 @@
+import { loadavg } from "node:os";
 import { requestTrade } from '../action/trade';
 import { chatPortrait } from "../onVariant/OnConsoleMessage";
 import { displayName, hasPermission } from "../ranks";
@@ -23,6 +24,7 @@ import { progression } from "../progression/service";
 import { togglePermanentMod } from "../playmods/service";
 import { isHiddenStaff } from "../ranks/staff_hidden";
 import { showGrowIdApplyModal } from "../action/growid";
+import { sendLoginEventMessages } from "../action/enter_game";
 
 const KIT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const STARTER_KIT: Array<[number, number]> = [
@@ -41,7 +43,7 @@ export function handlePlayerCommand(
   argStr: string
 ): boolean {
   if (["gitem", "kit", "kits", "clearinv", "cheats", "ghost"].includes(cmd) && !hasPermission(session.account, "debug")) {
-    OnConsoleMessage(session, "`4This command is operator-only.``"); return true;
+    OnConsoleMessage(session, `You need developer rank or higher to use /${cmd}.`); return true;
   }
   if (cmd === "find" || cmd === "item" || cmd === "search") {
     openItemFinderDialog(ctx, session, argStr);
@@ -72,7 +74,7 @@ export function handlePlayerCommand(
     const acct = session.account;
     if (acct.lastKitClaim && now - acct.lastKitClaim < KIT_COOLDOWN_MS) {
       const leftMin = Math.ceil((KIT_COOLDOWN_MS - (now - acct.lastKitClaim)) / 60000);
-      OnConsoleMessage(session, `\`4Starter kit cooldown: \`w${leftMin}m\`4 remaining.\`\``);
+      OnConsoleMessage(session, `Starter kit cooldown: ${leftMin}m remaining.`);
       return true;
     }
     for (const [id, qty] of STARTER_KIT) {
@@ -83,7 +85,7 @@ export function handlePlayerCommand(
     ctx.savePlayersNow();
     OnSetBux(session);
     OnPlayPositioned(session, "audio/object_collect.wav");
-    OnConsoleMessage(session, "`2Starter kit + 1,000 Gems claimed!``");
+    OnConsoleMessage(session, ">> Starter kit and 1,000 Gems claimed!");
     return true;
   }
 
@@ -92,15 +94,15 @@ export function handlePlayerCommand(
     const qty = Math.max(1, Math.min(200, parseInt(parts[2] || "1", 10) || 1));
     const def = ctx.itemsDb.get(id);
     if (!def || def.name.startsWith("null_")) {
-      OnConsoleMessage(session, "`4Usage: /gitem <item_id> [1-200]``");
+      OnConsoleMessage(session, "Usage: /gitem <item id> [1-200] - Gives you an item.");
       return true;
     }
     const added = ctx.giveInventoryItem(session, id, qty, true);
     OnConsoleMessage(
       session,
       added > 0
-        ? `\`2Received \`w${added}x ${stripGtColors(def.name)}\`2 (#${def.id})!\`\``
-        : "`4Backpack full or stack already at 200!``"
+        ? `>> Received ${added}x ${stripGtColors(def.name)} (#${def.id}).`
+        : ">> Backpack is full or that stack is already at 200."
     );
     return true;
   }
@@ -124,8 +126,8 @@ export function handlePlayerCommand(
     OnConsoleMessage(
       session,
       keptEquipped.size > 0
-        ? "`2Inventory cleared (worn clothes, Fist & Wrench kept)!``"
-        : "`2Inventory cleared!``"
+        ? ">> Inventory cleared. Worn clothes, Fist and Wrench were kept."
+        : ">> Inventory cleared."
     );
     return true;
   }
@@ -358,12 +360,45 @@ export function handlePlayerCommand(
   }
 
   if (cmd === "status" || cmd === "stats") {
-    const acct = session.account;
-    const worldName = session.world?.name || "EXIT";
-    OnConsoleMessage(
-      session,
-      `\`o[Status] Name: \`w${acct.name}\`o | World: \`w${worldName}\`o | Gems: \`2${acct.gems || 0}\`o | Backpack: \`w${acct.inventory.filter(i => i.count > 0).length}/${acct.backpackSize}\`o | Online: \`2${ctx.sessions.size}\`o players.\`\``
-    );
+    const uptime = Math.floor(process.uptime());
+    const days = Math.floor(uptime / 86400);
+    const hours = Math.floor((uptime % 86400) / 3600);
+    const mins = Math.floor((uptime % 3600) / 60);
+    const secs = uptime % 60;
+    const uptimeText = `${days > 0 ? `${days} days, ` : ""}${hours} hours, ${mins} mins, ${secs} secs`;
+    OnConsoleMessage(session, `Server 1 - S1 Uptime: ${uptimeText}`);
+
+    // Full server internals are staff-only. Players/VIPs only need uptime.
+    if (hasPermission(session.account, "moderate")) {
+      const activeWorlds = new Set([...ctx.sessions].map(s => s.world?.name).filter(Boolean)).size;
+      const load = loadavg().map(n => n.toFixed(2)).join(" ");
+      const rssMb = Math.round(process.memoryUsage().rss / 1048576);
+      const now = new Date();
+      const nextEvent = new Date(now);
+      nextEvent.setHours(24, 0, 0, 0);
+      const untilEvent = Math.max(0, nextEvent.getTime() - now.getTime());
+      const eventMins = Math.floor(untilEvent / 60000);
+      const eventSecs = Math.floor((untilEvent % 60000) / 1000);
+      const cpuHits = [...ctx.worlds.values()]
+        .sort((a, b) => b.peers.size - a.peers.size || b.objects.length - a.objects.length)
+        .slice(0, 10)
+        .map(w => `${w.name.toUpperCase()} used 1 (0)`)
+        .join(" ");
+
+      OnConsoleMessage(session, `Total players: ${ctx.accounts.size} local players on now: ${ctx.sessions.size} - Active worlds: ${ctx.worlds.size}`);
+      OnConsoleMessage(session, `UserCountMapWrlds: ${activeWorlds}`);
+      OnConsoleMessage(session, `Total NPCs: 0 Ghosts: 0 HGhosts: 0`);
+      OnConsoleMessage(session, `Ratings buffered: 0 Worldmaints queued: 0 User maints queued: 0`);
+      OnConsoleMessage(session, `World Balancing is Enabled - Local World Balancing is Enabled`);
+      OnConsoleMessage(session, `Server Load: ${load} Mem data: ${rssMb}MB Clients: ${ctx.sessions.size} - Next event in ${eventMins} mins, ${eventSecs} secs`);
+      OnConsoleMessage(session, `Game latency: 1 Total loop latency: 1`);
+      OnConsoleMessage(session, `Biggest game latency since last /stats: 1 Biggest loop latency: 1 ms, avg: 1`);
+      OnConsoleMessage(session, `Biggest CPU hits: ${cpuHits || "None"}`);
+      OnConsoleMessage(session, `OnlineManager stats: Users tracked: ${ctx.accounts.size} Update Speed MS:10000 Users per check: 6000 Current last user: 0 Passcounter: ${ctx.nextUserId} Last row count:${ctx.sessions.size}`);
+      OnConsoleMessage(session, `Worlds loaded since last check: 0 Worlds unloaded: 0 Saves: 0 Saves ignored: 0`);
+      OnConsoleMessage(session, `World stats: Ghosts: 0 HGhosts: 0 Total NPCS: 0`);
+      sendLoginEventMessages(session);
+    }
     return true;
   }
 

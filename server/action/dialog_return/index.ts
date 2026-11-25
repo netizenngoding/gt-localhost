@@ -15,6 +15,8 @@ import { handleTrashItemReturn } from "./trash_item";
 import { handleVendingDialogReturn } from "./vending";
 import { handleTelephoneLockeDialogReturn } from "./telephone_locke";
 import { handleWorldBlockDialogReturn } from "./world_blocks";
+import { handleSidebarDialogReturn } from "../../sidebar/service";
+import { handleAuctionDialogReturn } from "../../auction/service";
 
 import {
   handlePlayerRoleDialog,
@@ -69,6 +71,9 @@ export function handleDialogReturn(
     handleAcceptAccessDialog(ctx, session, kv);
     return;
   }
+
+  if (handleSidebarDialogReturn(ctx, session, dlg, kv)) return;
+  if (handleAuctionDialogReturn(ctx, session, kv)) return;
 
   if (dlg.toLowerCase() === "socialportal") {
     handleSocialPortalReturn(ctx, session, kv);

@@ -7,6 +7,7 @@ import {
   OnTalkBubble,
 } from "../../onVariant";
 import { buildTankPacket } from "../../proton/packet";
+import { sendSidebarHudState } from "../../sidebar/service";
 
 export const GTPS3_LOCKE_ITEMS: Array<{ itemId: number; priceWl: number }> = [
   { itemId: 8202, priceWl: 1 },
@@ -299,6 +300,7 @@ export function handleTelephoneLockeDialogReturn(
       session.account.lastDailyQuestDay = quest.dayKey;
       ctx.dirty = true;
       ctx.savePlayersNow();
+      sendSidebarHudState(ctx, session);
 
       // Packet 19 popup animation
       const animPkt = buildTankPacket({

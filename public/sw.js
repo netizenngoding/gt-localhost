@@ -1,5 +1,5 @@
 // Growtopia Web Service Worker (PWA Compliance & Fast App Shell)
-const CACHE_NAME = 'growtopia-shell-v21';
+const CACHE_NAME = 'growtopia-shell-v34';
 
 const STATIC_RESOURCES = [
   '/',

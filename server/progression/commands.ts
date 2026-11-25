@@ -30,16 +30,20 @@ export function handleProgressionCommand(ctx: ServerContext, s: PlayerSession, c
  if (cmd === 'achievements') { showAchievements(s); return true; }
  if (cmd === 'level') { const p=progression(s.account); OnConsoleMessage(s,`Level ${p.level} | XP ${p.xp}/${xpRequired(p.level)}${p.superSupporter ? ' | Super Supporter' : ''}`); return true; }
  if (cmd !== 'setlevel' && cmd !== 'givexp') return false;
- if (!hasPermission(s.account,'debug')) { OnConsoleMessage(s,'Developer permission required.'); return true; }
+ if (!hasPermission(s.account,'debug')) { OnConsoleMessage(s,`You need developer rank to use /${cmd}.`); return true; }
  const amount = Number(parts[1]);
  if (parts.length < 2 || parts.length > 3 || !/^\d+$/.test(parts[1]) || !Number.isSafeInteger(amount) || amount < 1 || amount > (cmd==='setlevel' ? MAX_LEVEL : 10000000)) {
-   OnConsoleMessage(s,`Usage: /${cmd} <${cmd==='setlevel'?'1-125':'1-10000000'}> [online player]`); return true;
+   OnConsoleMessage(s, cmd==='setlevel'
+     ? 'Usage: /setlevel `$<1-125> [player name]`o - Sets a player level.'
+     : 'Usage: /givexp `$<1-10000000> [player name]`o - Adds XP to a player.'); return true;
  }
  const target = parts[2] ? [...ctx.sessions].find(p=>p.account.name.toLowerCase()===parts[2].toLowerCase()) : s;
- if (!target) { OnConsoleMessage(s,'Player is not online.'); return true; }
+ if (!target) { OnConsoleMessage(s,'That player is not online.'); return true; }
  if (cmd === 'setlevel') { const p=progression(target.account); p.level=amount; p.xp=0; }
  recordProgress(ctx,target,undefined,0,cmd==='givexp'?amount:0);
  ctx.sendCharacterState(target); OnSetBux(target); broadcastNameChanged(target);
- OnConsoleMessage(s,`${cmd}: ${target.account.name}, level ${progression(target.account).level}.`);
+ OnConsoleMessage(s, cmd==='setlevel'
+   ? `>> ${target.account.name} is now level ${progression(target.account).level}.`
+   : `>> Gave ${amount} XP to ${target.account.name}.`);
  return true;
 }

@@ -149,6 +149,8 @@
   }
 
   var CMD_HEADER_SIZES = { 0: 0, 1: 8, 2: 48, 3: 44, 4: 8, 5: 4, 6: 6, 7: 8, 8: 24, 9: 8, 10: 12, 11: 16, 12: 24 };
+  var fragmentBuffers = Object.create(null);
+  var fragmentBufferOrder = [];
 
   function inspectEnetFrame(rawBytes) {
     if (!rawBytes || rawBytes.length < 14) return;
@@ -195,9 +197,52 @@
         inspectGamePayload(body.subarray(uStart, uStart + uLen));
         pos = uStart + uLen;
       } else if (cmdNum === 8 || cmdNum === 12) {
-        // SEND_FRAGMENT
+        // SEND_FRAGMENT / SEND_UNRELIABLE_FRAGMENT — reassemble multi-MTU packets (>1392 B)
+        var channelId = body[pos + 1];
+        var startSeq = bodyDv.getUint16(pos + 4, false);
         var fLen = bodyDv.getUint16(pos + 6, false);
-        pos += 24 + fLen;
+        var fragCount = bodyDv.getUint32(pos + 8, false);
+        var fragNum = bodyDv.getUint32(pos + 12, false);
+        var totalLen = bodyDv.getUint32(pos + 16, false);
+        var fragOff = bodyDv.getUint32(pos + 20, false);
+        var fStart = pos + 24;
+        if (fStart + fLen > body.length) break;
+        if (
+          totalLen > 0 &&
+          totalLen <= 524288 &&
+          fragCount > 0 &&
+          fragCount <= 1024 &&
+          fragNum < fragCount &&
+          fragOff + fLen <= totalLen
+        ) {
+          var fKey = cmdNum + ":" + channelId + ":" + startSeq;
+          var fb = fragmentBuffers[fKey];
+          if (!fb || fb.totalLen !== totalLen || fb.fragCount !== fragCount) {
+            fb = {
+              totalLen: totalLen,
+              fragCount: fragCount,
+              receivedCount: 0,
+              data: new Uint8Array(totalLen),
+              mask: new Uint8Array(fragCount)
+            };
+            fragmentBuffers[fKey] = fb;
+            fragmentBufferOrder.push(fKey);
+            while (fragmentBufferOrder.length > 32) {
+              var oldKey = fragmentBufferOrder.shift();
+              if (oldKey) delete fragmentBuffers[oldKey];
+            }
+          }
+          if (!fb.mask[fragNum]) {
+            fb.mask[fragNum] = 1;
+            fb.receivedCount++;
+            fb.data.set(body.subarray(fStart, fStart + fLen), fragOff);
+            if (fb.receivedCount === fb.fragCount) {
+              delete fragmentBuffers[fKey];
+              inspectGamePayload(fb.data);
+            }
+          }
+        }
+        pos = fStart + fLen;
       } else {
         pos += hdrSize;
       }
@@ -211,6 +256,8 @@
     function WrappedWebSocket(url, protocols) {
       var ws = protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
       if (typeof url === "string" && url.indexOf("/enet") !== -1) {
+        fragmentBuffers = Object.create(null);
+        fragmentBufferOrder = [];
         GameSDK._activeSocket = ws;
         ws.addEventListener("message", function (ev) {
           try {
@@ -272,7 +319,7 @@
     }
     var dataPtr = u32[sPtr >> 2];
     var longLen = u32[(sPtr + 4) >> 2];
-    if (!dataPtr || longLen > 2048) return "";
+    if (!dataPtr || longLen > 262144 || dataPtr + longLen > u8.length) return "";
     return utf8Dec.decode(u8.slice(dataPtr, dataPtr + longLen));
   }
 

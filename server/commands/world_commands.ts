@@ -76,12 +76,19 @@ export function handleWorldCommand(
     middle:"fuckyou", wave:"wave", dance:"dance", love:"love", sleep:"sleep", facepalm:"fp", fp:"fp",
     smh:"smh", yes:"yes", no:"no", omg:"omg", idk:"idk", shrug:"idk",
     furious:"furious", rolleyes:"rolleyes", foldarms:"fold", fa:"fold", stubborn:"fold",
-    fold:"fold", dab:"dab", sassy:"sassy", dance2:"dance2", march:"march", grumpy:"grumpy", shy:"shy"
+    fold:"fold", dab:"dab", sassy:"sassy", dance2:"dance2", march:"march", grumpy:"grumpy", shy:"shy", troll:"troll",
+    cheer:"cheer", wink:"wink", shower:"shower", mad:"mad", lol:"lol", laugh:"laugh", favrm:"favrm"
   };
+  if (cmd === "cry" || cmd === "sad") {
+    if (world) broadcastTalkBubble(world, session.netId, ":'(", 0);
+    return true;
+  }
   if (Object.hasOwn(emotes, cmd)) {
     if (world) {
       const packet = makeVariantPacket(["OnAction", "/" + emotes[cmd]], session.netId);
-      for (const p of world.peers) p.peer.sendPacket(0, packet, true);
+      for (const p of world.peers) {
+        if (!p.account.ignoredIds?.includes(session.account.userId)) p.peer.sendPacket(0, packet, true);
+      }
     }
     return true;
   }
@@ -105,7 +112,7 @@ export function handleWorldCommand(
     if (tile && tile.extra?.kind === "door" && canModifyWorldTile(session, world, tile)) {
       openDoorSettingsDialog(session, tx, ty);
     } else {
-      OnConsoleMessage(session, "`4Stand on a door you own to edit its destination!``");
+      OnConsoleMessage(session, "Stand on a door you own to edit its destination.");
     }
     return true;
   }
@@ -113,14 +120,19 @@ export function handleWorldCommand(
   if (cmd === "weather") {
     if (!world) return true;
     if (world.ownerUserId !== 0 && world.ownerUserId !== session.account.userId && !hasPermission(session.account, "debug")) {
-      OnConsoleMessage(session, "`4Only the World Lock owner can change weather!``");
+      OnConsoleMessage(session, "Only the World Lock owner can change the weather.");
       return true;
     }
-    const wId = Math.max(0, Math.min(85, parseInt(argStr || "0", 10) || 0));
+    const rawWeather = argStr.trim();
+    if (!rawWeather) {
+      OnConsoleMessage(session, "Usage: /weather `$<0-85>`o - Changes the weather in this world.");
+      return true;
+    }
+    const wId = Math.max(0, Math.min(85, parseInt(rawWeather, 10) || 0));
     world.weatherId = wId;
     ctx.dirty = true;
     broadcastSetCurrentWeather(world, wId);
-    OnConsoleMessage(session, `\`2Changed world weather to #${wId}!\`\``);
+    OnConsoleMessage(session, `>> Weather changed to #${wId}.`);
     return true;
   }
 
@@ -130,7 +142,7 @@ export function handleWorldCommand(
     const ty = Math.floor((session.y + 15) / 32);
     const tile = world.tiles[ty * world.width + tx];
     if (!tile || tile.extra?.kind !== "lock" || tile.extra.ownerUserId !== session.account.userId) {
-      OnConsoleMessage(session, "`4Stand on a placed lock you own to cycle its tier!``");
+      OnConsoleMessage(session, "Stand on a placed lock you own to cycle its tier.");
       return true;
     }
     convertPlacedLock(ctx, session, world, tx, ty);

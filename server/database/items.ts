@@ -50,6 +50,14 @@ export function protonHash(buf: Buffer): number {
 
 const SECRET_KEY = "PBG892FXX982ABC*";
 
+/**
+ * Obscure dummy item repurposed as the 32x32 Discord-logo icon used by the
+ * in-game link dialogs and the modern link banner. Its texture path is
+ * rewritten to `discord_logo.rttex` (served from public/cache/game) below.
+ */
+export const DISCORD_ICON_ITEM_ID = 12226;
+const DISCORD_ICON_TEXTURE = "discord_logo.rttex";
+
 // Exact Growtopia client weather IDs corresponding to Weather Machine items (matches GTPS3 World.h + WASM #960)
 export const WEATHER_BY_ITEM_ID: Record<number, number> = {
   932: 4,     // Weather Machine - Sunny
@@ -267,7 +275,7 @@ export class ItemDatabase {
       };
       const row = reference.get(id);
       const allowed = !!row && !removedItemIds.has(id) && row[1] === name && row[2] === texture && row[3] === actionType && row[4] === def.clothingType;
-      const record = itemsDatBuf.subarray(recordStart, pos);
+      let record = itemsDatBuf.subarray(recordStart, pos);
       if (id === 0) {
         if (!allowed) throw new Error("Item 0 does not match the original reference");
         emptyRecord = Buffer.from(record);
@@ -281,6 +289,25 @@ export class ItemDatabase {
         prefix.writeUInt32LE(id, 0); prefix.writeUInt16LE(label.length, 8);
         recordChunks.push(Buffer.concat([prefix, label, emptyRecord.subarray(10 + oldNameLen)]));
         continue; // Not searchable, grantable, purchasable, equipable or placeable.
+      }
+      if (allowed && id === DISCORD_ICON_ITEM_ID) {
+        // Repoint one obscure dummy item at our custom 32x32 Discord logo and
+        // force its sprite to tile (0,0) so the whole texture is the icon.
+        const patched = Buffer.from(record);
+        const nameLen = patched.readUInt16LE(8);
+        const textureLenOffset = 10 + nameLen;
+        const textureOffset = textureLenOffset + 2;
+        const textureLen = patched.readUInt16LE(textureLenOffset);
+        const customTexture = Buffer.from(DISCORD_ICON_TEXTURE, "latin1");
+        if (customTexture.length !== textureLen) {
+          throw new Error(`Discord icon texture length mismatch: ${customTexture.length} != ${textureLen}`);
+        }
+        customTexture.copy(patched, textureOffset);
+        patched[textureOffset + textureLen + 9] = 0;  // tx
+        patched[textureOffset + textureLen + 10] = 0; // ty
+        patched[textureOffset + textureLen + 11] = 0; // spreadType
+        record = patched;
+        def.texture = DISCORD_ICON_TEXTURE;
       }
       recordChunks.push(record);
       this.items.set(id, def);

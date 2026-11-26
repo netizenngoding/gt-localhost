@@ -9,6 +9,7 @@ import {
   buildTankPacket,
   defaultMannequinExpression,
   defaultMannequinSkin,
+  DROPPED_ITEM_FOREGROUND_FLAG,
   makeItemDropPacket,
   makeItemModifyObjectPacket,
   makeItemRemovePacket,
@@ -17,12 +18,21 @@ import {
   makeTileUpdatePacket,
   makeSendLockPacket,
   makeVariantPacket,
+  PACKET_ITEM_EFFECT,
+  PACKET_SEND_PARTICLE_EFFECT,
   PACKET_TILE_APPLY_DAMAGE,
   TANK_FLAG_FACING_LEFT,
   TILE_FLAG_FLIPPED,
   TILE_FLAG_LOCKED,
   TILE_FLAG_OPEN,
   TILE_FLAG_PUBLIC,
+  TILE_FLAG_WATER,
+  TILE_FLAG_GLUE,
+  TILE_FLAG_BURNT,
+  TILE_FLAG_PAINT_MASK,
+  TILE_FLAG_PAINT_RED,
+  TILE_FLAG_PAINT_YELLOW,
+  TILE_FLAG_PAINT_BLUE,
   type DroppedObject,
   type SeedExtra,
   type TankPacket,
@@ -130,6 +140,33 @@ export const WEATHER_MACHINE_MAP: Record<number, number> = WEATHER_BY_ITEM_ID;
 export const GROWMOJI_ITEMS = new Set([10114, 8028, 7698, 10116, 12544, 12542]);
 export const HAIR_DYE_ITEMS = new Set([3822, 3824, 3826, 3828, 3830]);
 export const EYE_ITEMS = new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
+
+// GTPS3 paint particle uses packet 17 with netId/YSpeed 168 and the colour in
+// XSpeed. The values are the exact floats from the ReuGT paint case.
+const PAINT_PARTICLE_COLOR: Record<number, number> = {
+  3478: 65280,
+  3480: 16776960,
+  3482: 16711680,
+  3484: 4294901760,
+  3486: 4278190080,
+  3488: 4278255360,
+  3490: 1010580480,
+  3492: 3875520768,
+};
+
+// GTPS3 World.h 22313: paint buckets only work while a Paintbrush is equipped,
+// glue/water/lighter are handled directly on the target tile.
+const PAINTBRUSH_IDS = new Set([3494, 7938]);
+const PAINT_BUCKET_BITS: Record<number, number> = {
+  3478: TILE_FLAG_PAINT_RED,
+  3480: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW,
+  3482: TILE_FLAG_PAINT_YELLOW,
+  3484: TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE,
+  3486: TILE_FLAG_PAINT_BLUE,
+  3488: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_BLUE,
+  3490: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE,
+  3492: 0,
+};
 
 export const FISHING_RODS = new Set([3040, 3010, 2912, 3008, 3100, 5740, 6254, 6256, 6932, 10262, 6258]);
 export const BAIT_ITEMS = new Set([2914, 3012, 3014, 3016, 3018, 3020, 5526, 5528]);
@@ -316,6 +353,174 @@ function useDyeItem(
   ctx.dirty = true;
   ctx.savePlayersNow();
   ctx.sendCharacterState(session);
+  return true;
+}
+
+function isProtectedPaintTile(ctx: ServerContext, tile: WorldTile): boolean {
+  const fg = tile.fg ? ctx.itemsDb.get(tile.fg) : undefined;
+  return !!(
+    tile.fg === 9570 ||
+    tile.fg === 6 ||
+    tile.fg === 8 ||
+    fg?.isLock ||
+    fg?.isDoor ||
+    fg?.isBedrock
+  );
+}
+
+function broadcastTileUpdate(ctx: ServerContext, world: WorldInstance, tx: number, ty: number, tile: WorldTile): void {
+  const pkt = makeTileUpdatePacket(tx, ty, tile, Date.now());
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+  ctx.dirty = true;
+}
+
+/** ReuGT type-19 item-use animation used by glue/water/lighter placement. */
+function broadcastTileUseEffect(
+  world: WorldInstance,
+  session: PlayerSession,
+  tx: number,
+  ty: number,
+  itemId: number
+): void {
+  // GTPS3 World.h glue/water/lighter: count2=4, punchY=1, target netID in int_dat.
+  const pkt = buildTankPacket({
+    type: PACKET_ITEM_EFFECT,
+    count2: 4,
+    netId: 0,
+    targetNetId: session.netId,
+    value: 0,
+    punchX: itemId,
+    punchY: 1,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16,
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+}
+
+/** ReuGT type-17 paint splash particle (colour is carried in XSpeed). */
+function broadcastPaintParticle(world: WorldInstance, tx: number, ty: number, color: number): void {
+  const pkt = buildTankPacket({
+    type: PACKET_SEND_PARTICLE_EFFECT,
+    netId: 168,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16,
+    speedX: color,
+    speedY: 168,
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+}
+
+function denyTileUse(ctx: ServerContext, session: PlayerSession, world: WorldInstance, tile: WorldTile, tx: number, ty: number): boolean {
+  if (canModifyWorldTile(session, world, tile, tx, ty, "place")) return false;
+  OnPlayPositioned(session, "audio/punch_locked.wav");
+  OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "place", session.account.userId), 0, true);
+  return true;
+}
+
+/** GTPS3 World.h 22313: water bucket, glue, and pocket lighter tile toggles. */
+function useUtilityTileItem(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile,
+  tx: number,
+  ty: number,
+  itemId: number
+): boolean {
+  if (itemId !== 822 && itemId !== 1866 && itemId !== 3062) return false;
+  if (denyTileUse(ctx, session, world, tile, tx, ty)) return true;
+
+  if (itemId === 3062) {
+    if (isProtectedPaintTile(ctx, tile)) {
+      OnTalkBubble(session, session.netId, "That won't burn!", 0, true);
+      return true;
+    }
+    if (tile.fg === 0) {
+      OnTalkBubble(session, session.netId, "There's nothing to burn!", 0, true);
+      return true;
+    }
+    if ((tile.flags & TILE_FLAG_BURNT) !== 0) {
+      OnTalkBubble(session, session.netId, "That's already burnt!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    // Fire evaporates any water on the tile first (GTPS3 pocket lighter).
+    tile.flags &= ~TILE_FLAG_WATER;
+    tile.flags |= TILE_FLAG_BURNT;
+    broadcastPositionedSfx(world, session.netId, "audio/spray.wav");
+    recordProgress(ctx, session, undefined, 1, 1);
+  } else if (itemId === 1866) {
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags ^= TILE_FLAG_GLUE;
+  } else {
+    const hasWater = (tile.flags & TILE_FLAG_WATER) !== 0;
+    if (hasWater) {
+      // Picking the water back up does not consume another bucket.
+      tile.flags &= ~TILE_FLAG_WATER;
+    } else {
+      if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+      tile.flags |= TILE_FLAG_WATER;
+    }
+    // Water extinguishes fire.
+    tile.flags &= ~TILE_FLAG_BURNT;
+    broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
+  }
+
+  broadcastTileUpdate(ctx, world, tx, ty, tile);
+  broadcastTileUseEffect(world, session, tx, ty, itemId);
+  return true;
+}
+
+/** GTPS3 World.h 22313: paint buckets require an equipped Paintbrush. */
+function usePaintBucket(
+  ctx: ServerContext,
+  session: PlayerSession,
+  world: WorldInstance,
+  tile: WorldTile,
+  tx: number,
+  ty: number,
+  itemId: number
+): boolean {
+  const bits = PAINT_BUCKET_BITS[itemId];
+  if (bits === undefined) return false;
+  if (denyTileUse(ctx, session, world, tile, tx, ty)) return true;
+
+  const hasBrush = session.account.inventory.some(
+    (s) => s.equipped && s.count > 0 && PAINTBRUSH_IDS.has(s.itemId)
+  );
+  if (!hasBrush) {
+    OnTalkBubble(session, session.netId, "You need a Paintbrush to apply paint!", 0, true);
+    return true;
+  }
+  if (tile.fg === 0 && tile.bg === 0) {
+    OnTalkBubble(session, session.netId, "There's nothing to paint!", 0, true);
+    return true;
+  }
+  if (isProtectedPaintTile(ctx, tile)) {
+    OnTalkBubble(session, session.netId, "That's too special to paint.", 0, true);
+    return true;
+  }
+
+  const current = tile.flags & TILE_FLAG_PAINT_MASK;
+  if (itemId === 3492) {
+    if (current === 0) {
+      OnTalkBubble(session, session.netId, "Don't waste your varnish on an unpainted block!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags &= ~TILE_FLAG_PAINT_MASK;
+  } else {
+    if (current === bits) {
+      OnTalkBubble(session, session.netId, "That block is already painted that color!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags = (tile.flags & ~TILE_FLAG_PAINT_MASK) | bits;
+  }
+
+  broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+  broadcastTileUpdate(ctx, world, tx, ty, tile);
+  broadcastPaintParticle(world, tx, ty, PAINT_PARTICLE_COLOR[itemId] ?? 0);
   return true;
 }
 
@@ -971,6 +1176,13 @@ export function handleTileChangeRequest(
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
 
+  // Water bucket / glue / pocket lighter are direct tile tools (GTPS3 World.h 22313).
+  if (useUtilityTileItem(ctx, session, world, tile, tx, ty, itemId)) return;
+
+  // Paint buckets consume one bucket and recolor the tile; a Paintbrush hand item
+  // must be equipped, exactly like the native client.
+  if (usePaintBucket(ctx, session, world, tile, tx, ty, itemId)) return;
+
   // Display Block (2946) accepts any item (including consumables, dyes, and clothes) BEFORE they are consumed/equipped.
   if (tile.fg === 2946 && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
 
@@ -1495,7 +1707,7 @@ function finalizeTileBreak(
       count: 1,
       x: dropX,
       y: dropY,
-      flags: 0,
+      flags: DROPPED_ITEM_FOREGROUND_FLAG,
     };
     world.objects.push(dropObj);
     const dropPkt = makeItemDropPacket(dropObj.itemId, dropObj.count, dropObj.x, dropObj.y, dropObj.flags, -1);

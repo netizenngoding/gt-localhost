@@ -39,8 +39,10 @@
   let hostEl = null;
   let docInstance = null;
   let tickTimer = null;
-  let mounting = false;
+  let mounting = null;
   let lastHudVisible = null;
+  let hudHideTimer = null;
+  let hudSlideSeq = 0;
   let lastRenderedGems = -1;
   let lastSyncSentAt = 0;
   let portraitRev = 0;
@@ -257,7 +259,7 @@
       ex.portraitDraw(resource, stateBuf, 0, 0, 0, scale);
       m.wasmTable.get(1336)(392580, 0);
       const pixels = new Uint8Array(256 * 256 * 4);
-      try { gl.pixelStorei(gl.PACK_ALIGNMENT, 1); gl.flush(); gl.finish(); } catch (_e) {}
+      try { gl.pixelStorei(gl.PACK_ALIGNMENT, 1); } catch (_e) {}
       gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
       // Mask costume bodies below chin while keeping face/neck accessories
@@ -274,7 +276,6 @@
       ex.portraitDraw(resource, stateBuf, 0, 0, 0, scale);
       m.wasmTable.get(1336)(392580, 0);
       const acc = new Uint8Array(256 * 256 * 4);
-      try { gl.flush(); gl.finish(); } catch (_e) {}
       gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, acc);
       for (let y = 208; y < 256; y++) {
         for (let x = 0; x < 256; x++) {
@@ -327,7 +328,18 @@
     const settleDue = portraitSettleAt > 0 && now >= portraitSettleAt;
     if (!force && !keyChanged && !settleDue && portraitRev > 0) return;
 
-    let portrait = captureDirectPortraitRgba(wctx.m, wctx.ex, avState);
+    let portrait = null;
+    if (global.NativeChatHeads && typeof global.NativeChatHeads.localPortrait === "function") {
+      try {
+        const cached = global.NativeChatHeads.localPortrait();
+        if (cached && cached.key === avState.key && cached.canvas) {
+          const cv = cached.canvas, ctx = cv.getContext("2d");
+          const image = ctx && ctx.getImageData(0, 0, cv.width, cv.height);
+          if (image && image.data.length >= 16) portrait = { data: new Uint8Array(image.data), size: cv.width };
+        }
+      } catch (_) {}
+    }
+    if (!portrait) portrait = captureDirectPortraitRgba(wctx.m, wctx.ex, avState);
     if ((!portrait || !portrait.data || portrait.data.length < 16) && global.NativeChatHeads && typeof global.NativeChatHeads.localPortraitFresh === "function") {
       // Mobile GL readback can fail on the live NetAvatar pass. Reuse the
       // owned portrait template path used by native chat heads as a fallback.
@@ -514,10 +526,15 @@
 
   let nextMountAttemptMs = 0;
 
-  async function ensureMounted() {
-    if (docInstance || mounting || !global.RmlUiEngine || !document.body) return;
-    if (Date.now() < nextMountAttemptMs) return;
-    mounting = true;
+  function ensureMounted() {
+    if (docInstance) return Promise.resolve(docInstance);
+    if (mounting) return mounting;
+    if (!global.RmlUiEngine || !document.body || Date.now() < nextMountAttemptMs) return Promise.resolve(null);
+    mounting = mountSidebar();
+    return mounting;
+  }
+
+  async function mountSidebar() {
     try {
       if (!hostEl) {
         hostEl = document.createElement("div");
@@ -538,6 +555,7 @@
 
       docInstance = await global.RmlUiEngine.mountDocument(hostEl, "/GameData/UI/WorldUI/WorldUI.rml", {
         modal: false,
+        initiallyHidden: true,
         hideElementIds: ["right_panel"],
         skipTemplates: ["RightMenuPanel.rml", "Console.rml"],
         models,
@@ -723,9 +741,8 @@
         const initShow = !!(enabled && global.RmlUiEngine.wasm.isInWorld() && !hasBlockingMenuOpen());
         lastHudVisible = initShow;
         global.RmlUiEngine.wasm.setHudEnabled(initShow);
-        if (!initShow) {
-          docInstance.setVisible(false);
-        }
+        setHudVisible(initShow, initShow);
+        if (global.RmlUiEngine.wasm.isInWorld()) syncConsoleSubwidgets(initShow);
       }
 
       docInstance.refresh();
@@ -733,8 +750,9 @@
       nextMountAttemptMs = Date.now() + 2500;
       console.error("[ModernSidebarHUD] Failed to mount WorldUI.rml:", err);
     } finally {
-      mounting = false;
+      mounting = null;
     }
+    return docInstance;
   }
 
   let consoleTickCounter = 0;
@@ -792,12 +810,22 @@
       }
     }
 
+    targetX = Math.max(0, Math.min(targetX, Math.max(0, vw - 80)));
     const curCpPos = cpEnt.position;
-    if (Math.abs(curCpPos.x - targetX) > 1.5) {
-      cpEnt.position = { x: targetX, y: curCpPos.y };
+    const vh = (screenSz && (screenSz.height || screenSz.y)) || global.innerHeight || 720;
+    // A newly recreated ConsoleLogParent can contain an uninitialized pos2d.y
+    // after exit/re-entry (observed values around 1e25). Preserving that value
+    // moves the entire chat permanently off-screen. Do not disturb normal
+    // collapsed/animated positions, or an intentionally hidden console.
+    const badY = cpEnt.visible &&
+      (!Number.isFinite(curCpPos.y) || Math.abs(curCpPos.y) > Math.max(2000, vh * 4));
+    if (!Number.isFinite(curCpPos.x) || Math.abs(curCpPos.x - targetX) > 1.5 || badY) {
+      cpEnt.position = { x: targetX, y: badY ? 0 : curCpPos.y };
     }
 
-    const boxW = Math.max(220, Math.round(rightLimitGui - targetX));
+    // Never push the log outside a narrow viewport. Keep it usable on mobile
+    // instead of forcing a 220px column beyond the right edge.
+    const boxW = Math.max(80, Math.min(vw - targetX, Math.round(rightLimitGui - targetX)));
 
     // 3. Resize LogRectBG + ConsoleLog + Scrollbar widths and recenter ConsoleGrab pull-tab
     const bgPtr = abi.findEntityPtrByName(cpPtr, "LogRectBG") || abi.findEntityPtrByName(cpPtr, "LogRect");
@@ -811,7 +839,7 @@
       if (logPtr) {
         const logEnt = new sdk.Entity(logPtr);
         const logSz = logEnt.size;
-        const innerW = Math.max(180, boxW - 20);
+        const innerW = Math.max(60, boxW - 20);
         if (logSz.width > 0 && Math.abs(logSz.width - innerW) > 1.5) {
           logEnt.size = { width: innerW, height: logSz.height };
         }
@@ -838,24 +866,56 @@
     }
   }
 
+  function setHudSlideClass(hidden) {
+    if (!docInstance) return;
+    if (docInstance.isNative && typeof docInstance.setElementClass === "function") {
+      docInstance.setElementClass("@body", "full-hide", hidden);
+    } else if (docInstance.bodyEl) {
+      docInstance.bodyEl.classList.toggle("full-hide", hidden);
+    }
+  }
+
+  function setHudVisible(visible, animate) {
+    const seq = ++hudSlideSeq;
+    if (hudHideTimer) clearTimeout(hudHideTimer);
+    hudHideTimer = null;
+    if (!docInstance) return;
+    if (visible) {
+      setHudSlideClass(!!animate);
+      if (hostEl) hostEl.style.display = "block";
+      if (docInstance.setVisible) docInstance.setVisible(true);
+      if (animate) requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (seq === hudSlideSeq) setHudSlideClass(false);
+      }));
+    } else if (animate) {
+      setHudSlideClass(true);
+      hudHideTimer = setTimeout(() => {
+        if (seq !== hudSlideSeq) return;
+        if (docInstance && docInstance.setVisible) docInstance.setVisible(false);
+        if (hostEl) hostEl.style.display = "none";
+        hudHideTimer = null;
+      }, 220);
+    } else {
+      setHudSlideClass(true);
+      if (docInstance.setVisible) docInstance.setVisible(false);
+      if (hostEl) hostEl.style.display = "none";
+    }
+  }
+
   function tick() {
     if (global.RmlUiEngine && !document.hidden) {
       const inWorld = global.RmlUiEngine.wasm.isInWorld();
-      const shouldShow = !!(enabled && inWorld && !hasBlockingMenuOpen());
+      const shouldShow = !!(enabled && docInstance && inWorld && !hasBlockingMenuOpen());
       // Don't mount the RmlUi HUD document on the login/menu screens; the
       // first mount parses the full WorldUI document and is expensive.
-      if (shouldShow || docInstance) ensureMounted();
+      if (enabled && inWorld && !docInstance) ensureMounted();
 
       if (shouldShow !== lastHudVisible) {
+        const previousHudVisible = lastHudVisible;
         lastHudVisible = shouldShow;
         global.RmlUiEngine.wasm.setHudEnabled(shouldShow);
         global.RmlUiEngine.wasm.syncConsoleLayout();
-        if (docInstance && typeof docInstance.setVisible === "function") {
-          docInstance.setVisible(shouldShow);
-        }
-        if (hostEl) {
-          hostEl.style.display = shouldShow ? "block" : "none";
-        }
+        setHudVisible(shouldShow, !!docInstance && previousHudVisible !== null);
         syncConsoleSubwidgets(shouldShow);
         if (shouldShow && Date.now() - lastSyncSentAt > 1500) {
           lastSyncSentAt = Date.now();
@@ -881,7 +941,7 @@
     scheduleTick();
   }
 
-  async function prewarm() {
+  async function prewarm(options = {}) {
     // Fetch all RML/RCSS/font payloads in one request and build the hidden
     // WorldUI document while the startup loader is still visible. The first
     // world frame then only has to show it, not parse it.
@@ -890,6 +950,7 @@
         await global.RmlUiEngine.preloadUiResources();
       }
     } catch (_e) {}
+    if (options.signal && options.signal.aborted) return null;
     return ensureMounted();
   }
 
@@ -899,7 +960,10 @@
     // gems, visibility and console layout, and avoids burning mobile CPU.
     tickTimer = setTimeout(function () {
       tickTimer = null;
-      tick();
+      try { tick(); } catch (err) {
+        console.error("[ModernSidebarHUD] tick failed:", err);
+        scheduleTick();
+      }
     }, 100);
   }
 
@@ -946,7 +1010,7 @@
     } catch (_) {}
     lastHudVisible = null;
     if (global.RmlUiEngine) {
-      global.RmlUiEngine.wasm.setHudEnabled(enabled && global.RmlUiEngine.wasm.isInWorld());
+      global.RmlUiEngine.wasm.setHudEnabled(!!(enabled && docInstance && global.RmlUiEngine.wasm.isInWorld() && !hasBlockingMenuOpen()));
       global.RmlUiEngine.wasm.syncConsoleLayout();
     }
   }
@@ -970,7 +1034,10 @@
           }
           if (nid) state.netId = parseInt(nid[1], 10) || 0;
           lastPortraitKey = "";
-          nextPortraitCheckAt = 0;
+          portraitSettleAt = 0;
+          nextPortraitCheckAt = Date.now() + 1200;
+          lastHudVisible = null;
+          consoleTickCounter = 11;
           rebuildEventButtonsModel();
           if (docInstance) docInstance.refresh();
         }

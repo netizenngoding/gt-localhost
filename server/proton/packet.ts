@@ -29,6 +29,15 @@ export const PACKET_ITEM_ACTIVATE_OBJECT_REQUEST = 11;
 export const PACKET_SEND_TILE_TREE_STATE = 12;
 export const PACKET_MODIFY_ITEM_INVENTORY = 13;
 export const PACKET_ITEM_CHANGE_OBJECT = 14;
+
+/**
+ * `objectType` byte on PACKET_ITEM_CHANGE_OBJECT (packet offset 1). The native
+ * client stores this at `WorldDrop+0x17`; value 1 marks the drop as a special
+ * foreground drop, so it is composited after avatars instead of underneath
+ * them. Every ground drop uses this now, which is what makes dropped items
+ * cover players instead of being covered by them.
+ */
+export const DROPPED_ITEM_FOREGROUND_FLAG = 1;
 export const PACKET_SEND_LOCK = 15;
 export const PACKET_SEND_ITEM_DATABASE_DATA = 16;
 export const PACKET_SEND_PARTICLE_EFFECT = 17;
@@ -52,6 +61,16 @@ export const TILE_FLAG_OPEN = 0x0040;
 export const TILE_FLAG_EXTRA_VISUAL = 0x0040;
 export const TILE_FLAG_HAS_WLS = 0x0200;
 export const TILE_FLAG_PUBLIC = 0x0080;
+// High 16-bit tile flags are sent in the tile header's flags field. These match
+// the native client's water/glue/burn/paint bits (GTPS3 flags >> 16).
+export const TILE_FLAG_WATER = 0x0400;
+export const TILE_FLAG_GLUE = 0x0800;
+export const TILE_FLAG_BURNT = 0x1000;
+export const TILE_FLAG_PAINT_RED = 0x2000;
+export const TILE_FLAG_PAINT_YELLOW = 0x4000;
+export const TILE_FLAG_PAINT_BLUE = 0x8000;
+export const TILE_FLAG_PAINT_MASK =
+  TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE;
 
 // Character State bitmask flags (verified against Func #4565 avatar[156])
 export const CHAR_STATE_NOCLIP       = 1 << 0;  // Walk through blocks (Ghost / Ninja / Cheat)
@@ -437,12 +456,12 @@ export function makeItemDropPacket(
   count: number,
   x: number,
   y: number,
-  objFlags = 0,
+  objFlags = DROPPED_ITEM_FOREGROUND_FLAG,
   throwerNetId = -1
 ): Buffer {
   return buildTankPacket({
     type: PACKET_ITEM_CHANGE_OBJECT,
-    objType: objFlags & 0xff,
+    objType: (objFlags | DROPPED_ITEM_FOREGROUND_FLAG) & 0xff,
     // netId MUST be -1: any netId >= 0 is a collect for the client (uid = value)
     // and never spawns a visible ground object (matches GTPS3 dropas_ / Func #1737).
     netId: -1,
@@ -462,11 +481,11 @@ export function makeItemModifyObjectPacket(
   newCount: number,
   x: number,
   y: number,
-  objFlags = 0
+  objFlags = DROPPED_ITEM_FOREGROUND_FLAG
 ): Buffer {
   return buildTankPacket({
     type: PACKET_ITEM_CHANGE_OBJECT,
-    objType: objFlags & 0xff,
+    objType: (objFlags | DROPPED_ITEM_FOREGROUND_FLAG) & 0xff,
     netId: -3,
     targetNetId: uid,
     floatVar: newCount,
@@ -963,7 +982,11 @@ export function makeWorldMapPacket(
     objBuf.writeUInt16LE(o.itemId & 0xffff, base + 0);
     objBuf.writeFloatLE(o.x, base + 2);
     objBuf.writeFloatLE(o.y, base + 6);
-    objBuf.writeUInt16LE(o.count & 0xffff, base + 10);
+    // The map record's 16-bit count shares the native WorldDrop layout with
+    // count (low byte) + foreground/special flag (high byte). Ground stacks
+    // never exceed 200, so the high byte is free to carry the flag.
+    const mapFlags = (o.flags ?? DROPPED_ITEM_FOREGROUND_FLAG) | DROPPED_ITEM_FOREGROUND_FLAG;
+    objBuf.writeUInt16LE((o.count & 0xff) | ((mapFlags & 0xff) << 8), base + 10);
     objBuf.writeUInt32LE(o.uid >>> 0, base + 12);
   }
   const wOff = 8 + objects.length * 16;

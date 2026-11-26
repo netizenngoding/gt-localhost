@@ -1925,10 +1925,14 @@ var Module = {
       if (!/[?&]noprewarm=1/.test(String(location.search || "")) && window.ModernSidebarHUD && typeof window.ModernSidebarHUD.prewarm === "function") {
         try {
           if (typeof Module.setStatus === "function") Module.setStatus("Preparing interface...");
-          await Promise.race([
-            window.ModernSidebarHUD.prewarm(),
-            new Promise(function (resolve) { setTimeout(resolve, 15000); })
-          ]);
+          var sidebarPrewarmAbort = new AbortController();
+          var sidebarTimer = setTimeout(function () { sidebarPrewarmAbort.abort(); }, 15000);
+          try {
+            await Promise.race([
+              window.ModernSidebarHUD.prewarm({ signal: sidebarPrewarmAbort.signal }),
+              new Promise(function (resolve) { sidebarPrewarmAbort.signal.addEventListener("abort", resolve, { once: true }); })
+            ]);
+          } finally { clearTimeout(sidebarTimer); }
         } catch (errPrewarm) {
           console.warn("[Client] Sidebar prewarm skipped:", errPrewarm);
         }
@@ -1937,10 +1941,14 @@ var Module = {
       if (!/[?&]noprewarm=1/.test(String(location.search || "")) && window.ModernDialogUI && typeof window.ModernDialogUI.prewarm === "function") {
         try {
           if (typeof Module.setStatus === "function") Module.setStatus("Preparing dialogs...");
-          await Promise.race([
-            window.ModernDialogUI.prewarm(),
-            new Promise(function (resolve) { setTimeout(resolve, 30000); })
-          ]);
+          var dialogPrewarmAbort = new AbortController();
+          var dialogTimer = setTimeout(function () { dialogPrewarmAbort.abort(); }, 30000);
+          try {
+            await Promise.race([
+              window.ModernDialogUI.prewarm({ signal: dialogPrewarmAbort.signal }),
+              new Promise(function (resolve) { dialogPrewarmAbort.signal.addEventListener("abort", resolve, { once: true }); })
+            ]);
+          } finally { clearTimeout(dialogTimer); }
         } catch (errDialogPrewarm) {
           console.warn("[Client] Dialog prewarm skipped:", errDialogPrewarm);
         }

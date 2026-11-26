@@ -65,6 +65,17 @@
     });
   }
 
+  function setDialogVisible(doc, visible) {
+    if (!doc) return;
+    if (doc.isNative && typeof doc.setElementClass === "function") {
+      doc.setElementClass("@body", "hide-window", false);
+      doc.setElementClass("@body", "show-window", visible);
+    } else if (doc.bodyEl) {
+      doc.bodyEl.classList.remove("hide-window");
+      doc.bodyEl.classList.toggle("show-window", visible);
+    }
+  }
+
   function closeDialog() {
     openSeq += 1;
     if (activeDoc) {
@@ -72,12 +83,8 @@
       activeDoc = null;
     }
     activeSpec = null;
-    if (backdropEl) {
-      backdropEl.style.display = "none";
-    }
-    if (global.RmlUiEngine) {
-      global.RmlUiEngine.wasm.setModalOpen(false);
-    }
+    if (backdropEl) backdropEl.style.display = "none";
+    if (global.RmlUiEngine) global.RmlUiEngine.wasm.setModalOpen(false);
   }
 
   function isCloseAction(action) {
@@ -375,6 +382,8 @@
         EndTime: (summary && summary.timerSeconds) || 86400,
         PromotionPerc: 30,
         DemotionPerc: 10,
+        LeagueDescription1: "The top 30% will be promoted and the bottom 10% will move down a league.",
+        LeagueDescription2: "The top 30% will be promoted to the next league.",
         Position: selfPos,
         PositionInfo: (summary && summary.positionText) || `#${selfPos}`,
         PromotionPosition: promoPos,
@@ -1131,6 +1140,7 @@
         });
       }
       activeDoc = mounted;
+      setDialogVisible(mounted, true);
     } catch (err) {
       console.error("[ModernDialogUI] Error mounting RmlUi popup:", err);
       if (mySeq === openSeq) closeDialog();
@@ -1149,7 +1159,7 @@
     openDialogSpec(parsed);
   }
 
-  async function prewarm() {
+  async function prewarm(options = {}) {
     if (!global.RmlUiEngine) return;
     ensureHostOverlay();
     const docs = [
@@ -1162,10 +1172,12 @@
       ["/GameData/UI/Windows/GenericPopup.rml", { PopupModel: { PopupId: "generic", Text: "", RmlContent: "", ButtonCancel: { Text: "", Style: "" }, Button1: { Text: "", Style: "" }, Button2: { Text: "", Style: "" } } }],
     ];
     for (const [url, models] of docs) {
+      if ((options.signal && options.signal.aborted) || activeSpec) break;
       let inst = null;
       try {
         inst = await global.RmlUiEngine.mountDocument(hostEl, url, {
           modal: false,
+          initiallyHidden: true,
           models,
           extraCss: ".rml-body { display: flex; align-items: center; justify-content: center; } #window.window { position: relative; margin: auto; }",
         });

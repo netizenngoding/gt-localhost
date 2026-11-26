@@ -296,13 +296,6 @@ export async function buildModernLinkedBanner(input: LinkedBannerInput): Promise
         align: "left",
       },
       { type: "spacer", size: "sm" },
-      {
-        type: "text",
-        text: "Login attempts from a new `wDevice or Location`` are confirmed on Discord before they go through.",
-        size: "sm",
-        align: "left",
-      },
-      { type: "spacer", size: "sm" },
     ],
   };
   pendingBanners.set(token, { spec, headPng: input.headPng, expiresAt: Date.now() + BANNER_TOKEN_TTL_MS });

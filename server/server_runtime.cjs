@@ -27420,6 +27420,7 @@ var PACKET_ITEM_ACTIVATE_OBJECT_REQUEST = 11;
 var PACKET_SEND_TILE_TREE_STATE = 12;
 var PACKET_MODIFY_ITEM_INVENTORY = 13;
 var PACKET_ITEM_CHANGE_OBJECT = 14;
+var DROPPED_ITEM_FOREGROUND_FLAG = 1;
 var PACKET_SEND_LOCK = 15;
 var PACKET_SEND_ITEM_DATABASE_DATA = 16;
 var PACKET_SEND_PARTICLE_EFFECT = 17;
@@ -27440,6 +27441,13 @@ var TILE_FLAG_OPEN = 64;
 var TILE_FLAG_EXTRA_VISUAL = 64;
 var TILE_FLAG_HAS_WLS = 512;
 var TILE_FLAG_PUBLIC = 128;
+var TILE_FLAG_WATER = 1024;
+var TILE_FLAG_GLUE = 2048;
+var TILE_FLAG_BURNT = 4096;
+var TILE_FLAG_PAINT_RED = 8192;
+var TILE_FLAG_PAINT_YELLOW = 16384;
+var TILE_FLAG_PAINT_BLUE = 32768;
+var TILE_FLAG_PAINT_MASK = TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE;
 var CHAR_STATE_NOCLIP = 1 << 0;
 var CHAR_STATE_DOUBLE_JUMP = 1 << 1;
 var CHAR_STATE_INVISIBLE = 1 << 2;
@@ -27684,10 +27692,10 @@ function makePlayPositionedPacket(netId, file, delayMs = 0) {
   const cleanFile = file.replace(/^\/+/, "");
   return makeVariantPacket(["OnPlayPositioned", cleanFile], netId, Math.max(0, Math.floor(delayMs)));
 }
-function makeItemDropPacket(itemId, count, x, y, objFlags = 0, throwerNetId = -1) {
+function makeItemDropPacket(itemId, count, x, y, objFlags = DROPPED_ITEM_FOREGROUND_FLAG, throwerNetId = -1) {
   return buildTankPacket({
     type: PACKET_ITEM_CHANGE_OBJECT,
-    objType: objFlags & 255,
+    objType: (objFlags | DROPPED_ITEM_FOREGROUND_FLAG) & 255,
     // netId MUST be -1: any netId >= 0 is a collect for the client (uid = value)
     // and never spawns a visible ground object (matches GTPS3 dropas_ / Func #1737).
     netId: -1,
@@ -27698,10 +27706,10 @@ function makeItemDropPacket(itemId, count, x, y, objFlags = 0, throwerNetId = -1
     y
   });
 }
-function makeItemModifyObjectPacket(uid, itemId, newCount, x, y, objFlags = 0) {
+function makeItemModifyObjectPacket(uid, itemId, newCount, x, y, objFlags = DROPPED_ITEM_FOREGROUND_FLAG) {
   return buildTankPacket({
     type: PACKET_ITEM_CHANGE_OBJECT,
-    objType: objFlags & 255,
+    objType: (objFlags | DROPPED_ITEM_FOREGROUND_FLAG) & 255,
     netId: -3,
     targetNetId: uid,
     floatVar: newCount,
@@ -28093,7 +28101,8 @@ function makeWorldMapPacket(name, width, height, tiles, objects, lastObjectUid, 
     objBuf.writeUInt16LE(o.itemId & 65535, base + 0);
     objBuf.writeFloatLE(o.x, base + 2);
     objBuf.writeFloatLE(o.y, base + 6);
-    objBuf.writeUInt16LE(o.count & 65535, base + 10);
+    const mapFlags = (o.flags ?? DROPPED_ITEM_FOREGROUND_FLAG) | DROPPED_ITEM_FOREGROUND_FLAG;
+    objBuf.writeUInt16LE(o.count & 255 | (mapFlags & 255) << 8, base + 10);
     objBuf.writeUInt32LE(o.uid >>> 0, base + 12);
   }
   const wOff = 8 + objects.length * 16;
@@ -39971,8 +39980,8 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
         const gx = x + (Math.random() * 14 - 7);
         const gy = y + (Math.random() * 6 - 3);
         const uid = ++world.lastObjectUid;
-        world.objects.push({ uid, itemId: 112, x: gx, y: gy, count: d, flags: 0 });
-        const pkt = makeItemDropPacket(112, d, gx, gy, 0, throwerNetId);
+        world.objects.push({ uid, itemId: 112, x: gx, y: gy, count: d, flags: DROPPED_ITEM_FOREGROUND_FLAG });
+        const pkt = makeItemDropPacket(112, d, gx, gy, DROPPED_ITEM_FOREGROUND_FLAG, throwerNetId);
         for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
       }
     }
@@ -39992,6 +40001,7 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
     if (!sameTile && !closePixels) continue;
     const addable = Math.min(remaining, 200 - existing.count);
     existing.count += addable;
+    existing.flags = (existing.flags || 0) | DROPPED_ITEM_FOREGROUND_FLAG;
     remaining -= addable;
     lastAffected = existing;
     const modPkt = makeItemModifyObjectPacket(
@@ -40014,10 +40024,10 @@ function spawnOrMergeWorldDrop(world, itemId, totalCount, x, y, throwerNetId = -
       sy = y + (Math.random() * 8 - 4);
     }
     const uid = ++world.lastObjectUid;
-    const obj = { uid, itemId, x: sx, y: sy, count: chunk, flags: 0 };
+    const obj = { uid, itemId, x: sx, y: sy, count: chunk, flags: DROPPED_ITEM_FOREGROUND_FLAG };
     world.objects.push(obj);
     lastAffected = obj;
-    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, 0, throwerNetId);
+    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, DROPPED_ITEM_FOREGROUND_FLAG, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
   return lastAffected;
@@ -41269,13 +41279,6 @@ async function buildModernLinkedBanner(input) {
         size: "md",
         align: "left"
       },
-      { type: "spacer", size: "sm" },
-      {
-        type: "text",
-        text: "Login attempts from a new `wDevice or Location`` are confirmed on Discord before they go through.",
-        size: "sm",
-        align: "left"
-      },
       { type: "spacer", size: "sm" }
     ]
   };
@@ -41344,7 +41347,6 @@ async function buildModernLinkedBanner(input) {
 var DEFAULT_CHANNEL_ID = "1575034325945024593";
 var LINK_CODE_TTL_MS = 15 * 60 * 1e3;
 var DISCORD_FIRST_LINK_GEMS = 100;
-var VERIFY_TTL_MS = 15 * 60 * 1e3;
 var DISCORD_API = "https://discord.com/api/v10";
 function readConfig() {
   let raw = {};
@@ -41372,7 +41374,6 @@ function readConfig() {
   };
 }
 var config = readConfig();
-var verifyTokens = /* @__PURE__ */ new Map();
 var playerHeads = /* @__PURE__ */ new Map();
 var playerHeadUrls = /* @__PURE__ */ new Map();
 var playerHeadUploads = /* @__PURE__ */ new Map();
@@ -41674,93 +41675,6 @@ async function sendLinkedAnnouncement(ctx, account) {
     ctx.savePlayersNow();
   }
 }
-async function createDmChannel(discordId) {
-  if (!config.botToken) return null;
-  try {
-    const res = await fetch(`${DISCORD_API}/users/@me/channels`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bot ${config.botToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ recipient_id: discordId })
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return typeof json.id === "string" ? json.id : null;
-  } catch {
-    return null;
-  }
-}
-async function notifyDiscordLogin(ctx, account, deviceKey, ip) {
-  if (!discordConfigured() || !account.discordId) return;
-  const known = Array.isArray(account.discordKnownDevices) ? account.discordKnownDevices : [];
-  const deviceUnknown = !!deviceKey && !known.includes(deviceKey);
-  const locationUnknown = !!ip && !!account.discordLastIp && account.discordLastIp !== ip;
-  if (!deviceUnknown && !locationUnknown) return;
-  const token = import_node_crypto5.default.randomBytes(24).toString("base64url");
-  verifyTokens.set(token, {
-    userId: account.userId,
-    deviceKey,
-    ip,
-    expiresAt: Date.now() + VERIFY_TTL_MS
-  });
-  while (verifyTokens.size > 2e3) {
-    const first = verifyTokens.keys().next().value;
-    if (!first) break;
-    verifyTokens.delete(first);
-  }
-  const verifyUrl = `${config.publicBaseUrl}/discord/verify?token=${encodeURIComponent(token)}`;
-  const when = `<t:${Math.floor(Date.now() / 1e3)}:F>`;
-  const text = `<@${account.discordId}> Login attempt from a new **Device or Location** detected at ${when} (click the button, then confirm that it's really you)`;
-  const payload = {
-    content: text,
-    allowed_mentions: { users: [account.discordId] },
-    components: [
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            style: 5,
-            label: "Authenticate",
-            emoji: { name: "\u{1F512}" },
-            url: verifyUrl
-          }
-        ]
-      }
-    ]
-  };
-  const channelOk = await discordMessage(config.channelId, payload);
-  const dm = await createDmChannel(account.discordId);
-  if (dm) await discordMessage(dm, { ...payload, content: `Login attempt from a new **Device or Location** detected at ${when} (click the button, then confirm that it's really you)`, allowed_mentions: { parse: [] } });
-  if (channelOk || dm) {
-    account.discordLastIp = ip || account.discordLastIp;
-    ctx.dirty = true;
-  }
-}
-function completeDiscordDeviceVerification(ctx, token) {
-  const pending = verifyTokens.get(token);
-  if (!pending || pending.expiresAt <= Date.now()) {
-    verifyTokens.delete(token);
-    return { ok: false, message: "Link autentikasi sudah kedaluwarsa." };
-  }
-  const account = Array.from(ctx.accounts.values()).find((a) => a.userId === pending.userId);
-  if (!account) {
-    verifyTokens.delete(token);
-    return { ok: false, message: "Akun tidak ditemukan." };
-  }
-  const known = Array.isArray(account.discordKnownDevices) ? account.discordKnownDevices : [];
-  if (pending.deviceKey && !known.includes(pending.deviceKey)) {
-    account.discordKnownDevices = [...known, pending.deviceKey].slice(-20);
-  }
-  if (pending.ip) account.discordLastIp = pending.ip;
-  account.discordLastVerifiedAt = Date.now();
-  ctx.dirty = true;
-  ctx.savePlayersNow();
-  verifyTokens.delete(token);
-  return { ok: true, name: account.name, message: "Device berhasil diautentikasi." };
-}
 function sendDiscordLinkDialog(session) {
   const acct = session.account;
   const status = discordStatus(acct);
@@ -41768,7 +41682,7 @@ function sendDiscordLinkDialog(session) {
     const dlg2 = new ModernDialog("discord_link_dialog", { width: "lg" }).setTitle("Discord", { itemId: DISCORD_ICON_ITEM_ID }).addText(`Your Discord account is linked as @${status.username}.`).addSpacer("sm").beginSection({ tone: "teal" }).addText("Link status", { size: "lg" }).addSpacer("sm").addCounterRow({ iconItemId: DISCORD_ICON_ITEM_ID, text: "Discord account connected" }).addSpacer("sm").addCounterRow({
       iconItemId: 112,
       text: acct.discordFirstLinkRewarded ? "First link reward: claimed" : "First link reward: not claimed"
-    }).endSection().addSpacer("md").addSmallText("New device or location logins can be confirmed on Discord before they go through.").addSpacer("md").addButtonRow([
+    }).endSection().addSpacer("md").addSpacer("md").addButtonRow([
       { id: "discord_profile", label: "Open Profile", color: "default", url: `https://discord.com/users/${status.id}` },
       { id: "discord_unlink", label: "Unlink Discord", color: "default" }
     ], { justify: "between", equalWidth: true });
@@ -41784,9 +41698,6 @@ function sendDiscordLinkDialog(session) {
   const dlg = new ModernDialog("discord_link_dialog", { width: "lg" }).setTitle("Link Discord", { itemId: DISCORD_ICON_ITEM_ID }).addText("Connect your Discord account to Magnolia. It takes a few seconds and helps keep your account safe.").addSpacer("sm").beginSection({ tone: "teal" }).addText("Link benefits", { size: "lg" }).addSpacer("sm").addCounterRow({
     iconItemId: 112,
     text: rewardAvailable ? `First link reward: ${DISCORD_FIRST_LINK_GEMS} Gems` : "First link reward: already claimed"
-  }).addSpacer("sm").addCounterRow({
-    iconItemId: DISCORD_ICON_ITEM_ID,
-    text: "Login protection: confirm new devices and locations on Discord"
   }).endSection().addSpacer("md").addSmallText("The first link reward can only be claimed once per account.").addSpacer("md").addButtonRow([
     { id: "discord_open", label: "Open Discord", color: "green", url: discordLinkUrl(code) },
     { id: "discord_close", label: "Close", color: "default", closeOnClick: true }
@@ -42674,6 +42585,16 @@ var ServerContext = class {
       ),
       true
     );
+    const legacyDrops = world.objects.filter((o) => (o.flags & 1) !== 1);
+    for (const drop of legacyDrops) {
+      drop.flags |= 1;
+      session.peer.sendPacket(
+        0,
+        makeItemModifyObjectPacket(drop.uid, drop.itemId, drop.count, drop.x, drop.y, drop.flags),
+        true
+      );
+    }
+    if (legacyDrops.length > 0) this.dirty = true;
     OnSpawn(session, session, true);
     this.sendInventory(session, false);
     this.syncWorldPeersForJoiner(session);
@@ -50522,10 +50443,6 @@ function allocateGuestDisplayName(ctx, baseName, preferredSuffix = "", currentAc
   }
   return `${baseName}_${seq}`;
 }
-function peerIp(peer) {
-  const socket2 = peer.ws._socket;
-  return String(socket2?.remoteAddress || "");
-}
 function sendLogonFail(peer, message, showDiscord = false) {
   peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, "action|log\nmsg|" + message + "\n"), true);
   if (showDiscord) peer.sendPacket(0, makeTextPacket(NET_MESSAGE_GAME_MESSAGE, `action|set_url
@@ -50622,8 +50539,6 @@ function handleLogon(ctx, peer, kv) {
       ctx.dirty = true;
     }
     const session2 = createSessionForAccount(ctx, peer, acct);
-    if (acct.discordId) void notifyDiscordLogin(ctx, acct, deviceKey, peerIp(peer)).catch(() => {
-    });
     SetHasGrowID(session2, true, acct.growId || acct.name, rawPass);
     sendSuperMainAccept(ctx, peer);
     return;
@@ -50673,8 +50588,6 @@ function handleLogon(ctx, peer, kv) {
     return;
   }
   const session = createSessionForAccount(ctx, peer, guestAcct);
-  if (guestAcct.discordId) void notifyDiscordLogin(ctx, guestAcct, deviceKey, peerIp(peer)).catch(() => {
-  });
   SetHasGrowID(session, false, "", "");
   OnConsoleMessage(
     session,
@@ -51003,6 +50916,27 @@ var WEATHER_STUFF_SPECIAL_IDS = /* @__PURE__ */ new Set([3832]);
 var GROWMOJI_ITEMS = /* @__PURE__ */ new Set([10114, 8028, 7698, 10116, 12544, 12542]);
 var HAIR_DYE_ITEMS2 = /* @__PURE__ */ new Set([3822, 3824, 3826, 3828, 3830]);
 var EYE_ITEMS2 = /* @__PURE__ */ new Set([5458, 5460, 5462, 5464, 5466, 6760, 6762, 6764, 6766, 6768]);
+var PAINT_PARTICLE_COLOR = {
+  3478: 65280,
+  3480: 16776960,
+  3482: 16711680,
+  3484: 4294901760,
+  3486: 4278190080,
+  3488: 4278255360,
+  3490: 1010580480,
+  3492: 3875520768
+};
+var PAINTBRUSH_IDS = /* @__PURE__ */ new Set([3494, 7938]);
+var PAINT_BUCKET_BITS = {
+  3478: TILE_FLAG_PAINT_RED,
+  3480: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW,
+  3482: TILE_FLAG_PAINT_YELLOW,
+  3484: TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE,
+  3486: TILE_FLAG_PAINT_BLUE,
+  3488: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_BLUE,
+  3490: TILE_FLAG_PAINT_RED | TILE_FLAG_PAINT_YELLOW | TILE_FLAG_PAINT_BLUE,
+  3492: 0
+};
 var FISHING_RODS = /* @__PURE__ */ new Set([3040, 3010, 2912, 3008, 3100, 5740, 6254, 6256, 6932, 10262, 6258]);
 var BAIT_ITEMS = /* @__PURE__ */ new Set([2914, 3012, 3014, 3016, 3018, 3020, 5526, 5528]);
 var PROVIDER_DEFINITIONS = {
@@ -51144,6 +51078,125 @@ function useDyeItem(ctx, session, world, itemId, tx, ty, playerTileX, playerTile
   ctx.dirty = true;
   ctx.savePlayersNow();
   ctx.sendCharacterState(session);
+  return true;
+}
+function isProtectedPaintTile(ctx, tile) {
+  const fg = tile.fg ? ctx.itemsDb.get(tile.fg) : void 0;
+  return !!(tile.fg === 9570 || tile.fg === 6 || tile.fg === 8 || fg?.isLock || fg?.isDoor || fg?.isBedrock);
+}
+function broadcastTileUpdate2(ctx, world, tx, ty, tile) {
+  const pkt = makeTileUpdatePacket(tx, ty, tile, Date.now());
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+  ctx.dirty = true;
+}
+function broadcastTileUseEffect(world, session, tx, ty, itemId) {
+  const pkt = buildTankPacket({
+    type: PACKET_ITEM_EFFECT,
+    count2: 4,
+    netId: 0,
+    targetNetId: session.netId,
+    value: 0,
+    punchX: itemId,
+    punchY: 1,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+}
+function broadcastPaintParticle(world, tx, ty, color) {
+  const pkt = buildTankPacket({
+    type: PACKET_SEND_PARTICLE_EFFECT,
+    netId: 168,
+    x: tx * 32 + 16,
+    y: ty * 32 + 16,
+    speedX: color,
+    speedY: 168
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
+}
+function denyTileUse(ctx, session, world, tile, tx, ty) {
+  if (canModifyWorldTile(session, world, tile, tx, ty, "place")) return false;
+  OnPlayPositioned(session, "audio/punch_locked.wav");
+  OnTalkBubble(session, session.netId, lockedMessage(ctx, world, tile, tx, ty, "place", session.account.userId), 0, true);
+  return true;
+}
+function useUtilityTileItem(ctx, session, world, tile, tx, ty, itemId) {
+  if (itemId !== 822 && itemId !== 1866 && itemId !== 3062) return false;
+  if (denyTileUse(ctx, session, world, tile, tx, ty)) return true;
+  if (itemId === 3062) {
+    if (isProtectedPaintTile(ctx, tile)) {
+      OnTalkBubble(session, session.netId, "That won't burn!", 0, true);
+      return true;
+    }
+    if (tile.fg === 0) {
+      OnTalkBubble(session, session.netId, "There's nothing to burn!", 0, true);
+      return true;
+    }
+    if ((tile.flags & TILE_FLAG_BURNT) !== 0) {
+      OnTalkBubble(session, session.netId, "That's already burnt!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags &= ~TILE_FLAG_WATER;
+    tile.flags |= TILE_FLAG_BURNT;
+    broadcastPositionedSfx(world, session.netId, "audio/spray.wav");
+    recordProgress(ctx, session, void 0, 1, 1);
+  } else if (itemId === 1866) {
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags ^= TILE_FLAG_GLUE;
+  } else {
+    const hasWater = (tile.flags & TILE_FLAG_WATER) !== 0;
+    if (hasWater) {
+      tile.flags &= ~TILE_FLAG_WATER;
+    } else {
+      if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+      tile.flags |= TILE_FLAG_WATER;
+    }
+    tile.flags &= ~TILE_FLAG_BURNT;
+    broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
+  }
+  broadcastTileUpdate2(ctx, world, tx, ty, tile);
+  broadcastTileUseEffect(world, session, tx, ty, itemId);
+  return true;
+}
+function usePaintBucket(ctx, session, world, tile, tx, ty, itemId) {
+  const bits = PAINT_BUCKET_BITS[itemId];
+  if (bits === void 0) return false;
+  if (denyTileUse(ctx, session, world, tile, tx, ty)) return true;
+  const hasBrush = session.account.inventory.some(
+    (s) => s.equipped && s.count > 0 && PAINTBRUSH_IDS.has(s.itemId)
+  );
+  if (!hasBrush) {
+    OnTalkBubble(session, session.netId, "You need a Paintbrush to apply paint!", 0, true);
+    return true;
+  }
+  if (tile.fg === 0 && tile.bg === 0) {
+    OnTalkBubble(session, session.netId, "There's nothing to paint!", 0, true);
+    return true;
+  }
+  if (isProtectedPaintTile(ctx, tile)) {
+    OnTalkBubble(session, session.netId, "That's too special to paint.", 0, true);
+    return true;
+  }
+  const current = tile.flags & TILE_FLAG_PAINT_MASK;
+  if (itemId === 3492) {
+    if (current === 0) {
+      OnTalkBubble(session, session.netId, "Don't waste your varnish on an unpainted block!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags &= ~TILE_FLAG_PAINT_MASK;
+  } else {
+    if (current === bits) {
+      OnTalkBubble(session, session.netId, "That block is already painted that color!", 0, true);
+      return true;
+    }
+    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    tile.flags = tile.flags & ~TILE_FLAG_PAINT_MASK | bits;
+  }
+  broadcastPositionedSfx(world, session.netId, "audio/use_lock.wav");
+  broadcastTileUpdate2(ctx, world, tx, ty, tile);
+  broadcastPaintParticle(world, tx, ty, PAINT_PARTICLE_COLOR[itemId] ?? 0);
   return true;
 }
 function handleTileActivateRequest(ctx, session, tank) {
@@ -51739,6 +51792,8 @@ function handleTileChangeRequest(ctx, session, tank) {
   }
   const invSlot = session.account.inventory.find((s) => s.itemId === itemId && s.count > 0);
   if (!invSlot || !def) return;
+  if (useUtilityTileItem(ctx, session, world, tile, tx, ty, itemId)) return;
+  if (usePaintBucket(ctx, session, world, tile, tx, ty, itemId)) return;
   if (tile.fg === 2946 && useItemOnDisplayBlock(ctx, session, world, tile, tx, ty, itemId)) return;
   if (useConsumable(ctx, session, itemId, tx, ty)) return;
   if (HAIR_DYE_ITEMS2.has(itemId) || EYE_ITEMS2.has(itemId)) {
@@ -52193,7 +52248,7 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
       count: 1,
       x: dropX,
       y: dropY,
-      flags: 0
+      flags: DROPPED_ITEM_FOREGROUND_FLAG
     };
     world.objects.push(dropObj);
     const dropPkt = makeItemDropPacket(dropObj.itemId, dropObj.count, dropObj.x, dropObj.y, dropObj.flags, -1);
@@ -57125,11 +57180,6 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     storePlayerHead(device, req.body);
     res.setHeader("Cache-Control", "no-store");
     res.json({ ok: true });
-  });
-  app.get("/discord/verify", (req, res) => {
-    const result = completeDiscordDeviceVerification(ctx, String(req.query.token || ""));
-    res.setHeader("Cache-Control", "no-store");
-    res.status(result.ok ? 200 : 400).type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord Verify</title><body style="font-family:sans-serif;background:#101820;color:#fff;padding:32px"><h2>${result.ok ? "Authenticated" : "Failed"}</h2><p>${result.message}</p>${result.name ? `<p>GrowID: <b>${result.name}</b></p>` : ""}${result.ok ? `<script>setTimeout(function(){try{window.close()}catch(e){}setTimeout(function(){location.replace('/')},300)},500)</script>` : `<p><a style="color:#fff" href="/">Back to Magnolia</a></p>`}</body>`);
   });
   app.get("/api/discord/linked-banner/:token", (req, res) => {
     const page = takeBannerRenderPage(String(req.params.token || ""));

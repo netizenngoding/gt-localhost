@@ -101,7 +101,7 @@ function launchGame() {
   hideEnterFullscreenPopup();
   showLoader();
   var script = document.createElement("script");
-  script.src = "WebLoaderData/RTLoader.js?v=2962";
+  script.src = "WebLoaderData/RTLoader.js?v=2963";
   document.body.appendChild(script);
 }
 

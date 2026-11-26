@@ -18,13 +18,13 @@
 						<div class="font-contentnormal color_white ">
 							<Timer data-attr-seconds="DungeonLeaderboardModel.EndTime" sec-post-1m="true">
 								<active class="timer-font">
-									<span class="color_dreamsicle" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_TIMER_PREFIX]'))"/>
+									<span class="color_dreamsicle">Ends In:</span>
 									<timertext class="color_pinky_purple"/>
 								</active>
-								<expired data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_TIMER_EXPIRED]'))"/>
+								<expired>Expired</expired>
 							</Timer>
-							<div data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_DESCRIPTION_1]', DungeonLeaderboardModel.PromotionPerc, DungeonLeaderboardModel.DemotionPerc))" data-class-hidden="DungeonLeaderboardModel.DemotionPerc <= 0"/>
-							<div data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_DESCRIPTION_2]', DungeonLeaderboardModel.PromotionPerc))" data-class-hidden="DungeonLeaderboardModel.DemotionPerc > 0"/>
+							<div data-rml="ToRMLText(DungeonLeaderboardModel.LeagueDescription1)" data-class-hidden="DungeonLeaderboardModel.DemotionPerc <= 0"/>
+							<div data-rml="ToRMLText(DungeonLeaderboardModel.LeagueDescription2)" data-class-hidden="DungeonLeaderboardModel.DemotionPerc > 0"/>
 						</div>
 					</div>
 					<div class="top-inner-right color_dreamsicle">
@@ -51,14 +51,14 @@
 						<input type="checkbox" onchange="OnEvent(event, 'DungeonLeaderboard.OnInfoChanged')"/>
 						<div class="button button-purple-color" style="padding: 3dp 15dp 5dp 10dp;">
 							<div class="horizontal-panel">
-								<class class="title" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_LEAGUE_INFO_TITLE]'))"/>
+								<class class="title">League Information</class>
 								<class class="arrow"/>
 							</div>
 						</div>
 						<div class="info-popup">
 							<div class="more-info-banner-border">
 								<div class="more-info-banner"/>
-								<div class="font-contentnormal color_dreamsicle" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_LEAGUE_INFO_TEXT]'))"/>
+								<div class="font-contentnormal color_dreamsicle">Complete dungeons to earn points and advance your rank. The higher your rank, the more rewarding the prizes</div>
 							</div>
 						</div>
 					</div>
@@ -68,17 +68,17 @@
 					<div class="scroll-header">
 						<div class="horizontal-panel color_dreamsicle leader-board-header-font">
 							<span style="width:95dp;"></span>
-							<span style="width:278dp;" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_NAME]'))"/>
-							<span style="width:170dp;" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_POINTS]'))"/>
-							<span data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_REWARDS]'))"/>
+							<span style="width:278dp;">Name</span>
+							<span style="width:170dp;">Points</span>
+							<span>Rewards</span>
 						</div>
 					</div>
 				</div>
 				<div class="loading-popup" data-class-hidden="DungeonLeaderboardModel.RequestState != 1 || DungeonLeaderboardModel.Entries.size > 0">
-					<div class="font-contentnormal" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_LOADING]'))"/>
+					<div class="font-contentnormal">Loading...</div>
 				</div>
 				<div class="loading-popup" data-class-hidden="DungeonLeaderboardModel.RequestState != 0 || DungeonLeaderboardModel.Entries.size > 0">
-					<div class="font-contentnormal" data-rml="ToRMLText(Localize('[DUNGEON_LEADERBOARD_EMPTY]'))"/>
+					<div class="font-contentnormal">No entries found</div>
 				</div>
 				<div id="results-list" class="scroll-container show-scrollbar" onscroll="OnEvent(event, 'DungeonLeaderboard.OnScroll')">
 					<div class="results-table" id="results-table">

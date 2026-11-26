@@ -52,6 +52,10 @@ export class RmlUiNative {
     this.docHandlers = new Map(); // docHandle -> { models, onEvent, isModal, visible }
     this.virtualFiles = new Map(); // virtual path -> Uint8Array
     this._fetchCache = new Map();  // path -> Uint8Array (game VFS resources)
+    this._missingPaths = new Set();
+    this._failedPaths = new Set();
+    this._mountQueue = Promise.resolve();
+    this._spritePreload = null;
     this.clientWasmExports = null;
     this.soundMuted = false;
     this._lastFrameAt = 0;
@@ -177,6 +181,20 @@ export class RmlUiNative {
     }, 'v');
     this.mod._rml_set_click_sound_callback(clickFnPtr);
 
+    // _rml_init loads fonts synchronously through _fetchCb, before the UI
+    // manifest is available. Prime this one required file asynchronously first.
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch('/branding/CenturyGothicBold.ttf', { signal: controller.signal });
+        if (response.ok) {
+          const font = new Uint8Array(await response.arrayBuffer());
+          this._fetchCache.set('fonts/CenturyGothicBold.ttf', font);
+        }
+      } finally { clearTimeout(timer); }
+    } catch (err) { console.warn('[RmlUi] Font preload failed', err); }
+
     const okInit = this.mod._rml_init();
     if (!okInit) throw new Error('RmlUi init failed');
     this.mod._rml_init_gl();
@@ -232,10 +250,10 @@ export class RmlUiNative {
   _resize() {
     // Mobile GPUs choke on a full-screen DPR=2 WebGL surface; 1.5 keeps
     // text readable while cutting fill-rate roughly in half.
-    const maxDpr = this._coarsePointer ? 1.5 : 2;
+    const maxDpr = this._coarsePointer ? 1 : 2;
     const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, maxDpr));
     this.dpr = dpr;
-    this._frameInterval = this._coarsePointer || window.innerWidth < 900 ? 50 : 16;
+    this._frameInterval = this._coarsePointer || window.innerWidth < 900 ? 33 : 16;
     const w = Math.floor(window.innerWidth * dpr);
     const h = Math.floor(window.innerHeight * dpr);
     this.canvas.width = w;
@@ -307,6 +325,7 @@ export class RmlUiNative {
       const apiIdx = vkey.indexOf('api/');
       const vbuf = this.virtualFiles.get(vkey) ||
         this.virtualFiles.get(this._normalizeRmlPath(path)) ||
+        this.virtualFiles.get('GameData/UI/' + this._normalizeRmlPath(path)) ||
         (apiIdx >= 0 ? this.virtualFiles.get(vkey.slice(apiIdx)) : null);
       if (vbuf && vbuf.length > 0) {
         const ptr = this.mod._rml_alloc(vbuf.length);
@@ -351,25 +370,107 @@ export class RmlUiNative {
           } catch (_fsErr) {}
         }
       }
-      const url = this._resolveUrl(path);
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, false);
-      xhr.overrideMimeType('text/plain; charset=x-user-defined');
-      xhr.send(null);
-      if (xhr.status !== 200 && xhr.status !== 0) return 0;
-      const text = xhr.responseText;
-      const len = text.length;
-      if (!len) return 0;
-      const ptr = this.mod._rml_alloc(len);
-      const dst = new Uint8Array(this.mod.HEAPU8.buffer, ptr, len);
-      for (let i = 0; i < len; i++) dst[i] = text.charCodeAt(i) & 0xff;
-      try { const copy = new Uint8Array(len); copy.set(dst); this._fetchCache.set(path, copy); } catch (_cacheErr) {}
-      this.mod.HEAP32[outBufPtr >>> 2] = ptr;
-      this.mod.HEAP32[outLenPtr >>> 2] = len;
-      return 1;
+      // RmlUi calls this synchronously from WASM. Templates/styles stay async,
+      // but image decorators (item icons, sprites) must be available during the
+      // same render pass; otherwise they settle as blank white boxes.
+      if (this._failedPaths.has(path)) return 0;
+      const isImage = /\.(?:png|jpe?g|webp|gif|bmp|rttex)(?:[?#]|$)/i.test(path);
+      if (isImage) {
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', this._resolveUrl(path), false);
+          xhr.overrideMimeType('text/plain; charset=x-user-defined');
+          xhr.send(null);
+          if (xhr.status === 200 || xhr.status === 0) {
+            const text = xhr.responseText;
+            const len = text.length;
+            if (len > 0) {
+              const ptr = this.mod._rml_alloc(len);
+              const dst = new Uint8Array(this.mod.HEAPU8.buffer, ptr, len);
+              for (let i = 0; i < len; i++) dst[i] = text.charCodeAt(i) & 0xff;
+              try { const copy = new Uint8Array(len); copy.set(dst); this._fetchCache.set(path, copy); } catch (_cacheErr) {}
+              this.mod.HEAP32[outBufPtr >>> 2] = ptr;
+              this.mod.HEAP32[outLenPtr >>> 2] = len;
+              return 1;
+            }
+          }
+        } catch (_imgErr) {}
+        this._failedPaths.add(path);
+        return 0;
+      }
+      // Missing templates/styles are retried by the async mount loop.
+      if (!this._failedPaths.has(path)) this._missingPaths.add(path);
+      return 0;
     } catch (e) {
       return 0;
     }
+  }
+
+  async _fetchMissingResources(paths) {
+    let loaded = 0;
+    const queue = Array.from(new Set(paths)).filter((path) => !this._fetchCache.has(path));
+    const worker = async () => {
+      while (queue.length) {
+        const path = queue.shift();
+        try {
+          const url = new URL(this._resolveUrl(path), window.location.href);
+          if (url.origin !== window.location.origin) throw new Error('cross-origin resource');
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+          try {
+            const res = await fetch(url.href, { signal: controller.signal });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const bytes = new Uint8Array(await res.arrayBuffer());
+            if (!bytes.length) throw new Error('empty resource');
+            this._fetchCache.set(path, bytes);
+            this._failedPaths.delete(path);
+            loaded++;
+          } finally { clearTimeout(timer); }
+        } catch (_) { this._failedPaths.add(path); }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, worker));
+    return loaded;
+  }
+
+  async _prepareRenderAssets(models) {
+    // Textures are first requested by RmlUi during Render(), not loadDocument.
+    // Prime the small shipped sprite set before showing the document so the
+    // synchronous native callback never has to fetch them on the game thread.
+    if (!this._spritePreload) {
+      this._spritePreload = (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        let metadata;
+        try {
+          const response = await fetch('/GameData/UI/rml-sprites.json', { signal: controller.signal });
+          if (!response.ok) throw new Error('sprite manifest HTTP ' + response.status);
+          metadata = await response.json();
+        } finally { clearTimeout(timer); }
+        const paths = Object.values(metadata.textures || {})
+          .map((entry) => String(entry.url || '').replace(/^\/+/, ''))
+          .filter((path) => path.startsWith('GameData/sprites/'));
+        await this._fetchMissingResources(paths);
+      })().catch((err) => { console.warn('[RmlUi] Sprite preload failed:', err); this._spritePreload = null; });
+    }
+    await this._spritePreload;
+    const icons = new Set(['api/item-icon/14730.png', 'api/item-icon/15144.png', 'api/item-icon/16226.png', 'api/item-icon/3902.png']);
+    const visit = (obj, depth) => {
+      if (!obj || typeof obj !== 'object' || depth > 8 || icons.size >= 64) return;
+      for (const [key, value] of Object.entries(obj)) {
+        if (/^(?:Icon|IconItemId|itemId|iconItemId|Id)$/i.test(key)) {
+          const id = Number(value);
+          if (Number.isInteger(id) && id > 0 && id < 1000000) icons.add('api/item-icon/' + id + '.png');
+        }
+        if (typeof value === 'string' && /^\/?(?:api\/item-icon|branding\/modern-ui)\/[\w./-]+\.png$/i.test(value)) {
+          icons.add(value.replace(/^\/+/, ''));
+        }
+        if (value && typeof value === 'object') visit(value, depth + 1);
+        if (icons.size >= 64) break;
+      }
+    };
+    visit(models, 0);
+    await this._fetchMissingResources([...icons]);
   }
 
   _resolveUrl(path) {
@@ -570,21 +671,37 @@ export class RmlUiNative {
     this.mod._rml_free(idPtr);
   }
 
-  async mountDocument(_hostEl, rmlUrl, options = {}) {
+  mountDocument(hostEl, rmlUrl, options = {}) {
+    const job = this._mountQueue.then(() => this._mountDocument(hostEl, rmlUrl, options));
+    this._mountQueue = job.catch(() => {});
+    return job;
+  }
+
+  async _mountDocument(_hostEl, rmlUrl, options = {}) {
     await this.init();
     const models = options.models || {};
     const onEvent = options.onEvent || null;
     const isModal = options.modal !== false;
+    await this._prepareRenderAssets(models);
 
-    this.setDataModels(models);
     const skipTemplates = Array.isArray(options.skipTemplates) ? options.skipTemplates : [];
-    const prevSkip = this._skipTemplates;
-    this._skipTemplates = skipTemplates;
     let h = null;
-    try {
-      h = this.loadDocument(rmlUrl);
-    } finally {
-      this._skipTemplates = prevSkip;
+    // Discover missing files without ever blocking the browser on network I/O.
+    // Each retry may expose another level of linked templates/stylesheets.
+    for (let pass = 0; pass < 8; pass++) {
+      this.setDataModels(models);
+      this._missingPaths.clear();
+      const prevSkip = this._skipTemplates;
+      this._skipTemplates = skipTemplates;
+      try { h = this.loadDocument(rmlUrl); }
+      finally { this._skipTemplates = prevSkip; }
+      const missing = Array.from(this._missingPaths);
+      if (!missing.length) break;
+      const loaded = await this._fetchMissingResources(missing);
+      if (!loaded) break;
+      if (pass === 7) break;
+      if (h) this.closeDocument(h);
+      h = null;
     }
     if (!h) throw new Error('Native RmlUi failed to load: ' + rmlUrl);
 
@@ -604,11 +721,15 @@ export class RmlUiNative {
       }
     }
 
-    const entry = { models, onEvent, isModal, visible: true };
+    const entry = { models, onEvent, isModal, visible: !options.initiallyHidden };
     this.docHandlers.set(h, entry);
-    if (isModal) this.modalDocs.add(h);
-    else this.hudDocs.add(h);
-    this._setCanvasVisible(true);
+    if (entry.visible) {
+      if (isModal) this.modalDocs.add(h);
+      else this.hudDocs.add(h);
+    } else {
+      this.mod._rml_hide_document(h);
+    }
+    this._setCanvasVisible(this.modalDocs.size > 0 || this.hudDocs.size > 0);
     this._syncPointerEvents();
     this._startLoop();
 
@@ -648,11 +769,11 @@ export class RmlUiNative {
         entry.visible = !!flag;
         if (entry.visible) {
           self.mod._rml_show_document(h);
-          if (!entry.isModal) self.hudDocs.add(h);
+          if (entry.isModal) self.modalDocs.add(h); else self.hudDocs.add(h);
           self._startLoop();
         } else {
           self.mod._rml_hide_document(h);
-          if (!entry.isModal) self.hudDocs.delete(h);
+          if (entry.isModal) self.modalDocs.delete(h); else self.hudDocs.delete(h);
         }
         self._setCanvasVisible(self.modalDocs.size > 0 || self.hudDocs.size > 0);
         self._syncPointerEvents();

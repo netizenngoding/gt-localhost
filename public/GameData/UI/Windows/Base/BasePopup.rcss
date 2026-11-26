@@ -64,7 +64,6 @@
     width: 100%;
     height: 100%;
     opacity: 0;
-    transition: opacity 0.2s linear-in;
     background-color: rgba(0, 0, 0, 100);
     position: absolute;
     top: 0;

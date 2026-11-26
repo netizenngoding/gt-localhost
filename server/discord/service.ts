@@ -22,7 +22,6 @@ interface DiscordConfig {
 const DEFAULT_CHANNEL_ID = "1575034325945024593";
 const LINK_CODE_TTL_MS = 15 * 60 * 1000;
 const DISCORD_FIRST_LINK_GEMS = 100;
-const VERIFY_TTL_MS = 15 * 60 * 1000;
 const DISCORD_API = "https://discord.com/api/v10";
 
 function readConfig(): DiscordConfig {
@@ -52,7 +51,6 @@ function readConfig(): DiscordConfig {
 }
 
 const config = readConfig();
-const verifyTokens = new Map<string, { userId: number; deviceKey: string; ip: string; expiresAt: number }>();
 const playerHeads = new Map<string, Buffer>();
 const playerHeadUrls = new Map<string, string>();
 const playerHeadUploads = new Map<string, Promise<string | null>>();
@@ -417,96 +415,6 @@ async function createDmChannel(discordId: string): Promise<string | null> {
   }
 }
 
-export async function notifyDiscordLogin(
-  ctx: ServerContext,
-  account: PlayerAccount,
-  deviceKey: string,
-  ip: string
-): Promise<void> {
-  if (!discordConfigured() || !account.discordId) return;
-  const known = Array.isArray(account.discordKnownDevices) ? account.discordKnownDevices : [];
-  const deviceUnknown = !!deviceKey && !known.includes(deviceKey);
-  const locationUnknown = !!ip && !!account.discordLastIp && account.discordLastIp !== ip;
-  if (!deviceUnknown && !locationUnknown) return;
-
-  const token = crypto.randomBytes(24).toString("base64url");
-  verifyTokens.set(token, {
-    userId: account.userId,
-    deviceKey,
-    ip,
-    expiresAt: Date.now() + VERIFY_TTL_MS,
-  });
-  while (verifyTokens.size > 2000) {
-    const first = verifyTokens.keys().next().value;
-    if (!first) break;
-    verifyTokens.delete(first);
-  }
-
-  const verifyUrl = `${config.publicBaseUrl}/discord/verify?token=${encodeURIComponent(token)}`;
-  const when = `<t:${Math.floor(Date.now() / 1000)}:F>`;
-  const text = `<@${account.discordId}> Login attempt from a new **Device or Location** detected at ${when} (click the button, then confirm that it's really you)`;
-  const payload = {
-    content: text,
-    allowed_mentions: { users: [account.discordId] },
-    components: [
-      {
-        type: 1,
-        components: [
-          {
-            type: 2,
-            style: 5,
-            label: "Authenticate",
-            emoji: { name: "🔒" },
-            url: verifyUrl,
-          },
-        ],
-      },
-    ],
-  };
-
-  const channelOk = await discordMessage(config.channelId, payload);
-  const dm = await createDmChannel(account.discordId);
-  if (dm) await discordMessage(dm, { ...payload, content: `Login attempt from a new **Device or Location** detected at ${when} (click the button, then confirm that it's really you)`, allowed_mentions: { parse: [] } });
-
-  if (channelOk || dm) {
-    account.discordLastIp = ip || account.discordLastIp;
-    ctx.dirty = true;
-  }
-}
-
-export function verifyDiscordDevice(token: string): { ok: boolean; name?: string; message: string } {
-  const pending = verifyTokens.get(token);
-  if (!pending || pending.expiresAt <= Date.now()) {
-    verifyTokens.delete(token);
-    return { ok: false, message: "Link autentikasi sudah kedaluwarsa." };
-  }
-  verifyTokens.delete(token);
-  return { ok: true, message: "Device berhasil diautentikasi." };
-}
-
-export function completeDiscordDeviceVerification(ctx: ServerContext, token: string): { ok: boolean; name?: string; message: string } {
-  const pending = verifyTokens.get(token);
-  if (!pending || pending.expiresAt <= Date.now()) {
-    verifyTokens.delete(token);
-    return { ok: false, message: "Link autentikasi sudah kedaluwarsa." };
-  }
-  const account = Array.from(ctx.accounts.values()).find((a) => a.userId === pending.userId);
-  if (!account) {
-    verifyTokens.delete(token);
-    return { ok: false, message: "Akun tidak ditemukan." };
-  }
-  const known = Array.isArray(account.discordKnownDevices) ? account.discordKnownDevices : [];
-  if (pending.deviceKey && !known.includes(pending.deviceKey)) {
-    account.discordKnownDevices = [...known, pending.deviceKey].slice(-20);
-  }
-  if (pending.ip) account.discordLastIp = pending.ip;
-  account.discordLastVerifiedAt = Date.now();
-  ctx.dirty = true;
-  ctx.savePlayersNow();
-  verifyTokens.delete(token);
-  return { ok: true, name: account.name, message: "Device berhasil diautentikasi." };
-}
-
 export function sendDiscordLinkDialog(session: PlayerSession): void {
   const acct = session.account;
   const status = discordStatus(acct);
@@ -526,7 +434,6 @@ export function sendDiscordLinkDialog(session: PlayerSession): void {
         })
       .endSection()
       .addSpacer("md")
-      .addSmallText("New device or location logins can be confirmed on Discord before they go through.")
       .addSpacer("md")
       .addButtonRow([
         { id: "discord_profile", label: "Open Profile", color: "default", url: `https://discord.com/users/${status.id}` },
@@ -551,11 +458,6 @@ export function sendDiscordLinkDialog(session: PlayerSession): void {
       .addCounterRow({
         iconItemId: 112,
         text: rewardAvailable ? `First link reward: ${DISCORD_FIRST_LINK_GEMS} Gems` : "First link reward: already claimed",
-      })
-      .addSpacer("sm")
-      .addCounterRow({
-        iconItemId: DISCORD_ICON_ITEM_ID,
-        text: "Login protection: confirm new devices and locations on Discord",
       })
     .endSection()
     .addSpacer("md")

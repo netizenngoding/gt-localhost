@@ -2,6 +2,7 @@ import { SERVER_NAME } from "../config/branding";
 import { hasPermission } from "../ranks";
 import {
   buildTankPacket,
+  DROPPED_ITEM_FOREGROUND_FLAG,
   makeItemDropPacket,
   makeItemModifyObjectPacket,
   makeTileUpdatePacket,
@@ -651,8 +652,8 @@ export function spawnOrMergeWorldDrop(
         const gx = x + (Math.random() * 14 - 7);
         const gy = y + (Math.random() * 6 - 3);
         const uid = ++world.lastObjectUid;
-        world.objects.push({ uid, itemId: 112, x: gx, y: gy, count: d, flags: 0 });
-        const pkt = makeItemDropPacket(112, d, gx, gy, 0, throwerNetId);
+        world.objects.push({ uid, itemId: 112, x: gx, y: gy, count: d, flags: DROPPED_ITEM_FOREGROUND_FLAG });
+        const pkt = makeItemDropPacket(112, d, gx, gy, DROPPED_ITEM_FOREGROUND_FLAG, throwerNetId);
         for (const p of world.peers) p.peer.sendPacket(0, pkt, true);
       }
     }
@@ -676,6 +677,7 @@ export function spawnOrMergeWorldDrop(
 
     const addable = Math.min(remaining, 200 - existing.count);
     existing.count += addable;
+    existing.flags = (existing.flags || 0) | DROPPED_ITEM_FOREGROUND_FLAG;
     remaining -= addable;
     lastAffected = existing;
 
@@ -703,10 +705,10 @@ export function spawnOrMergeWorldDrop(
       sy = y + (Math.random() * 8 - 4);
     }
     const uid = ++world.lastObjectUid;
-    const obj: DroppedObject = { uid, itemId, x: sx, y: sy, count: chunk, flags: 0 };
+    const obj: DroppedObject = { uid, itemId, x: sx, y: sy, count: chunk, flags: DROPPED_ITEM_FOREGROUND_FLAG };
     world.objects.push(obj);
     lastAffected = obj;
-    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, 0, throwerNetId);
+    const dropPkt = makeItemDropPacket(itemId, chunk, sx, sy, DROPPED_ITEM_FOREGROUND_FLAG, throwerNetId);
     for (const p of world.peers) p.peer.sendPacket(0, dropPkt, true);
   }
   return lastAffected;

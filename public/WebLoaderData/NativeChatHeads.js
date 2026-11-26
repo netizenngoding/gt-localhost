@@ -77,7 +77,7 @@
       if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Portrait framebuffer incomplete');
       gl.bindTexture(gl.TEXTURE_2D,saved.texture);gl.disable(gl.SCISSOR_TEST);gl.viewport(0,256-gl.drawingBufferHeight,gl.drawingBufferWidth,gl.drawingBufferHeight);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.clearDepth(1);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       ex.portraitDraw(resource,state,0,0,0,scale);m.wasmTable.get(1336)(392580,0);
-      const pixels=new Uint8Array(256*256*4);try{gl.pixelStorei(gl.PACK_ALIGNMENT,1);gl.flush();gl.finish();}catch(_e){}gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+      const pixels=new Uint8Array(256*256*4);try{gl.pixelStorei(gl.PACK_ALIGNMENT,1);}catch(_e){}gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
       // Below the chin retain face/neck attachments, NOT mask/hat costume bodies.
       // Cultist Hood is slot 7 and otherwise contributes its torso/legs.
       dv.setUint16(fake+1576,0,true);dv.setUint16(fake+1576+14,0,true);
@@ -85,7 +85,7 @@
       dv.setUint32(state+40,meta.skin&0xffffff00,true);dv.setUint32(state+44,meta.skin&0xffffff00,true);
       dv.setUint32(state+48,(meta.hairColor||0)>>>0,true);
       gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);ex.portraitDraw(resource,state,0,0,0,scale);m.wasmTable.get(1336)(392580,0);
-      const accessories=new Uint8Array(256*256*4);try{gl.flush();gl.finish();}catch(_e){}gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,accessories);
+      const accessories=new Uint8Array(256*256*4);gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,accessories);
       mergeHeadLayers(pixels,accessories,256,256,208);
       const image=cropHead(pixels,256,256);if(image)stats.rendered++;return image;
     }finally{

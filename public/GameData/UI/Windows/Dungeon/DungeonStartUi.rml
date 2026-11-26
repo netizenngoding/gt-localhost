@@ -14,7 +14,7 @@
           <div class="title-text font-title label">Dungeons</div>
         </div>
 
-        <div id="main-description" class="color_dreamsicle" data-rml="ToRMLText(Localize('[dungeon_start_ui_desc]'))"/>
+        <div id="main-description" class="color_dreamsicle">Go on an adventure, explore dungeons and use their unique currency to upgrade your abilities. Just remember, what happens in the dungeon stays in the dungeon!</div>
 
         <div id="info-button" class="rounded-section">
           <input type="checkbox" data-checked="true"/>
@@ -23,7 +23,13 @@
             <i/>
                   </div>
           <div id="dungeon-info-panel">
-            <p class="color_dreamsicle font-contentnormal" data-rml="ToRMLText(Localize('[dungeon_info_ui_body]'))"/>
+            <p class="color_dreamsicle font-contentnormal">A message from the Wizard's Council.
+    &amp;nbsp;
+    The Legendary Wizard discovered the secrets to these magic scrolls millennia ago but one of his acolyte's recently shared it on Wizi-Leaks and so the Wizard's Council decided it was best to make the information fully available to avoid disastrous misuse.
+    &amp;nbsp;
+    The scrolls create to a portal to the `5Chaotic Dimension`` overseen by The Legendary Wizard's oldest "friend"... The Lich. The scrolls themselves seem to regenerate no matter what we've tried to do to get rid of them they just keep coming back.
+    &amp;nbsp;
+    The Chaos Dimension is constantly in flux and will change with every new entry. Each time you cross through the portal you will have none of the skill or items you collected in your past visits. The Lich has overseen this Chaos Dimension for longer than anyone can remember, studying all of its darkest secrets. If you come across them while in a dungeon, they may be able to help you in your quest.</p>
           </div>
         </div>
 
@@ -34,7 +40,7 @@
               <span class="label">
                 Start Dungeon
               </span>
-              <div class="icon" data-style-decorator="'itemidimage(ITEM_ID_DUNGEONS_SCROLLS)'"/>
+              <div class="icon" data-style-decorator="'itemidimage(14730)'"/>
               <span class="label">{{DungeonStartUiModel.EnterCost}}</span>
             </div>
 
@@ -42,8 +48,8 @@
             <div class="row-flex">
               <div class="column-flex">
                 <div id="scrolls-counter" class="label-with-icon">
-                  <div class="icon" data-style-decorator="'itemidimage(ITEM_ID_DUNGEONS_SCROLLS)'"/>
-                  <div class="title font-contentnormal color_dreamsicle">{{ItemName('ITEM_ID_DUNGEONS_SCROLLS')}}: {{DungeonStartUiModel.PiggyProgress}}/{{DungeonStartUiModel.PiggyTarget}}</div>
+                  <div class="icon" data-style-decorator="'itemidimage(14730)'"/>
+                  <div class="title font-contentnormal color_dreamsicle">Scrolls: {{DungeonStartUiModel.PiggyProgress}}/{{DungeonStartUiModel.PiggyTarget}}</div>
                   <i/>
                 </div>
 
@@ -76,7 +82,7 @@
             <!--Buy buttons-->
             <div class="row-flex">
               <div id="purchase-scroll-button" onclick="OnEvent(event, 'DungeonStartUi.OnPurchaseScroll')" class="img-button button-green-color">
-                <span class="label">Buy {{ItemName('ITEM_ID_DUNGEONS_SCROLLS')}}</span>
+                <span class="label">Buy Scrolls</span>
               </div>
 
               <!--if dungeon pass is active, show timer till it ends-->
@@ -92,22 +98,20 @@
 
               <!--Else show dungeon pass purchase button-->
               <div id="purchase-pass-button" onclick="OnEvent(event, 'DungeonStartUi.OnPurchasePass')" class="img-button button-green-color" data-if="!DungeonStartUiModel.HasDungeonPass">
-                <span class="label">Buy {{ItemName('ITEM_ID_DUNGEON_PASS_ICON')}}</span>
+                <span class="label">Buy Dungeon Pass</span>
               </div>
             </div>
 
             <!--3 different warnings based on server/leaderboard state-->
             <div id="warning-container" class="color_brown font-contentnormal rounded-section">
-              <span data-if="DungeonStartUiModel.WarningType == 0"
-                    data-rml="ToRMLText(Localize('[dungeon_start_ui_normal_warning]'))"/>
+              <span data-if="DungeonStartUiModel.WarningType == 0">Warning: Leaving the Dungeon at any point will prevent re-entry into the same world. All ability upgrades will be lost as well.</span>
 
-              <span data-if="DungeonStartUiModel.WarningType == 1"
-                    data-rml="ToRMLText(Localize('[dungeon_start_ui_shutdown_warning]'))"/>
+              <span data-if="DungeonStartUiModel.WarningType == 1">Sorry, server is `$shutting down`` soon.  Please come back after the restart!</span>
 
               <span data-if="DungeonStartUiModel.WarningType == 2">
                 <Timer data-attr-seconds="DungeonStartUiModel.CooldownTimeLeft" sec-post-1m="true" onfinish="OnEvent(event, 'DungeonStartUi.OnCooldownTimerFinish')">
                   <active>
-                    <span data-rml="ToRMLText(Localize('[dungeon_start_ui_cooldown_warning]'))"/>
+                    <span>The League time is up and we're tallying the promotions now... Please check again in</span>
                     <timertext class="color_pinky_purple"/>
                   </active>
                   <expired>Expired!</expired>
@@ -139,7 +143,7 @@
         <div id="quests-section" class="rounded-section" data-if="DungeonStartUiModel.Challenges.size > 0">
           <div>
             <div class="label-with-icon">
-              <div class="icon" data-style-decorator="'itemidimage(ITEM_ID_CRAZY_JIM)'"/>
+              <div class="icon" data-style-decorator="'itemidimage(3902)'"/>
               <div class="title">Dungeon Daily Challenges</div>
               <i/>
             </div>
@@ -162,7 +166,7 @@
                         </span>
                       </div>
                       <span data-if="Challenge.State == 3" class="font-contentnormal color_dreamsicle">(Claimed) </span>
-                      <span data-if="Challenge.Points > 0" class="font-contentnormal color_pinky_purple">{{MoneyString(Challenge.Points)}} {{ItemName('ITEM_ID_DUNGEONS_LEADERBOARD_POINTS')}}</span>
+                      <span data-if="Challenge.Points > 0" class="font-contentnormal color_pinky_purple">{{MoneyString(Challenge.Points)}} Points</span>
                     </div>
                     <i/>
                   </div>

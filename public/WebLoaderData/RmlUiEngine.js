@@ -1390,7 +1390,7 @@
         try {
           let native = g.__rmluiNative;
           if (!native) {
-            const mod = await import("/WebLoaderData/RmlUiWasm.js?v=11");
+            const mod = await import("/WebLoaderData/RmlUiWasm.js?v=14");
             native = mod && mod.rmluiNative;
           }
           if (!native) return null;
@@ -1413,9 +1413,10 @@
       const native = await ensureNativeRmlUi();
       if (!native || !native.setVirtualFile) return;
       try {
-        const res = await fetch("/ui-assets.json", { cache: "force-cache" });
+        const res = await fetch("/ui-assets.json?v=3", { cache: "force-cache" });
         if (!res.ok) return;
         const assets = await res.json();
+        let processed = 0;
         for (const key of Object.keys(assets)) {
           let b64 = assets[key];
           if (!b64) continue;
@@ -1423,6 +1424,9 @@
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 0xff;
           native.setVirtualFile(key, bytes);
+          // Yield regularly so decoding a large manifest does not monopolize
+          // the main thread, even if preload runs after a startup timeout.
+          if (++processed % 8 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
         }
       } catch (err) {
         console.warn("[RmlUiEngine] UI asset preload failed:", err);
@@ -1435,7 +1439,13 @@
     if (!options.forceShadowDom) {
       const native = await ensureNativeRmlUi();
       if (native && native.ready) {
-        return native.mountDocument(hostElement, rmlUrl, options);
+        // Also needed when startup prewarm was skipped or timed out.
+        await preloadUiResources();
+        try {
+          return await native.mountDocument(hostElement, rmlUrl, options);
+        } catch (err) {
+          console.warn("[RmlUiEngine] Native document failed, trying ShadowDOM:", rmlUrl, err);
+        }
       }
     }
 

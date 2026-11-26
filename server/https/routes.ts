@@ -10,7 +10,7 @@ import path from "node:path";
 import express, { type Express } from "express";
 import type { ServerContext } from "../database/context";
 import { ItemIconRenderer } from "../items/iconRenderer";
-import { completeDiscordDeviceVerification, discordAuthorizeUrl, discordConfig, discordConfigured, getPlayerHead, getPlayerHeadUrl, linkDiscordAccount, storePlayerHead } from "../discord/service";
+import { discordAuthorizeUrl, discordConfig, discordConfigured, getPlayerHead, getPlayerHeadUrl, linkDiscordAccount, storePlayerHead } from "../discord/service";
 import { takeBannerRenderPage } from "../discord/banner";
 import { effectivePublicBaseUrl, rememberPublicBaseUrl } from "../discord/public-url";
 import {buildSetClothingPacket} from "../onVariant/OnSetClothing";
@@ -200,12 +200,6 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     storePlayerHead(device, req.body);
     res.setHeader("Cache-Control", "no-store");
     res.json({ ok: true });
-  });
-
-  app.get("/discord/verify", (req, res) => {
-    const result = completeDiscordDeviceVerification(ctx, String(req.query.token || ""));
-    res.setHeader("Cache-Control", "no-store");
-    res.status(result.ok ? 200 : 400).type("html").send(`<!doctype html><meta charset="utf-8"><title>Discord Verify</title><body style="font-family:sans-serif;background:#101820;color:#fff;padding:32px"><h2>${result.ok ? "Authenticated" : "Failed"}</h2><p>${result.message}</p>${result.name ? `<p>GrowID: <b>${result.name}</b></p>` : ""}${result.ok ? `<script>setTimeout(function(){try{window.close()}catch(e){}setTimeout(function(){location.replace('/')},300)},500)</script>` : `<p><a style="color:#fff" href="/">Back to Magnolia</a></p>`}</body>`);
   });
 
   app.get("/api/discord/linked-banner/:token", (req, res) => {

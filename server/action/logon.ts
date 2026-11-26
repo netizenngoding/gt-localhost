@@ -11,7 +11,6 @@ import type { ServerContext } from "../database/context";
 import { liveSessions, normalizeAccount, type PlayerAccount, type PlayerSession } from "../database/peer";
 import { OnConsoleMessage, SetHasGrowID } from "../onVariant";
 import { hashPassword, sanitizeAccountName, verifyPassword } from "../tools/string";
-import { notifyDiscordLogin } from "../discord/service";
 import { sendWelcomeMail } from "../sidebar/service";
 
 // Bound expensive password work even when an attacker reconnects with a new peer.
@@ -197,7 +196,6 @@ export function handleLogon(
       ctx.dirty = true;
     }
     const session = createSessionForAccount(ctx, peer, acct);
-    if (acct.discordId) void notifyDiscordLogin(ctx, acct, deviceKey, peerIp(peer)).catch(() => {});
     SetHasGrowID(session, true, acct.growId || acct.name, rawPass);
     sendSuperMainAccept(ctx, peer);
     return;
@@ -260,7 +258,6 @@ export function handleLogon(
   }
 
   const session = createSessionForAccount(ctx, peer, guestAcct);
-  if (guestAcct.discordId) void notifyDiscordLogin(ctx, guestAcct, deviceKey, peerIp(peer)).catch(() => {});
   // Tell client this is a Guest Account so PauseMenu shows `"Get GrowID (#It's free!)"`!
   SetHasGrowID(session, false, "", "");
   OnConsoleMessage(

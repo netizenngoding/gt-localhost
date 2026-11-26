@@ -27,6 +27,7 @@ import {
   makeSetCharacterStatePacket,
   makeVariantPacket,
   makeWorldMapPacket,
+  makeItemModifyObjectPacket,
   TILE_FLAG_OPEN,
 } from "../proton/packet";
 import {
@@ -562,6 +563,19 @@ export class ServerContext {
       ),
       true
     );
+    // Existing saved drops predate the foreground flag. Send one in-place
+    // modify so they also render above avatars; after this they are stored
+    // with the flag and future joins need no extra packets.
+    const legacyDrops = world.objects.filter((o) => (o.flags & 1) !== 1);
+    for (const drop of legacyDrops) {
+      drop.flags |= 1;
+      session.peer.sendPacket(
+        0,
+        makeItemModifyObjectPacket(drop.uid, drop.itemId, drop.count, drop.x, drop.y, drop.flags),
+        true
+      );
+    }
+    if (legacyDrops.length > 0) this.dirty = true;
     OnSpawn(session, session, true);
     this.sendInventory(session, false);
     this.syncWorldPeersForJoiner(session);

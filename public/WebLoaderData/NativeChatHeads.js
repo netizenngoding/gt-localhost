@@ -6,7 +6,7 @@
   let wanted = new Map(), template=0;
   const marker = /`o`o`o((?:`[0-9]){10})`o {4,6}/;
   let ex, module, overlay, paint, inLog=false, installed=false, lastDraw=0, capturing=false;
-  let localCanvas=null, localKey='', localNextAt=0, uploadedHeadKey='';
+  let localCanvas=null, localKey='', localNextAt=0, uploadedHeadKey='', uploadedHeadAt=0;
   const stats={rendered:0,errors:0,visible:0};
   function key(meta){return meta.clothes.join(',')+':'+(meta.skin>>>0)+':'+((meta.hairColor||0)>>>0);}
   function uploadLocalHead(image,k){

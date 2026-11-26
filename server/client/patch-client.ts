@@ -243,6 +243,22 @@ function patchDisplayForegroundPass(wasm: Buffer): Buffer {
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
     } else if (fid === 5029) {
+      // APK TileWorld renderer: an empty FG/BG tile with GLUED (0x0800)
+      // draws the original particles.rttex frame (5,5). The web binary has
+      // the same atlas but lacks this draw. Add three i32 scratch locals and
+      // inject the draw at the existing visible-tile pass; leave fire intact.
+      const localHeader = Buffer.from("04187f0d7d067e047c", "hex");
+      if (!body.subarray(0, localHeader.length).equals(localHeader)) throw new Error("func 5029 local signature mismatch");
+      body = Buffer.concat([Buffer.from("05187f0d7d067e047c037f", "hex"), body.subarray(localHeader.length)]);
+      const glueNeedle = Buffer.from("20022f0104220141800871047f", "hex");
+      const glueAt = body.indexOf(glueNeedle);
+      if (glueAt < 0 || body.indexOf(glueNeedle, glueAt + 1) !== -1) throw new Error("func 5029 tile scan signature mismatch");
+      // Local 49 caches the particle atlas for this render; local 50 is the
+      // camera; local 51 is temporary stack storage for positions and scale.
+      // Insert after local.tee 1, retaining the flag value on the stack.
+      const glueDraw = Buffer.from("200141801071454520022f0100457120022f01024571044023012802302232450440419481182802002802880e28029001410c6a21320b20320440203145044041d9c7004120412010960e21310b20310440230041306b22332400203320022d0006b3430000004294380200203320022d0007b3430000004294380204203341086a2032203310e802203320322a0214380210203320322a02183802142033420037021841a20f203120332a020820332a020c41054105203341106a4100417f4300000000203341186a41004100410041001029203341306a24000b0b0b", "hex");
+      const glueInsertAt = glueAt + Buffer.from("20022f01042201", "hex").length;
+      body = Buffer.concat([body.subarray(0, glueInsertAt), glueDraw, body.subarray(glueInsertAt)]);
       const idx = body.indexOf(needle5029);
       if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
         throw new Error("func 5029 post-render signature mismatch");

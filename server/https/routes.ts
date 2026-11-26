@@ -12,6 +12,7 @@ import type { ServerContext } from "../database/context";
 import { ItemIconRenderer } from "../items/iconRenderer";
 import { discordAuthorizeUrl, discordConfig, discordConfigured, getPlayerHead, getPlayerHeadUrl, linkDiscordAccount, storePlayerHead } from "../discord/service";
 import { takeBannerRenderPage } from "../discord/banner";
+import { ensureRpcHeadAsset } from "../discord/rpc-assets";
 import { effectivePublicBaseUrl, rememberPublicBaseUrl } from "../discord/public-url";
 import {buildSetClothingPacket} from "../onVariant/OnSetClothing";
 import {makeVariantPacket} from "../proton/packet";
@@ -212,7 +213,7 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     res.type("html").send(page);
   });
 
-  app.get("/api/discord/rpc/state", (req, res) => {
+  app.get("/api/discord/rpc/state", async (req, res) => {
     const requested = String(req.query.player || "").trim();
     const discordId = String(req.query.discordId || "").trim();
     if (!requested && !discordId) {
@@ -247,6 +248,8 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     const headUrl = getPlayerHeadUrl(acct.deviceKey)
       || getPlayerHeadUrl(session.peer.clientDeviceId || "")
       || (/^https:\/\//i.test(base) ? `${base}/api/discord/rpc/head/${acct.userId}.png` : "");
+    const head = getPlayerHead(acct.deviceKey) || getPlayerHead(session.peer.clientDeviceId || "");
+    const headAssetKey = await ensureRpcHeadAsset(head);
     res.setHeader("Cache-Control", "no-store");
     res.json({
       online: true,
@@ -258,6 +261,7 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
       level: acct.progression?.level || 1,
       players: ctx.sessions.size,
       headUrl,
+      headAssetKey,
       clientId: cfg.clientId,
     });
   });

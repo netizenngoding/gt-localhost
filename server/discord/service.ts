@@ -52,11 +52,55 @@ function readConfig(): DiscordConfig {
 
 const config = readConfig();
 const playerHeads = new Map<string, Buffer>();
+const playerHeadCanonical = new Map<string, Buffer>();
+const HEAD_CACHE_FILE = path.join(process.cwd(), "data", "cache", "player-heads.json");
+let headSaveTimer: NodeJS.Timeout | null = null;
 const playerHeadUrls = new Map<string, string>();
 const playerHeadUploads = new Map<string, Promise<string | null>>();
 const headUploadRefs = new Map<string, { channelId: string; messageId: string; keys: string[] }>();
 let headRefreshTimer: NodeJS.Timeout | null = null;
 let discordCtx: ServerContext | null = null;
+
+
+function loadStoredHeads(): void {
+  try {
+    if (!fs.existsSync(HEAD_CACHE_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(HEAD_CACHE_FILE, "utf8")) as Record<string, string>;
+    for (const [key, b64] of Object.entries(raw || {})) {
+      if (typeof b64 !== "string" || b64.length < 64) continue;
+      const png = Buffer.from(b64, "base64");
+      if (png.length < 64 || png.length > 512 * 1024) continue;
+      playerHeadCanonical.set(key, png);
+      for (const k of headKeys(key)) playerHeads.set(k, png);
+    }
+  } catch (err) {
+    console.warn("[Discord] gagal memuat cache head:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+function saveStoredHeads(): void {
+  try {
+    fs.mkdirSync(path.dirname(HEAD_CACHE_FILE), { recursive: true });
+    const out: Record<string, string> = {};
+    for (const [key, png] of playerHeadCanonical) out[key] = png.toString("base64");
+    const tmp = HEAD_CACHE_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(out));
+    fs.renameSync(tmp, HEAD_CACHE_FILE);
+  } catch (err) {
+    console.warn("[Discord] gagal menyimpan cache head:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+function scheduleHeadSave(): void {
+  if (headSaveTimer) return;
+  headSaveTimer = setTimeout(() => {
+    headSaveTimer = null;
+    saveStoredHeads();
+  }, 500);
+  if (typeof headSaveTimer.unref === "function") headSaveTimer.unref();
+}
+
+loadStoredHeads();
 
 function headKeys(deviceKey: string): string[] {
   const raw = deviceKey.replace(/^cid:/, "");
@@ -130,12 +174,15 @@ async function refreshHeadUrls(): Promise<void> {
 export function storePlayerHead(deviceKey: string, png: Buffer): void {
   if (!deviceKey || png.length < 64 || png.length > 512 * 1024) return;
   const copy = Buffer.from(png);
+  playerHeadCanonical.set(deviceKey, copy);
   for (const key of headKeys(deviceKey)) playerHeads.set(key, copy);
+  scheduleHeadSave();
   void uploadHeadToDiscord(deviceKey, copy);
-  while (playerHeads.size > 600) {
-    const first = playerHeads.keys().next().value;
+  while (playerHeadCanonical.size > 600) {
+    const first = playerHeadCanonical.keys().next().value;
     if (!first) break;
-    playerHeads.delete(first);
+    playerHeadCanonical.delete(first);
+    for (const key of headKeys(first)) playerHeads.delete(key);
   }
 }
 

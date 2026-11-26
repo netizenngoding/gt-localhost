@@ -22719,14 +22719,14 @@ var require_etag = __commonJS({
   "node_modules/etag/index.js"(exports2, module2) {
     "use strict";
     module2.exports = etag;
-    var crypto9 = require("crypto");
+    var crypto10 = require("crypto");
     var Stats = require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto9.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto10.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -25635,11 +25635,11 @@ var require_request = __commonJS({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "node_modules/cookie-signature/index.js"(exports2) {
-    var crypto9 = require("crypto");
+    var crypto10 = require("crypto");
     exports2.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto9.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto10.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports2.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -25648,7 +25648,7 @@ var require_cookie_signature = __commonJS({
       return sha1(mac) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto9.createHash("sha1").update(str).digest("hex");
+      return crypto10.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -40539,7 +40539,7 @@ function normalizePortraitSlots(itemsDb, extra) {
 }
 
 // server/discord/rpc.ts
-var import_node_crypto6 = __toESM(require("node:crypto"));
+var import_node_crypto7 = __toESM(require("node:crypto"));
 var import_node_net = __toESM(require("node:net"));
 var import_node_path9 = __toESM(require("node:path"));
 
@@ -41375,11 +41375,50 @@ function readConfig() {
 }
 var config = readConfig();
 var playerHeads = /* @__PURE__ */ new Map();
+var playerHeadCanonical = /* @__PURE__ */ new Map();
+var HEAD_CACHE_FILE = import_node_path8.default.join(process.cwd(), "data", "cache", "player-heads.json");
+var headSaveTimer = null;
 var playerHeadUrls = /* @__PURE__ */ new Map();
 var playerHeadUploads = /* @__PURE__ */ new Map();
 var headUploadRefs = /* @__PURE__ */ new Map();
 var headRefreshTimer = null;
 var discordCtx = null;
+function loadStoredHeads() {
+  try {
+    if (!import_node_fs7.default.existsSync(HEAD_CACHE_FILE)) return;
+    const raw = JSON.parse(import_node_fs7.default.readFileSync(HEAD_CACHE_FILE, "utf8"));
+    for (const [key, b64] of Object.entries(raw || {})) {
+      if (typeof b64 !== "string" || b64.length < 64) continue;
+      const png = Buffer.from(b64, "base64");
+      if (png.length < 64 || png.length > 512 * 1024) continue;
+      playerHeadCanonical.set(key, png);
+      for (const k of headKeys(key)) playerHeads.set(k, png);
+    }
+  } catch (err) {
+    console.warn("[Discord] gagal memuat cache head:", err instanceof Error ? err.message : String(err));
+  }
+}
+function saveStoredHeads() {
+  try {
+    import_node_fs7.default.mkdirSync(import_node_path8.default.dirname(HEAD_CACHE_FILE), { recursive: true });
+    const out = {};
+    for (const [key, png] of playerHeadCanonical) out[key] = png.toString("base64");
+    const tmp = HEAD_CACHE_FILE + ".tmp";
+    import_node_fs7.default.writeFileSync(tmp, JSON.stringify(out));
+    import_node_fs7.default.renameSync(tmp, HEAD_CACHE_FILE);
+  } catch (err) {
+    console.warn("[Discord] gagal menyimpan cache head:", err instanceof Error ? err.message : String(err));
+  }
+}
+function scheduleHeadSave() {
+  if (headSaveTimer) return;
+  headSaveTimer = setTimeout(() => {
+    headSaveTimer = null;
+    saveStoredHeads();
+  }, 500);
+  if (typeof headSaveTimer.unref === "function") headSaveTimer.unref();
+}
+loadStoredHeads();
 function headKeys(deviceKey) {
   const raw = deviceKey.replace(/^cid:/, "");
   return [.../* @__PURE__ */ new Set([deviceKey, raw, `cid:${raw}`])].filter(Boolean);
@@ -41445,12 +41484,15 @@ async function refreshHeadUrls() {
 function storePlayerHead(deviceKey, png) {
   if (!deviceKey || png.length < 64 || png.length > 512 * 1024) return;
   const copy = Buffer.from(png);
+  playerHeadCanonical.set(deviceKey, copy);
   for (const key of headKeys(deviceKey)) playerHeads.set(key, copy);
+  scheduleHeadSave();
   void uploadHeadToDiscord(deviceKey, copy);
-  while (playerHeads.size > 600) {
-    const first = playerHeads.keys().next().value;
+  while (playerHeadCanonical.size > 600) {
+    const first = playerHeadCanonical.keys().next().value;
     if (!first) break;
-    playerHeads.delete(first);
+    playerHeadCanonical.delete(first);
+    for (const key of headKeys(first)) playerHeads.delete(key);
   }
 }
 function getPlayerHead(deviceKey) {
@@ -41921,6 +41963,104 @@ function startDiscordPresence(getOnlineCount, ctx) {
   }
 }
 
+// server/discord/rpc-assets.ts
+var import_node_crypto6 = __toESM(require("node:crypto"));
+var DISCORD_API2 = "https://discord.com/api/v10";
+var MAX_ASSETS = 120;
+var assetKeyByHash = /* @__PURE__ */ new Map();
+var pendingByHash = /* @__PURE__ */ new Map();
+var knownKeys = null;
+function headHash(png) {
+  return import_node_crypto6.default.createHash("sha256").update(png).digest("hex");
+}
+function assetKeyForHash(hash) {
+  return `magnolia_head_${hash.slice(0, 16)}`;
+}
+function getCachedRpcHeadAsset(png) {
+  if (!png) return null;
+  return assetKeyByHash.get(headHash(png)) || null;
+}
+async function listAssetKeys() {
+  if (knownKeys) return knownKeys;
+  const cfg = discordConfig();
+  knownKeys = /* @__PURE__ */ new Set();
+  if (!cfg.botToken || !cfg.clientId) return knownKeys;
+  try {
+    const res = await fetch(`${DISCORD_API2}/applications/${cfg.clientId}/assets`, {
+      headers: { Authorization: `Bot ${cfg.botToken}` }
+    });
+    if (res.ok) {
+      const list = await res.json();
+      for (const asset of list) {
+        if (asset?.key) knownKeys.add(asset.key);
+      }
+    }
+  } catch {
+  }
+  return knownKeys;
+}
+async function uploadHeadAsset(png, hash, key) {
+  const cfg = discordConfig();
+  if (!cfg.botToken || !cfg.clientId) return null;
+  const keys = await listAssetKeys();
+  if (keys.has(key)) {
+    assetKeyByHash.set(hash, key);
+    return key;
+  }
+  if (keys.size >= MAX_ASSETS) {
+    console.warn(`[Discord RPC] asset limit reached (${keys.size}); using app logo`);
+    return null;
+  }
+  try {
+    const presign = await fetch(`${DISCORD_API2}/applications/${cfg.clientId}/assets/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${cfg.botToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: `head-${hash.slice(0, 12)}.png`, file_size: png.length })
+    });
+    if (!presign.ok) {
+      console.warn(`[Discord RPC] asset presign HTTP ${presign.status}`);
+      return null;
+    }
+    const upload = await presign.json();
+    if (!upload.upload_url || !upload.upload_filename) return null;
+    const put = await fetch(upload.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": "image/png" },
+      body: new Blob([png], { type: "image/png" })
+    });
+    if (!put.ok) {
+      console.warn(`[Discord RPC] asset upload HTTP ${put.status}`);
+      return null;
+    }
+    const created = await fetch(`${DISCORD_API2}/applications/${cfg.clientId}/assets`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${cfg.botToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ key, upload_filename: upload.upload_filename })
+    });
+    if (created.ok || created.status === 400) {
+      keys.add(key);
+      assetKeyByHash.set(hash, key);
+      return key;
+    }
+    console.warn(`[Discord RPC] asset create HTTP ${created.status}`);
+  } catch (err) {
+    console.warn("[Discord RPC] head asset upload failed:", err instanceof Error ? err.message : String(err));
+  }
+  return null;
+}
+async function ensureRpcHeadAsset(png) {
+  if (!png) return null;
+  const hash = headHash(png);
+  const cached = assetKeyByHash.get(hash);
+  if (cached) return cached;
+  const pending = pendingByHash.get(hash);
+  if (pending) return pending;
+  const key = assetKeyForHash(hash);
+  const job = uploadHeadAsset(png, hash, key).finally(() => pendingByHash.delete(hash));
+  pendingByHash.set(hash, job);
+  return job;
+}
+
 // server/discord/rpc.ts
 var OP_HANDSHAKE = 0;
 var OP_FRAME = 1;
@@ -41928,6 +42068,10 @@ var OP_PING = 3;
 var OP_PONG = 4;
 var RECONNECT_MS = 15e3;
 var UPDATE_MS = 1e4;
+var RPC_LARGE_IMAGE = "magnolia_logo";
+var RPC_BUTTON_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+var RPC_DISCORD_URL = "https://discord.gg/rSyHNwqEE";
+var activityStartedAt = /* @__PURE__ */ new Map();
 var started = false;
 var clientId = "";
 var publicBaseUrl = "";
@@ -41998,12 +42142,32 @@ function presenceActivity2() {
   if (!session) return null;
   const world = session.world?.name || "World Select";
   const name = session.account.name || "Growtopian";
-  const headUrl = getPlayerHeadUrl(session.account.deviceKey) || getPlayerHeadUrl(session.peer.clientDeviceId || "");
+  const level = Number(session.account.progression?.level) || 1;
+  const players = context?.sessions.size || 1;
+  const head = getPlayerHead(session.account.deviceKey) || getPlayerHead(session.peer.clientDeviceId || "");
+  const headAsset = getCachedRpcHeadAsset(head);
+  if (head && !headAsset) {
+    void ensureRpcHeadAsset(head).then(() => {
+      lastActivityJson = "";
+      sendActivity();
+    });
+  }
+  let startedAt = activityStartedAt.get(session.account.userId);
+  if (!startedAt) {
+    startedAt = Date.now();
+    activityStartedAt.set(session.account.userId, startedAt);
+  }
   return {
     name: "Magnolia Growtopia",
+    type: 0,
     details: `World: ${world}`.slice(0, 128),
-    state: name.slice(0, 128),
-    ...headUrl ? { assets: { large_image: headUrl, large_text: name } } : {},
+    state: `Playing as ${name} \u2022 Level ${level} \u2022 ${players} online`.slice(0, 128),
+    assets: { large_image: headAsset || RPC_LARGE_IMAGE, large_text: name, large_url: RPC_BUTTON_URL },
+    details_url: RPC_BUTTON_URL,
+    state_url: RPC_BUTTON_URL,
+    timestamps: { start: startedAt },
+    party: { id: "magnolia-server", size: [players, Math.max(players, 100)] },
+    buttons: [{ label: "Join Server", url: RPC_BUTTON_URL }, { label: "Discord", url: RPC_DISCORD_URL }],
     instance: false
   };
 }
@@ -42016,7 +42180,7 @@ function sendActivity() {
   writeFrame(OP_FRAME, {
     cmd: "SET_ACTIVITY",
     args: { pid: process.pid, activity },
-    nonce: import_node_crypto6.default.randomUUID()
+    nonce: import_node_crypto7.default.randomUUID()
   });
 }
 function parseFrames() {
@@ -50083,7 +50247,7 @@ end_dialog|storageboxpassword|Exit||`
     spawnOrMergeWorldDrop(world, recipe.result[0], recipe.result[1], tx * 32 + 6, ty * 32 + 6, -1);
     tile.fg = 0;
     tile.extra = void 0;
-    tile.flags = 0;
+    tile.flags &= TILE_FLAG_GLUE;
     tile.damage = 0;
     ctx.dirty = true;
     broadcastTileUpdate(world, tx, ty, tile);
@@ -51133,30 +51297,35 @@ function useUtilityTileItem(ctx, session, world, tile, tx, ty, itemId) {
       return true;
     }
     if ((tile.flags & TILE_FLAG_BURNT) !== 0) {
-      OnTalkBubble(session, session.netId, "That's already burnt!", 0, true);
+      OnTalkBubble(session, session.netId, "That's already burning!", 0, true);
       return true;
     }
     if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
     tile.flags &= ~TILE_FLAG_WATER;
     tile.flags |= TILE_FLAG_BURNT;
+    OnTalkBubble(session, session.netId, "`4Fire! Fire!``", 0, true);
     broadcastPositionedSfx(world, session.netId, "audio/spray.wav");
     recordProgress(ctx, session, void 0, 1, 1);
   } else if (itemId === 1866) {
-    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    if ((tile.flags & TILE_FLAG_GLUE) === 0 && !ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
     tile.flags ^= TILE_FLAG_GLUE;
   } else {
+    const wasBurning = (tile.flags & TILE_FLAG_BURNT) !== 0;
     const hasWater = (tile.flags & TILE_FLAG_WATER) !== 0;
-    if (hasWater) {
+    if (wasBurning) {
+      if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+      tile.flags &= ~TILE_FLAG_BURNT;
+      OnTalkBubble(session, session.netId, "The fire's out.", 0, true);
+    } else if (hasWater) {
       tile.flags &= ~TILE_FLAG_WATER;
     } else {
       if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
       tile.flags |= TILE_FLAG_WATER;
     }
-    tile.flags &= ~TILE_FLAG_BURNT;
     broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
   }
   broadcastTileUpdate2(ctx, world, tx, ty, tile);
-  broadcastTileUseEffect(world, session, tx, ty, itemId);
+  if (itemId !== 3062) broadcastTileUseEffect(world, session, tx, ty, itemId);
   return true;
 }
 function usePaintBucket(ctx, session, world, tile, tx, ty, itemId) {
@@ -51748,7 +51917,7 @@ function handleTileChangeRequest(ctx, session, tank) {
         tile.bg = rItemId;
       } else {
         tile.fg = rItemId;
-        tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+        tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
         tile.damage = 0;
       }
       magTile.extra.count -= 1;
@@ -51761,6 +51930,10 @@ function handleTileChangeRequest(ctx, session, tank) {
         session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
       );
       for (const p of world.peers) p.peer.sendPacket(0, placePkt2, true);
+      if ((tile.flags & TILE_FLAG_GLUE) !== 0) {
+        const updTile = makeTileUpdatePacket(tx, ty, tile, now);
+        for (const p of world.peers) p.peer.sendPacket(0, updTile, true);
+      }
       const updMag = makeTileUpdatePacket(mx, my, magTile, now);
       for (const p of world.peers) {
         p.peer.sendPacket(0, updMag, true);
@@ -51912,7 +52085,7 @@ function handleTileChangeRequest(ctx, session, tank) {
     }
     tile.fg = itemId;
     tile.damage = 0;
-    tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+    tile.flags = tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     const discount = activeMods(session.account).reduce((n, m) => Math.max(n, m.treeGrowthDiscount || 0), 0);
     const originalGrowSec = Math.max(1, def.growTime || 15);
     const bonusMs = Math.floor(originalGrowSec * 1e3 * discount);
@@ -51976,7 +52149,7 @@ function handleTileChangeRequest(ctx, session, tank) {
       }
     }
     tile.fg = itemId;
-    tile.flags = prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+    tile.flags = prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     tile.damage = 0;
     let extra;
     if (isLockItem) {
@@ -52110,7 +52283,7 @@ function handleTileChangeRequest(ctx, session, tank) {
     session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
   );
   for (const p of world.peers) p.peer.sendPacket(0, placePkt, true);
-  if (needsFullTileUpdate || def.isSeed) {
+  if (needsFullTileUpdate || def.isSeed || (tile.flags & TILE_FLAG_GLUE) !== 0) {
     const upd = makeTileUpdatePacket(tx, ty, tile, now);
     for (const p of world.peers) p.peer.sendPacket(0, upd, true);
   }
@@ -52144,7 +52317,7 @@ function harvestWorldTree(ctx, session, world, tx, ty, tile, def) {
   }
   tile.fg = 0;
   tile.extra = void 0;
-  tile.flags &= TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC;
+  tile.flags &= TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE;
   tile.damage = 0;
   ctx.dirty = true;
   recordProgress(ctx, session, "trees_harvested", 1, farmingXp(rarity));
@@ -52204,7 +52377,7 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
   if (tile.fg !== 0) {
     tile.fg = 0;
     tile.extra = void 0;
-    tile.flags = AREA_LOCK_IDS2.has(targetId) ? 0 : tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC);
+    tile.flags = AREA_LOCK_IDS2.has(targetId) ? tile.flags & TILE_FLAG_GLUE : tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE);
   } else {
     tile.bg = 0;
   }
@@ -52239,6 +52412,10 @@ function finalizeTileBreak(ctx, session, world, tx, ty, tile, def, targetId, sup
   }
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
+  if ((tile.flags & TILE_FLAG_GLUE) !== 0) {
+    const gluedUpdate = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, gluedUpdate, true);
+  }
   if (isAutoPickupBlock(targetId, def)) {
     const dropX = tx * 32 + 8;
     const dropY = ty * 32 + 8;
@@ -52476,7 +52653,7 @@ function hideTickerSetting(input) {
 }
 
 // server/client/item-appearance.ts
-var import_node_crypto7 = __toESM(require("node:crypto"));
+var import_node_crypto8 = __toESM(require("node:crypto"));
 function read2(b, p) {
   let n = 0, s = 0;
   while (p < b.length && s < 35) {
@@ -52516,7 +52693,7 @@ function patchItemAppearance(input) {
         q = a + size;
         let body = section.subarray(a, q);
         if (i + 308 === 781) {
-          if (import_node_crypto7.default.createHash("sha256").update(body).digest("hex") !== "1375c6252da382d3b485c4f47c7e1a6aadadb9a6f936fb932c85993b0f1b03c1") throw Error("Face renderer signature changed");
+          if (import_node_crypto8.default.createHash("sha256").update(body).digest("hex") !== "1375c6252da382d3b485c4f47c7e1a6aadadb9a6f936fb932c85993b0f1b03c1") throw Error("Face renderer signature changed");
           const anchor = Buffer.from("200b2d0024220641176b", "hex");
           const op = body.indexOf(anchor);
           if (op < 0 || body.indexOf(anchor, op + 1) >= 0) throw Error("Item kind lookup signature changed");
@@ -52544,7 +52721,7 @@ function patchItemAppearance(input) {
           patched = true;
         }
         if (i + 308 === 1940) {
-          if (import_node_crypto7.default.createHash("sha256").update(body).digest("hex") !== "fd614dcda2e71282a2dce521abb59d94ebc4bf44f5945eb97754d69e2afc8bd6") throw Error("Neck renderer signature changed");
+          if (import_node_crypto8.default.createHash("sha256").update(body).digest("hex") !== "fd614dcda2e71282a2dce521abb59d94ebc4bf44f5945eb97754d69e2afc8bd6") throw Error("Neck renderer signature changed");
           const table = Buffer.from("220641046b0e040001010001", "hex");
           const tableAt = body.indexOf(table);
           if (tableAt < 0 || body.indexOf(table, tableAt + 1) >= 0) throw Error("Neck animation dispatch signature changed");
@@ -52558,7 +52735,7 @@ function patchItemAppearance(input) {
           neckPatched = true;
         }
         if (i + 308 === 5463) {
-          if (import_node_crypto7.default.createHash("sha256").update(body).digest("hex") !== "9236f92f63695cf522fb4e33072ab8857253efe235d9b1572f3fe55ff3b8a1c6") throw Error("Avatar body renderer signature changed");
+          if (import_node_crypto8.default.createHash("sha256").update(body).digest("hex") !== "9236f92f63695cf522fb4e33072ab8857253efe235d9b1572f3fe55ff3b8a1c6") throw Error("Avatar body renderer signature changed");
           const ghostInvisHeadBlock = Buffer.from(
             "0240200028022c0d0020062d0034410471450d00419481182802002802880e2802b8012207450d0020072d008d0245044020072d008e024101470d010b20072d009c01410171450d0010bb02200520013802482005200243000080c19238024c200520002a023838024020002a023c21102005420037023820052010380244200e41004100200541c8006a200541406b410241ffe587784300000000200541386a2004410010c2020b",
             "hex"
@@ -56454,7 +56631,7 @@ function patchRmlUiNativeBridge(buf) {
 }
 
 // server/client/patch-client.ts
-var import_node_crypto8 = __toESM(require("node:crypto"));
+var import_node_crypto9 = __toESM(require("node:crypto"));
 var import_node_fs9 = __toESM(require("node:fs"));
 var import_node_path11 = __toESM(require("node:path"));
 var CLIENT_SHA256 = "9e5a82fa90926a8f33f651c672d7eed276538db51b083bfad034d1e7a2cf556d";
@@ -56472,7 +56649,7 @@ function collectLegacyXmlRendererIds(publicCacheDir) {
   return ids;
 }
 function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName = "MagnoliaPS", publicCacheDir = import_node_path11.default.resolve(process.cwd(), "public", "cache")) {
-  if (import_node_crypto8.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
+  if (import_node_crypto9.default.createHash("sha256").update(input).digest("hex") !== CLIENT_SHA256) throw new Error("Unsupported upstream client revision; native patches require a new audit");
   const output = Buffer.from(input);
   if (hideWarning) {
     const signature = Buffer.from("418e9202410010950e", "hex"), at2 = output.indexOf(signature);
@@ -56662,6 +56839,15 @@ function patchDisplayForegroundPass(wasm) {
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
     } else if (fid === 5029) {
+      const localHeader = Buffer.from("04187f0d7d067e047c", "hex");
+      if (!body.subarray(0, localHeader.length).equals(localHeader)) throw new Error("func 5029 local signature mismatch");
+      body = Buffer.concat([Buffer.from("05187f0d7d067e047c037f", "hex"), body.subarray(localHeader.length)]);
+      const glueNeedle = Buffer.from("20022f0104220141800871047f", "hex");
+      const glueAt = body.indexOf(glueNeedle);
+      if (glueAt < 0 || body.indexOf(glueNeedle, glueAt + 1) !== -1) throw new Error("func 5029 tile scan signature mismatch");
+      const glueDraw = Buffer.from("200141801071454520022f0100457120022f01024571044023012802302232450440419481182802002802880e28029001410c6a21320b20320440203145044041d9c7004120412010960e21310b20310440230041306b22332400203320022d0006b3430000004294380200203320022d0007b3430000004294380204203341086a2032203310e802203320322a0214380210203320322a02183802142033420037021841a20f203120332a020820332a020c41054105203341106a4100417f4300000000203341186a41004100410041001029203341306a24000b0b0b", "hex");
+      const glueInsertAt = glueAt + Buffer.from("20022f01042201", "hex").length;
+      body = Buffer.concat([body.subarray(0, glueInsertAt), glueDraw, body.subarray(glueInsertAt)]);
       const idx = body.indexOf(needle5029);
       if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
         throw new Error("func 5029 post-render signature mismatch");
@@ -56984,7 +57170,7 @@ function patchMannequinExpression(wasm) {
 
 // server/https/routes.ts
 var import_node_fs10 = __toESM(require("node:fs"));
-var import_node_crypto9 = __toESM(require("node:crypto"));
+var import_node_crypto10 = __toESM(require("node:crypto"));
 var import_node_zlib4 = __toESM(require("node:zlib"));
 var import_node_path12 = __toESM(require("node:path"));
 var import_express = __toESM(require_express2());
@@ -57073,7 +57259,7 @@ function createHttpApp(ctx, rootDir, port) {
     const loader = import_node_path12.default.join(publicDir, "MagnoliaClient-1.50.js");
     if (!import_node_fs10.default.existsSync(loader)) issues.push("File public/MagnoliaClient-1.50.js tidak ada. Ekstrak seluruh patch ke root repository.");
     if (!import_node_fs10.default.existsSync(wasm)) issues.push("File data/client/upstream.wasm tidak ada.");
-    else if (import_node_crypto9.default.createHash("sha256").update(import_node_fs10.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
+    else if (import_node_crypto10.default.createHash("sha256").update(import_node_fs10.default.readFileSync(wasm)).digest("hex") !== CLIENT_SHA256) issues.push("File data/client/upstream.wasm tidak cocok dengan versi client yang didukung.");
     try {
       await dataPackage.prepare();
     } catch (error) {
@@ -57190,7 +57376,7 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     res.setHeader("Cache-Control", "no-store");
     res.type("html").send(page);
   });
-  app.get("/api/discord/rpc/state", (req, res) => {
+  app.get("/api/discord/rpc/state", async (req, res) => {
     const requested = String(req.query.player || "").trim();
     const discordId = String(req.query.discordId || "").trim();
     if (!requested && !discordId) {
@@ -57221,6 +57407,8 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
     }
     const base = effectivePublicBaseUrl(cfg.publicBaseUrl);
     const headUrl = getPlayerHeadUrl(acct.deviceKey) || getPlayerHeadUrl(session.peer.clientDeviceId || "") || (/^https:\/\//i.test(base) ? `${base}/api/discord/rpc/head/${acct.userId}.png` : "");
+    const head = getPlayerHead(acct.deviceKey) || getPlayerHead(session.peer.clientDeviceId || "");
+    const headAssetKey = await ensureRpcHeadAsset(head);
     res.setHeader("Cache-Control", "no-store");
     res.json({
       online: true,
@@ -57232,6 +57420,7 @@ function returnToMagnolia(){try{if(window.opener&&!window.opener.closed)window.o
       level: acct.progression?.level || 1,
       players: ctx.sessions.size,
       headUrl,
+      headAssetKey,
       clientId: cfg.clientId
     });
   });

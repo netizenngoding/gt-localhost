@@ -435,39 +435,50 @@ function useUtilityTileItem(
       OnTalkBubble(session, session.netId, "That won't burn!", 0, true);
       return true;
     }
+    // AstroSource WorldInfo.h:28170 only allows the lighter on a real
+    // foreground block. A background-only tile has no native fire render pass.
     if (tile.fg === 0) {
       OnTalkBubble(session, session.netId, "There's nothing to burn!", 0, true);
       return true;
     }
     if ((tile.flags & TILE_FLAG_BURNT) !== 0) {
-      OnTalkBubble(session, session.netId, "That's already burnt!", 0, true);
+      OnTalkBubble(session, session.netId, "That's already burning!", 0, true);
       return true;
     }
     if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
-    // Fire evaporates any water on the tile first (GTPS3 pocket lighter).
+    // Pocket Lighter is not placed: it only lights the tile immediately.
+    // Water on the tile evaporates, and the client draws the native fire
+    // overlay straight from the tile flag update.
     tile.flags &= ~TILE_FLAG_WATER;
     tile.flags |= TILE_FLAG_BURNT;
+    OnTalkBubble(session, session.netId, "`4Fire! Fire!``", 0, true);
     broadcastPositionedSfx(world, session.netId, "audio/spray.wav");
     recordProgress(ctx, session, undefined, 1, 1);
   } else if (itemId === 1866) {
-    if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+    // Glue belongs to the tile. Removing it does not consume a second Glue.
+    if ((tile.flags & TILE_FLAG_GLUE) === 0 && !ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
     tile.flags ^= TILE_FLAG_GLUE;
   } else {
+    const wasBurning = (tile.flags & TILE_FLAG_BURNT) !== 0;
     const hasWater = (tile.flags & TILE_FLAG_WATER) !== 0;
-    if (hasWater) {
+    if (wasBurning) {
+      // Dousing a fire uses the bucket but must not leave a water tile behind.
+      if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
+      tile.flags &= ~TILE_FLAG_BURNT;
+      OnTalkBubble(session, session.netId, "The fire's out.", 0, true);
+    } else if (hasWater) {
       // Picking the water back up does not consume another bucket.
       tile.flags &= ~TILE_FLAG_WATER;
     } else {
       if (!ctx.consumeInventoryItem(session, itemId, 1, true)) return true;
       tile.flags |= TILE_FLAG_WATER;
     }
-    // Water extinguishes fire.
-    tile.flags &= ~TILE_FLAG_BURNT;
     broadcastPositionedSfx(world, session.netId, "audio/water_splash.wav");
   }
 
   broadcastTileUpdate(ctx, world, tx, ty, tile);
-  broadcastTileUseEffect(world, session, tx, ty, itemId);
+  // The lighter has no placement animation: the fire overlay is the effect.
+  if (itemId !== 3062) broadcastTileUseEffect(world, session, tx, ty, itemId);
   return true;
 }
 
@@ -1130,7 +1141,7 @@ export function handleTileChangeRequest(
         tile.bg = rItemId;
       } else {
         tile.fg = rItemId;
-        tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+        tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
         tile.damage = 0;
       }
       magTile.extra.count -= 1;
@@ -1140,6 +1151,10 @@ export function handleTileChangeRequest(
         session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
       );
       for (const p of world.peers) p.peer.sendPacket(0, placePkt, true);
+      if ((tile.flags & TILE_FLAG_GLUE) !== 0) {
+        const updTile = makeTileUpdatePacket(tx, ty, tile, now);
+        for (const p of world.peers) p.peer.sendPacket(0, updTile, true);
+      }
       const updMag = makeTileUpdatePacket(mx, my, magTile, now);
       for (const p of world.peers) {
         p.peer.sendPacket(0, updMag, true);
@@ -1322,7 +1337,7 @@ export function handleTileChangeRequest(
 
     tile.fg = itemId;
     tile.damage = 0;
-    tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+    tile.flags = (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     // Client uses elapsed time versus items.dat growTime. Advancing the stored
     // start time by 5% gives the documented 5% shorter maturity deadline and
     // survives world save/reload; the initial visible growth is approximate.
@@ -1399,7 +1414,7 @@ export function handleTileChangeRequest(
     }
 
     tile.fg = itemId;
-    tile.flags = (prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
+    tile.flags = (prevFlags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE)) | (session.facingLeft ? TILE_FLAG_FLIPPED : 0);
     tile.damage = 0;
 
     let extra: TileExtra | undefined;
@@ -1533,7 +1548,7 @@ export function handleTileChangeRequest(
     session.facingLeft ? TANK_FLAG_FACING_LEFT : 0
   );
   for (const p of world.peers) p.peer.sendPacket(0, placePkt, true);
-  if (needsFullTileUpdate || def.isSeed) {
+  if (needsFullTileUpdate || def.isSeed || (tile.flags & TILE_FLAG_GLUE) !== 0) {
     const upd = makeTileUpdatePacket(tx, ty, tile, now);
     for (const p of world.peers) p.peer.sendPacket(0, upd, true);
   }
@@ -1579,7 +1594,7 @@ function harvestWorldTree(
 
   tile.fg = 0;
   tile.extra = undefined;
-  tile.flags &= (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC);
+  tile.flags &= (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE);
   tile.damage = 0;
   ctx.dirty = true;
 
@@ -1659,7 +1674,7 @@ function finalizeTileBreak(
   if (tile.fg !== 0) {
     tile.fg = 0;
     tile.extra = undefined;
-    tile.flags = AREA_LOCK_IDS.has(targetId) ? 0 : (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC));
+    tile.flags = AREA_LOCK_IDS.has(targetId) ? (tile.flags & TILE_FLAG_GLUE) : (tile.flags & (TILE_FLAG_LOCKED | TILE_FLAG_PUBLIC | TILE_FLAG_GLUE));
   } else {
     tile.bg = 0;
   }
@@ -1695,6 +1710,10 @@ function finalizeTileBreak(
 
   const breakPkt = makeTileChangePacket(session.netId, tx, ty, 18);
   for (const p of world.peers) p.peer.sendPacket(0, breakPkt, true);
+  if ((tile.flags & TILE_FLAG_GLUE) !== 0) {
+    const gluedUpdate = makeTileUpdatePacket(tx, ty, tile, Date.now());
+    for (const p of world.peers) p.peer.sendPacket(0, gluedUpdate, true);
+  }
 
   if (isAutoPickupBlock(targetId, def)) {
     // Return block directly to inventory with native flying drop collect effect & sfx

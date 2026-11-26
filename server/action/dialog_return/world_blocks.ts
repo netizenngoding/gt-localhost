@@ -15,6 +15,7 @@ import {
   PACKET_ITEM_EFFECT,
   TILE_FLAG_EXTRA_VISUAL,
   TILE_FLAG_HAS_WLS,
+  TILE_FLAG_GLUE,
   TILE_FLAG_LOCKED,
   TILE_FLAG_PUBLIC,
   type WorldTile,
@@ -1734,7 +1735,7 @@ export function handleWorldBlockDialogReturn(
     spawnOrMergeWorldDrop(world, recipe.result[0], recipe.result[1], tx * 32 + 6, ty * 32 + 6, -1);
     tile.fg = 0;
     tile.extra = undefined;
-    tile.flags = 0;
+    tile.flags &= TILE_FLAG_GLUE;
     tile.damage = 0;
     ctx.dirty = true;
     broadcastTileUpdate(world, tx, ty, tile);

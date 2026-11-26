@@ -3,7 +3,8 @@ import net from "node:net";
 import path from "node:path";
 import type { ServerContext } from "../database/context";
 import type { PlayerSession } from "../database/peer";
-import { getPlayerHeadUrl } from "./service";
+import { getPlayerHead } from "./service";
+import { ensureRpcHeadAsset, getCachedRpcHeadAsset } from "./rpc-assets";
 
 /**
  * Optional local Discord Rich Presence bridge.
@@ -25,6 +26,10 @@ const OP_PONG = 4;
 
 const RECONNECT_MS = 15_000;
 const UPDATE_MS = 10_000;
+const RPC_LARGE_IMAGE = "magnolia_logo";
+const RPC_BUTTON_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const RPC_DISCORD_URL = "https://discord.gg/rSyHNwqEE";
+const activityStartedAt = new Map<number, number>();
 
 let started = false;
 let clientId = "";
@@ -103,14 +108,33 @@ function presenceActivity(): Record<string, unknown> | null {
 
   const world = session.world?.name || "World Select";
   const name = session.account.name || "Growtopian";
-  const headUrl = getPlayerHeadUrl(session.account.deviceKey)
-    || getPlayerHeadUrl(session.peer.clientDeviceId || "");
+  const level = Number(session.account.progression?.level) || 1;
+  const players = context?.sessions.size || 1;
+  const head = getPlayerHead(session.account.deviceKey) || getPlayerHead(session.peer.clientDeviceId || "");
+  const headAsset = getCachedRpcHeadAsset(head);
+  if (head && !headAsset) {
+    void ensureRpcHeadAsset(head).then(() => {
+      lastActivityJson = "";
+      sendActivity();
+    });
+  }
+  let startedAt = activityStartedAt.get(session.account.userId);
+  if (!startedAt) {
+    startedAt = Date.now();
+    activityStartedAt.set(session.account.userId, startedAt);
+  }
 
   return {
     name: "Magnolia Growtopia",
+    type: 0,
     details: `World: ${world}`.slice(0, 128),
-    state: name.slice(0, 128),
-    ...(headUrl ? { assets: { large_image: headUrl, large_text: name } } : {}),
+    state: `Playing as ${name} • Level ${level} • ${players} online`.slice(0, 128),
+    assets: { large_image: headAsset || RPC_LARGE_IMAGE, large_text: name, large_url: RPC_BUTTON_URL },
+    details_url: RPC_BUTTON_URL,
+    state_url: RPC_BUTTON_URL,
+    timestamps: { start: startedAt },
+    party: { id: "magnolia-server", size: [players, Math.max(players, 100)] },
+    buttons: [{ label: "Join Server", url: RPC_BUTTON_URL }, { label: "Discord", url: RPC_DISCORD_URL }],
     instance: false,
   };
 }

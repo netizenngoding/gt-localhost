@@ -111,13 +111,21 @@ export function patchClient(
   //    tiles whose ItemDef flags (item+54) have Property_Foreground (0x2000, e.g. Display Box 1422).
   // 2) Replace func 1518 (TileOverlayComponent::PostRender, vtable+12, called at func 5029 after players
   //    and right before batch flush) to render all visible fg tiles with flags & 0x2000.
-  const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
+  // Glue first: it appends one function and a single `call` into 5029 right
+  // before the terrain batch is flushed, so the glue quads are submitted with
+  // the terrain (over the ground, under avatars and drops). Later patches keep
+  // working on the original function indices.
+  const glued = installBlockGluePass(output);
+  const prePatched = Buffer.from(
+    patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(glued))))
+  );
   const legacyXmlIds = collectLegacyXmlRendererIds(publicCacheDir);
-  const patched = Buffer.from(
+  const afterTextPatches = Buffer.from(
     patchRmlUiNativeBridge(
       patchColorSliderDialog(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds))
     )
   );
+  const patched = afterTextPatches;
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
   return extendChatPortraitExports(patched);
 }
@@ -146,7 +154,7 @@ function writeUleb(n: number): Buffer {
   return Buffer.from(out);
 }
 
-function patchDisplayForegroundPass(wasm: Buffer): Buffer {
+export function patchDisplayForegroundPass(wasm: Buffer): Buffer {
   let pos = 8;
   let funcImports = 0;
   let codeSecStart = -1;
@@ -243,28 +251,8 @@ function patchDisplayForegroundPass(wasm: Buffer): Buffer {
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
     } else if (fid === 5029) {
-      // APK TileWorld renderer: an empty FG/BG tile with GLUED (0x0800)
-      // draws the original particles.rttex frame (5,5). The web binary has
-      // the same atlas but lacks this draw. Add three i32 scratch locals and
-      // inject the draw at the existing visible-tile pass; leave fire intact.
-      const localHeader = Buffer.from("04187f0d7d067e047c", "hex");
-      if (!body.subarray(0, localHeader.length).equals(localHeader)) throw new Error("func 5029 local signature mismatch");
-      body = Buffer.concat([Buffer.from("05187f0d7d067e047c037f", "hex"), body.subarray(localHeader.length)]);
-      const glueNeedle = Buffer.from("20022f0104220141800871047f", "hex");
-      const glueAt = body.indexOf(glueNeedle);
-      if (glueAt < 0 || body.indexOf(glueNeedle, glueAt + 1) !== -1) throw new Error("func 5029 tile scan signature mismatch");
-      // Local 49 caches the particle atlas for this render; local 50 is the
-      // camera; local 51 is temporary stack storage for positions and scale.
-      // Insert after local.tee 1, retaining the flag value on the stack.
-      const glueDraw = Buffer.from("200141801071454520022f0100457120022f01024571044023012802302232450440419481182802002802880e28029001410c6a21320b20320440203145044041d9c7004120412010960e21310b20310440230041306b22332400203320022d0006b3430000004294380200203320022d0007b3430000004294380204203341086a2032203310e802203320322a0214380210203320322a02183802142033420037021841a20f203120332a020820332a020c41054105203341106a4100417f4300000000203341186a41004100410041001029203341306a24000b0b0b", "hex");
-      const glueInsertAt = glueAt + Buffer.from("20022f01042201", "hex").length;
-      body = Buffer.concat([body.subarray(0, glueInsertAt), glueDraw, body.subarray(glueInsertAt)]);
-      const idx = body.indexOf(needle5029);
-      if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
-        throw new Error("func 5029 post-render signature mismatch");
-      }
-      const after = idx + needle5029.length;
-      body = Buffer.concat([body.subarray(0, after), insert5029, body.subarray(after)]);
+      // Left untouched here: installBlockGluePass() already added a `call` to
+      // the glue pass just before this pass flushes the tile batch.
       patched5029 = true;
     }
 
@@ -276,12 +264,13 @@ function patchDisplayForegroundPass(wasm: Buffer): Buffer {
   }
 
   const newCodeBody = Buffer.concat(chunks);
-  return Buffer.concat([
+  const rebuilt = Buffer.concat([
     wasm.subarray(0, codeSecLenStart),
     writeUleb(newCodeBody.length),
     newCodeBody,
     wasm.subarray(codeSecEnd),
   ]);
+  return rebuilt;
 }
 
 
@@ -609,10 +598,178 @@ function patchMannequinExpression(wasm: Buffer): Buffer {
   }
 
   const newCodeBody = Buffer.concat(chunks);
-  return Buffer.concat([
+  const rebuilt = Buffer.concat([
     wasm.subarray(0, codeSecLenStart),
     writeUleb(newCodeBody.length),
     newCodeBody,
     wasm.subarray(codeSecEnd),
   ]);
+  return rebuilt;
+}
+
+// ---------------------------------------------------------------------------
+// Block Glue draw order — matched to the Growtopia 1.50 APK
+//
+// `libgrowtopia.so` draws a glued tile (TILE_FLAG_GLUED = 0x800 on an empty
+// FG/BG tile) as `game/particles.rttex` frame (5,5) through the sprite
+// batcher, inside the tile pass of the world renderer.
+//
+// Three things had to line up, and each of the earlier attempts broke one:
+//
+//   1. WHERE. The quads must be queued while the visible-tile list is still
+//      populated and BEFORE the tile batch is flushed, so they are submitted in
+//      the same batch as the terrain and land on top of it. Inserting after the
+//      flush's visible-list reset iterates an empty list and draws nothing.
+//   2. HOW. The glue code must not clobber func 5029's locals (the browser
+//      build relies on them across the seam). It therefore lives in its own
+//      appended function and is reached with a single `call`.
+//   3. WHAT. The runtime atlas handle must be resolved with
+//      `resolve(9177, 32, 32)` — the same string-keyed lookup the APK does —
+//      not with a cached drawable, and the quad is emitted through the shared
+//      sprite batcher with `game/particles.rttex` frame (5,5).
+//
+// Result ordering inside 5029:
+//   terrain quads ... <<< glue quads >>> flush(410) reset object/drop pass
+// so glue paints over the ground but under avatars, and dropped items keep
+// their position at the very end of the pass (in front of everything).
+const GLUE_LOCALS_SIG = "04187f0d7d067e047c";
+// End of the tile pass: flush + visible-tile list reset (unique in 5029).
+const GLUE_ANCHOR_HEX =
+  "200d28029c034100109a0341f8801941f480192802003602004184811941808119280200360200";
+
+// Body of the appended glue function. Encoded by hand (wat2wasm) and kept as
+// the code-section body only: `(local i32 i32 i32 i32 i32 i32) <ops>`.
+// Signature: () -> () — it reads everything from globals and the visible-tile
+// list, so it needs no parameters and cannot disturb 5029's stack.
+const GLUE_FUNC_BODY_HEX =
+  "01067f41d9c7004120412010960e210320034504400f0b23012802302204450440419481182802002802880e28029001410c" +
+  "6a21040b41f48019280200210041f8801928020021010240034020002001460d012000280200210220022f01044180107104" +
+  "4020022f010045044020022f0102450440230041306b210520052400200520022d0006b3430000004294380200200520022d" +
+  "0007b3430000004294380204200541086a2004200510e802200520042a0214380210200520042a0218380214200542003702" +
+  "1841a20f200320052a020820052a020c41054105200541106a4100417f4300000000200541186a4100410041004100102920" +
+  "0541306a24000b0b0b200041046a21000c000b0b0b";
+
+function countFuncImports(wasm: Buffer, body: number): number {
+  if (body < 0) return 0;
+  const [importCount] = readUleb(wasm, body);
+  let p = readUleb(wasm, body)[1];
+  let funcs = 0;
+  for (let i = 0; i < importCount; i++) {
+    const [ml, p1] = readUleb(wasm, p);
+    p = p1 + ml;
+    const [nl, p2] = readUleb(wasm, p);
+    p = p2 + nl;
+    const kind = wasm[p++];
+    if (kind === 0) {
+      funcs++;
+      [, p] = readUleb(wasm, p);
+    } else if (kind === 1) {
+      p++;
+      const [fl, p3] = readUleb(wasm, p);
+      [, p] = readUleb(wasm, p3);
+      if (fl & 1) [, p] = readUleb(wasm, p);
+    } else if (kind === 2) {
+      const [fl, p3] = readUleb(wasm, p);
+      [, p] = readUleb(wasm, p3);
+      if (fl & 1) [, p] = readUleb(wasm, p);
+    } else if (kind === 3) {
+      p += 2;
+    }
+  }
+  return funcs;
+}
+
+/**
+ * Append the Glue draw pass as its own function and call it from 5029 just
+ * before the tile batch is flushed, so the glue quads are submitted in the
+ * same batch as the terrain (on top of the ground, under everything else).
+ */
+export function installBlockGluePass(wasm: Buffer): Buffer {
+  const sections: Array<{ id: number; start: number; end: number; body: number }> = [];
+  let pos = 8;
+  while (pos < wasm.length) {
+    const start = pos;
+    const id = wasm[pos++];
+    const [size, body] = readUleb(wasm, pos);
+    const end = body + size;
+    sections.push({ id, start, end, body });
+    pos = end;
+  }
+  const codeSec = sections.find((s) => s.id === 10);
+  const importSec = sections.find((s) => s.id === 2);
+  const funcSec = sections.find((s) => s.id === 3);
+  if (!codeSec || !funcSec) throw new Error("WASM code/function section missing");
+
+  const funcImports = countFuncImports(wasm, importSec ? importSec.body : -1);
+  const [codeCount, codeStart] = readUleb(wasm, codeSec.body);
+  const bodies: Buffer[] = [];
+  let cp = codeStart;
+  for (let i = 0; i < codeCount; i++) {
+    const [size, begin] = readUleb(wasm, cp);
+    bodies.push(wasm.subarray(begin, begin + size));
+    cp = begin + size;
+  }
+
+  const bodyIndex = 5029 - funcImports;
+  const original = bodies[bodyIndex];
+  if (!original || !original.subarray(0, GLUE_LOCALS_SIG.length / 2).equals(Buffer.from(GLUE_LOCALS_SIG, "hex"))) {
+    throw new Error("Block glue pass: func 5029 signature mismatch");
+  }
+
+  const anchor = Buffer.from(GLUE_ANCHOR_HEX, "hex");
+  const at = original.indexOf(anchor);
+  if (at < 0 || original.indexOf(anchor, at + 1) !== -1) {
+    throw new Error("Block glue pass: terrain/object seam not found");
+  }
+  // Ordering guarantee for drops: the object/particle pass (func 2465, which
+  // also draws dropped items) runs at the very end of 5029, after the avatar
+  // pass, so drops stay in front of everything. Refuse to patch if the
+  // structure ever changes.
+  const objectPass = Buffer.concat([Buffer.from([0x10]), writeUleb(2465)]);
+  const objectAt = original.lastIndexOf(objectPass);
+  if (objectAt < 0 || objectAt < at) {
+    throw new Error("Block glue pass: object/drop pass no longer follows the terrain pass");
+  }
+
+  // 1. Append the glue function and remember its index. Type 8 of the upstream
+  //    type section is `() -> nil`, so the appended entry reuses it.
+  const GLUE_TYPE_INDEX = 8;
+  const [declaredFuncs, funcSecTypesAt] = readUleb(wasm, funcSec.body);
+  // The appended function calls the atlas resolver (1814) and the sprite
+  // batcher (41) and uses globals 0/1, so the import/global indices in the
+  // hand-encoded body below are valid only for the 1.50 import layout.
+  if (funcImports !== 308) {
+    throw new Error(`Block glue pass: unexpected import count ${funcImports} (need 308)`);
+  }
+  const glueFuncIndex = funcImports + bodies.length;
+  bodies.push(Buffer.from(GLUE_FUNC_BODY_HEX, "hex"));
+
+  // 2. Call it from 5029 right before the tile batch is flushed, i.e. while
+  //    the visible-tile list still holds this frame's tiles. The call pushes
+  //    and pops nothing, so 5029's stack and locals are untouched.
+  const insertAt = at;
+  const callOp = Buffer.concat([Buffer.from([0x10]), writeUleb(glueFuncIndex)]);
+  bodies[bodyIndex] = Buffer.concat([
+    original.subarray(0, insertAt),
+    callOp,
+    original.subarray(insertAt),
+  ]);
+
+  const codeBody = Buffer.concat([
+    writeUleb(bodies.length),
+    ...bodies.map((b) => Buffer.concat([writeUleb(b.length), b])),
+  ]);
+  const newFuncSecBody = Buffer.concat([
+    writeUleb(declaredFuncs + 1),
+    wasm.subarray(funcSecTypesAt, funcSec.end),
+    writeUleb(GLUE_TYPE_INDEX),
+  ]);
+  const out: Buffer[] = [wasm.subarray(0, 8)];
+  for (const sec of sections) {
+    if (sec.id === 10) out.push(Buffer.from([10]), writeUleb(codeBody.length), codeBody);
+    else if (sec.id === 3) out.push(Buffer.from([3]), writeUleb(newFuncSecBody.length), newFuncSecBody);
+    else out.push(wasm.subarray(sec.start, sec.end));
+  }
+  console.log("DEBUG outlen", Buffer.concat(out).length);
+  return Buffer.concat(out);
 }

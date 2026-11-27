@@ -1390,7 +1390,7 @@
         try {
           let native = g.__rmluiNative;
           if (!native) {
-            const mod = await import("/WebLoaderData/RmlUiWasm.js?v=14");
+            const mod = await import("/WebLoaderData/RmlUiWasm.js?v=18");
             native = mod && mod.rmluiNative;
           }
           if (!native) return null;

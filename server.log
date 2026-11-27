@@ -1,9 +1,12 @@
 [MagnoliaPS] Loading original-reference item catalog (custom definitions disabled)...
-[MagnoliaPS] Loaded 13258 items (v18, itemsHash=3656081807, tributeHash=3366554574)
-[MagnoliaPS] Modular Server listening on http://0.0.0.0:8080
-[MagnoliaPS] Loading original-reference item catalog (custom definitions disabled)...
-[MagnoliaPS] Loaded 16568 items (v18, itemsHash=3653259708, tributeHash=3366554574)
+[MagnoliaPS] Loaded 16568 items (v18, itemsHash=736895119, tributeHash=3366554574)
 [MagnoliaPS] Modular Server listening on http://0.0.0.0:3000
-[MagnoliaPS] Loading original-reference item catalog (custom definitions disabled)...
-[MagnoliaPS] Loaded 16568 items (v18, itemsHash=2708259516, tributeHash=3366554574)
-[MagnoliaPS] Modular Server listening on http://0.0.0.0:8085
+[Discord RPC] looking for local Discord client...
+[Discord RPC] local rich presence connected
+[Discord RPC] activity bridge ready
+[Discord] gateway presence ready
+DEBUG upstream bytes 4817018
+DEBUG outlen 4817295
+DEBUG dropblock counter installed
+DEBUG probes 5363 62914560
+DEBUG route wasm 5074371

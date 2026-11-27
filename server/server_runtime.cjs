@@ -56718,13 +56718,17 @@ function patchClient(input, hideWarning, autofillLabel = "Autofill", serverName 
     }
     newBytes.copy(output, offset);
   }
-  const prePatched = Buffer.from(patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(output)))));
+  const glued = installBlockGluePass(output);
+  const prePatched = Buffer.from(
+    patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(glued))))
+  );
   const legacyXmlIds = collectLegacyXmlRendererIds(publicCacheDir);
-  const patched = Buffer.from(
+  const afterTextPatches = Buffer.from(
     patchRmlUiNativeBridge(
       patchColorSliderDialog(patchClothingAnimations(patchMannequinExpression(prePatched), legacyXmlIds))
     )
   );
+  const patched = afterTextPatches;
   if (!WebAssembly.validate(new Uint8Array(patched))) throw new Error("Patched client failed WebAssembly validation");
   return extendChatPortraitExports(patched);
 }
@@ -56839,21 +56843,6 @@ function patchDisplayForegroundPass(wasm) {
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
     } else if (fid === 5029) {
-      const localHeader = Buffer.from("04187f0d7d067e047c", "hex");
-      if (!body.subarray(0, localHeader.length).equals(localHeader)) throw new Error("func 5029 local signature mismatch");
-      body = Buffer.concat([Buffer.from("05187f0d7d067e047c037f", "hex"), body.subarray(localHeader.length)]);
-      const glueNeedle = Buffer.from("20022f0104220141800871047f", "hex");
-      const glueAt = body.indexOf(glueNeedle);
-      if (glueAt < 0 || body.indexOf(glueNeedle, glueAt + 1) !== -1) throw new Error("func 5029 tile scan signature mismatch");
-      const glueDraw = Buffer.from("200141801071454520022f0100457120022f01024571044023012802302232450440419481182802002802880e28029001410c6a21320b20320440203145044041d9c7004120412010960e21310b20310440230041306b22332400203320022d0006b3430000004294380200203320022d0007b3430000004294380204203341086a2032203310e802203320322a0214380210203320322a02183802142033420037021841a20f203120332a020820332a020c41054105203341106a4100417f4300000000203341186a41004100410041001029203341306a24000b0b0b", "hex");
-      const glueInsertAt = glueAt + Buffer.from("20022f01042201", "hex").length;
-      body = Buffer.concat([body.subarray(0, glueInsertAt), glueDraw, body.subarray(glueInsertAt)]);
-      const idx = body.indexOf(needle5029);
-      if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
-        throw new Error("func 5029 post-render signature mismatch");
-      }
-      const after = idx + needle5029.length;
-      body = Buffer.concat([body.subarray(0, after), insert5029, body.subarray(after)]);
       patched5029 = true;
     }
     chunks.push(writeUleb4(body.length), body);
@@ -56862,12 +56851,13 @@ function patchDisplayForegroundPass(wasm) {
     throw new Error(`Failed to patch Display foreground pass (4240=${patched4240}, 1518=${patched1518}, 5029=${patched5029})`);
   }
   const newCodeBody = Buffer.concat(chunks);
-  return Buffer.concat([
+  const rebuilt = Buffer.concat([
     wasm.subarray(0, codeSecLenStart),
     writeUleb4(newCodeBody.length),
     newCodeBody,
     wasm.subarray(codeSecEnd)
   ]);
+  return rebuilt;
 }
 function patchMannequinExpression(wasm) {
   const patches = [
@@ -57160,12 +57150,116 @@ function patchMannequinExpression(wasm) {
     throw new Error(`Mannequin patch count mismatch: applied ${appliedCount} of ${patches.length}`);
   }
   const newCodeBody = Buffer.concat(chunks);
-  return Buffer.concat([
+  const rebuilt = Buffer.concat([
     wasm.subarray(0, codeSecLenStart),
     writeUleb4(newCodeBody.length),
     newCodeBody,
     wasm.subarray(codeSecEnd)
   ]);
+  return rebuilt;
+}
+var GLUE_LOCALS_SIG = "04187f0d7d067e047c";
+var GLUE_ANCHOR_HEX = "200d28029c034100109a0341f8801941f480192802003602004184811941808119280200360200";
+var GLUE_FUNC_BODY_HEX = "01067f41d9c7004120412010960e210320034504400f0b23012802302204450440419481182802002802880e28029001410c6a21040b41f48019280200210041f8801928020021010240034020002001460d012000280200210220022f010441801071044020022f010045044020022f0102450440230041306b210520052400200520022d0006b3430000004294380200200520022d0007b3430000004294380204200541086a2004200510e802200520042a0214380210200520042a02183802142005420037021841a20f200320052a020820052a020c41054105200541106a4100417f4300000000200541186a41004100410041001029200541306a24000b0b0b200041046a21000c000b0b0b";
+function countFuncImports2(wasm, body) {
+  if (body < 0) return 0;
+  const [importCount] = readUleb4(wasm, body);
+  let p = readUleb4(wasm, body)[1];
+  let funcs = 0;
+  for (let i = 0; i < importCount; i++) {
+    const [ml, p1] = readUleb4(wasm, p);
+    p = p1 + ml;
+    const [nl, p2] = readUleb4(wasm, p);
+    p = p2 + nl;
+    const kind = wasm[p++];
+    if (kind === 0) {
+      funcs++;
+      [, p] = readUleb4(wasm, p);
+    } else if (kind === 1) {
+      p++;
+      const [fl, p3] = readUleb4(wasm, p);
+      [, p] = readUleb4(wasm, p3);
+      if (fl & 1) [, p] = readUleb4(wasm, p);
+    } else if (kind === 2) {
+      const [fl, p3] = readUleb4(wasm, p);
+      [, p] = readUleb4(wasm, p3);
+      if (fl & 1) [, p] = readUleb4(wasm, p);
+    } else if (kind === 3) {
+      p += 2;
+    }
+  }
+  return funcs;
+}
+function installBlockGluePass(wasm) {
+  const sections = [];
+  let pos = 8;
+  while (pos < wasm.length) {
+    const start = pos;
+    const id = wasm[pos++];
+    const [size, body] = readUleb4(wasm, pos);
+    const end = body + size;
+    sections.push({ id, start, end, body });
+    pos = end;
+  }
+  const codeSec = sections.find((s) => s.id === 10);
+  const importSec = sections.find((s) => s.id === 2);
+  const funcSec = sections.find((s) => s.id === 3);
+  if (!codeSec || !funcSec) throw new Error("WASM code/function section missing");
+  const funcImports = countFuncImports2(wasm, importSec ? importSec.body : -1);
+  const [codeCount, codeStart] = readUleb4(wasm, codeSec.body);
+  const bodies = [];
+  let cp = codeStart;
+  for (let i = 0; i < codeCount; i++) {
+    const [size, begin] = readUleb4(wasm, cp);
+    bodies.push(wasm.subarray(begin, begin + size));
+    cp = begin + size;
+  }
+  const bodyIndex = 5029 - funcImports;
+  const original = bodies[bodyIndex];
+  if (!original || !original.subarray(0, GLUE_LOCALS_SIG.length / 2).equals(Buffer.from(GLUE_LOCALS_SIG, "hex"))) {
+    throw new Error("Block glue pass: func 5029 signature mismatch");
+  }
+  const anchor = Buffer.from(GLUE_ANCHOR_HEX, "hex");
+  const at = original.indexOf(anchor);
+  if (at < 0 || original.indexOf(anchor, at + 1) !== -1) {
+    throw new Error("Block glue pass: terrain/object seam not found");
+  }
+  const objectPass = Buffer.concat([Buffer.from([16]), writeUleb4(2465)]);
+  const objectAt = original.lastIndexOf(objectPass);
+  if (objectAt < 0 || objectAt < at) {
+    throw new Error("Block glue pass: object/drop pass no longer follows the terrain pass");
+  }
+  const GLUE_TYPE_INDEX = 8;
+  const [declaredFuncs, funcSecTypesAt] = readUleb4(wasm, funcSec.body);
+  if (funcImports !== 308) {
+    throw new Error(`Block glue pass: unexpected import count ${funcImports} (need 308)`);
+  }
+  const glueFuncIndex = funcImports + bodies.length;
+  bodies.push(Buffer.from(GLUE_FUNC_BODY_HEX, "hex"));
+  const insertAt = at;
+  const callOp = Buffer.concat([Buffer.from([16]), writeUleb4(glueFuncIndex)]);
+  bodies[bodyIndex] = Buffer.concat([
+    original.subarray(0, insertAt),
+    callOp,
+    original.subarray(insertAt)
+  ]);
+  const codeBody = Buffer.concat([
+    writeUleb4(bodies.length),
+    ...bodies.map((b) => Buffer.concat([writeUleb4(b.length), b]))
+  ]);
+  const newFuncSecBody = Buffer.concat([
+    writeUleb4(declaredFuncs + 1),
+    wasm.subarray(funcSecTypesAt, funcSec.end),
+    writeUleb4(GLUE_TYPE_INDEX)
+  ]);
+  const out = [wasm.subarray(0, 8)];
+  for (const sec of sections) {
+    if (sec.id === 10) out.push(Buffer.from([10]), writeUleb4(codeBody.length), codeBody);
+    else if (sec.id === 3) out.push(Buffer.from([3]), writeUleb4(newFuncSecBody.length), newFuncSecBody);
+    else out.push(wasm.subarray(sec.start, sec.end));
+  }
+  console.log("DEBUG outlen", Buffer.concat(out).length);
+  return Buffer.concat(out);
 }
 
 // server/https/routes.ts
@@ -57275,6 +57369,7 @@ function createHttpApp(ctx, rootDir, port) {
         let bytes;
         if (import_node_fs10.default.existsSync(file)) bytes = import_node_fs10.default.readFileSync(file);
         else throw new Error("Missing data/client/upstream.wasm; provide the compatible client locally");
+        console.log("DEBUG upstream bytes", bytes.length);
         return patchClient(bytes, SERVER_CONFIG.hideLegacyCustomItemWarning, SERVER_CONFIG.autofillLabel, SERVER_CONFIG.serverName, publicCacheDir);
       })().catch((err) => {
         clientPromise = null;
@@ -57283,7 +57378,9 @@ function createHttpApp(ctx, rootDir, port) {
       res.setHeader("Cache-Control", "no-store, max-age=0");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
-      res.type("application/wasm").send(await clientPromise);
+      const patched = await clientPromise;
+      console.log("DEBUG route wasm", patched.length);
+      res.type("application/wasm").send(patched);
     } catch (err) {
       console.error("Client preparation failed:", err);
       res.status(503).type("text/plain").send("Client preparation failed. Check server logs; unsupported client revisions must be audited.");

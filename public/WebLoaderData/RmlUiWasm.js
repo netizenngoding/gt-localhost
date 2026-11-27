@@ -60,6 +60,7 @@ export class RmlUiNative {
     this.soundMuted = false;
     this._lastFrameAt = 0;
     this._frameInterval = 16;
+    this._needsRender = true;
     this._canvasVisible = true;
     this._coarsePointer = false;
     this._rafActive = false;
@@ -122,6 +123,7 @@ export class RmlUiNative {
       stencil: false,
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
       majorVersion: 2,
       minorVersion: 0,
     };
@@ -253,7 +255,7 @@ export class RmlUiNative {
     const maxDpr = this._coarsePointer ? 1 : 2;
     const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, maxDpr));
     this.dpr = dpr;
-    this._frameInterval = this._coarsePointer || window.innerWidth < 900 ? 33 : 16;
+    this._needsRender = true;
     const w = Math.floor(window.innerWidth * dpr);
     const h = Math.floor(window.innerHeight * dpr);
     this.canvas.width = w;
@@ -274,6 +276,12 @@ export class RmlUiNative {
     this.canvas.style.display = next ? 'block' : 'none';
   }
 
+  _markDirty(immediate) {
+    this._needsRender = true;
+    if (immediate) this._lastFrameAt = 0;
+    this._startLoop();
+  }
+
   _startLoop() {
     if (!this.ready || this._rafActive) return;
     if (!(this.modalDocs.size > 0 || this.hudDocs.size > 0) || document.hidden) return;
@@ -290,11 +298,26 @@ export class RmlUiNative {
       return;
     }
     this._setCanvasVisible(true);
-    // RmlUi documents are mostly static; rendering 60 fps wastes mobile GPU/CPU.
-    // Keep the canvas warm at ~20 fps on phones/tablets and repaint only when due.
+    // Dialogs animate and need a steady cadence. The in-world HUD is static,
+    // so only repaint it when a packet/interaction actually changed something.
+    // This keeps the full-screen UI surface away from the game's frame budget
+    // while preserving the exact same visuals and input behaviour.
+    const hasModal = this.modalDocs.size > 0;
+    const smallScreen = this._coarsePointer || window.innerWidth < 900;
+    // Full 60 fps when something actually needs drawing (desktop), 30 fps on
+    // phones; idle HUD does zero work, which is where the frame-time win comes
+    // from. Visual behaviour stays exactly the same as before.
+    this._frameInterval = smallScreen ? 33 : 16;
+    if (!hasModal && !this._needsRender) {
+      // Fully idle: stop the rAF chain until a packet or input marks the HUD
+      // dirty again. No per-frame callback at all while just playing.
+      this._rafActive = false;
+      return;
+    }
     const t = typeof now === 'number' ? now : performance.now();
     if (t - this._lastFrameAt >= this._frameInterval) {
       this._lastFrameAt = t;
+      this._needsRender = false;
       try {
         this.mod._rml_update();
         this.gl.clearColor(0, 0, 0, 0);
@@ -521,6 +544,7 @@ export class RmlUiNative {
     const jsonPtr = this._allocCString(JSON.stringify(modelsObj));
     this.mod._rml_set_data_models_json(jsonPtr);
     this.mod._rml_free(jsonPtr);
+    this._markDirty();
   }
 
   getDataModel(modelName) {
@@ -580,6 +604,7 @@ export class RmlUiNative {
     }
     this._setCanvasVisible(this.modalDocs.size > 0 || this.hudDocs.size > 0);
     this._syncPointerEvents();
+    this._markDirty(true);
   }
 
   getElementRect(docHandle, elementId) {
@@ -608,6 +633,7 @@ export class RmlUiNative {
     this.mod._rml_set_element_class(docHandle, idPtr, clsPtr, active ? 1 : 0);
     this.mod._rml_free(clsPtr);
     this.mod._rml_free(idPtr);
+    this._markDirty();
   }
 
   setVirtualFile(path, uint8Array) {
@@ -622,6 +648,7 @@ export class RmlUiNative {
       this.mod._rml_set_virtual_file(pathPtr, dataPtr, bytes.length);
       this.mod._rml_free(dataPtr);
       this.mod._rml_free(pathPtr);
+      this._markDirty();
     }
   }
 
@@ -633,6 +660,7 @@ export class RmlUiNative {
       const pathPtr = this._allocCString(key);
       this.mod._rml_delete_virtual_file(pathPtr);
       this.mod._rml_free(pathPtr);
+      this._markDirty();
     }
   }
 
@@ -648,6 +676,7 @@ export class RmlUiNative {
       this.mod._rml_free(pxPtr);
       this.mod._rml_free(pathPtr);
       this.mod._rml_free(idPtr);
+      this._markDirty();
     }
   }
 
@@ -660,6 +689,7 @@ export class RmlUiNative {
     this.mod._rml_free(valPtr);
     this.mod._rml_free(namePtr);
     this.mod._rml_free(idPtr);
+    this._markDirty();
   }
 
   setElementRml(docHandle, elementId, rmlStr) {
@@ -669,6 +699,7 @@ export class RmlUiNative {
     this.mod._rml_set_element_rml(docHandle, idPtr, rmlPtr);
     this.mod._rml_free(rmlPtr);
     this.mod._rml_free(idPtr);
+    this._markDirty(true);
   }
 
   mountDocument(hostEl, rmlUrl, options = {}) {
@@ -731,7 +762,7 @@ export class RmlUiNative {
     }
     this._setCanvasVisible(this.modalDocs.size > 0 || this.hudDocs.size > 0);
     this._syncPointerEvents();
-    this._startLoop();
+    this._markDirty(true);
 
     const self = this;
     return {
@@ -770,13 +801,14 @@ export class RmlUiNative {
         if (entry.visible) {
           self.mod._rml_show_document(h);
           if (entry.isModal) self.modalDocs.add(h); else self.hudDocs.add(h);
-          self._startLoop();
+          self._markDirty(true);
         } else {
           self.mod._rml_hide_document(h);
           if (entry.isModal) self.modalDocs.delete(h); else self.hudDocs.delete(h);
         }
         self._setCanvasVisible(self.modalDocs.size > 0 || self.hudDocs.size > 0);
         self._syncPointerEvents();
+        self._markDirty(true);
       },
       destroy() {
         self.closeDocument(h);
@@ -817,6 +849,7 @@ export class RmlUiNative {
         models: entry.models,
       });
     }
+    this._markDirty(true);
   }
 
   _syncPointerEvents() {
@@ -842,6 +875,7 @@ export class RmlUiNative {
     if (!this.ready) return;
     const [x, y] = this._eventPos(ev);
     this.mod._rml_mouse_move(x, y, domModifiersToRml(ev));
+    this._markDirty();
   }
   _onMouseDown(ev) {
     if (!this.ready) return;
@@ -850,6 +884,7 @@ export class RmlUiNative {
     this.mod._rml_mouse_move(x, y, mod);
     const btn = ev.button === 2 ? 2 : ev.button === 1 ? 1 : 0;
     this.mod._rml_mouse_button_down(btn, mod);
+    this._markDirty();
   }
   _onMouseUp(ev) {
     if (!this.ready) return;
@@ -857,11 +892,13 @@ export class RmlUiNative {
     this._hudCapturedMouse = false;
     const btn = ev.button === 2 ? 2 : ev.button === 1 ? 1 : 0;
     this.mod._rml_mouse_button_up(btn, domModifiersToRml(ev));
+    this._markDirty();
   }
   _onWheel(ev) {
     if (!this.ready) return;
     ev.preventDefault();
     this.mod._rml_mouse_wheel(ev.deltaY / 40.0, domModifiersToRml(ev));
+    this._markDirty();
   }
   _onKeyDown(ev) {
     if (!this.ready || this.modalDocs.size === 0) return;
@@ -876,12 +913,14 @@ export class RmlUiNative {
     if (ev.key !== 'Escape') {
       ev.stopPropagation();
     }
+    this._markDirty(true);
   }
   _onKeyUp(ev) {
     if (!this.ready || this.modalDocs.size === 0) return;
     const ki = domKeyToRmlKey(ev);
     if (ki) this.mod._rml_key_up(ki, domModifiersToRml(ev));
     if (ev.key !== 'Escape') ev.stopPropagation();
+    this._markDirty();
   }
 
   _touchPoint(ev) {
@@ -904,6 +943,7 @@ export class RmlUiNative {
     ev.stopPropagation();
     this.mod._rml_mouse_move(x, y, 0);
     this.mod._rml_mouse_button_down(0, 0);
+    this._markDirty(true);
   }
 
   _onTouchMove(ev) {
@@ -921,6 +961,7 @@ export class RmlUiNative {
       this.mod._rml_mouse_wheel(-dy / 36.0, 0);
       this._touchLastY = y;
     }
+    this._markDirty();
   }
 
   _onTouchEnd(ev) {
@@ -930,12 +971,19 @@ export class RmlUiNative {
     this._hudCapturedTouch = false;
     this._touchLastY = 0;
     this.mod._rml_mouse_button_up(0, 0);
+    this._markDirty();
   }
 
   _onWindowMouseMove(ev) {
     if (!this.ready || this.modalDocs.size > 0 || this.hudDocs.size === 0) return;
     const [x, y] = this._eventPos(ev);
     this.mod._rml_mouse_move(x, y, domModifiersToRml(ev));
+    // Only repaint when the cursor is actually over a HUD widget; moving the
+    // mouse across the world should not wake the UI renderer at all. Repaint
+    // once more when leaving so stale hover highlights are cleared.
+    const overHud = this.mod._rml_is_point_over_ui(x, y);
+    if (overHud || this._wasOverHud) this._markDirty();
+    this._wasOverHud = overHud;
   }
   _onWindowMouseDown(ev) {
     if (!this.ready || this.modalDocs.size > 0 || this.hudDocs.size === 0) return;
@@ -946,6 +994,7 @@ export class RmlUiNative {
       ev.preventDefault();
       const btn = ev.button === 2 ? 2 : ev.button === 1 ? 1 : 0;
       this.mod._rml_mouse_button_down(btn, domModifiersToRml(ev));
+      this._markDirty(true);
     }
   }
   _onWindowMouseUp(ev) {
@@ -955,6 +1004,7 @@ export class RmlUiNative {
     this._hudCapturedMouse = false;
     const btn = ev.button === 2 ? 2 : ev.button === 1 ? 1 : 0;
     this.mod._rml_mouse_button_up(btn, domModifiersToRml(ev));
+    this._markDirty();
   }
   _onWindowWheel(ev) {
     if (!this.ready || this.modalDocs.size > 0 || this.hudDocs.size === 0) return;
@@ -965,6 +1015,7 @@ export class RmlUiNative {
       const mod = domModifiersToRml(ev);
       this.mod._rml_mouse_move(x, y, mod);
       this.mod._rml_mouse_wheel(ev.deltaY / 40.0, mod);
+      this._markDirty();
     }
   }
 }

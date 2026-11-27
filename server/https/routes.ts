@@ -107,12 +107,15 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
         let bytes:Buffer;
         if(fs.existsSync(file)) bytes=fs.readFileSync(file);
         else throw new Error("Missing data/client/upstream.wasm; provide the compatible client locally");
+        console.log("DEBUG upstream bytes", bytes.length);
         return patchClient(bytes,SERVER_CONFIG.hideLegacyCustomItemWarning, SERVER_CONFIG.autofillLabel, SERVER_CONFIG.serverName, publicCacheDir);
       })().catch(err=>{clientPromise=null;throw err;});
       res.setHeader("Cache-Control","no-store, max-age=0");
       res.setHeader("Pragma","no-cache");
       res.setHeader("Expires","0");
-      res.type("application/wasm").send(await clientPromise);
+      const patched = await clientPromise;
+      console.log("DEBUG route wasm", patched.length);
+      res.type("application/wasm").send(patched);
     } catch(err) { console.error("Client preparation failed:",err);res.status(503).type("text/plain").send("Client preparation failed. Check server logs; unsupported client revisions must be audited."); }
   });
 

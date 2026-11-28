@@ -1,3 +1,4 @@
+import { ItemIconRenderer } from "../items/iconRenderer";
 import { OnPlayPositioned } from "../onVariant/OnPlayPositioned";
 import { sendSidebarHudState } from "../sidebar/service";
 import { cancelTrade } from '../action/trade';
@@ -62,6 +63,7 @@ import {
 export class ServerContext {
   public readonly itemsDb: ItemDatabase;
   public readonly rootDir: string;
+  public readonly itemIcons: ItemIconRenderer;
   public readonly dataStoreDir: string;
   public readonly playersFile: string;
   public readonly worldsFile: string;
@@ -78,6 +80,7 @@ export class ServerContext {
   private saveTimer: NodeJS.Timeout | null = null;
 
   constructor(itemsDb: ItemDatabase, rootDir: string) {
+    this.itemIcons = new ItemIconRenderer(itemsDb, rootDir);
     this.ranks = new RankService(rootDir);
     this.itemsDb = itemsDb;
     this.rootDir = rootDir;

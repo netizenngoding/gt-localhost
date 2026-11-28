@@ -111,10 +111,9 @@ export function patchClient(
   //    tiles whose ItemDef flags (item+54) have Property_Foreground (0x2000, e.g. Display Box 1422).
   // 2) Replace func 1518 (TileOverlayComponent::PostRender, vtable+12, called at func 5029 after players
   //    and right before batch flush) to render all visible fg tiles with flags & 0x2000.
-  // Glue first: it appends one function and a single `call` into 5029 right
-  // before the terrain batch is flushed, so the glue quads are submitted with
-  // the terrain (over the ground, under avatars and drops). Later patches keep
-  // working on the original function indices.
+  // Draw glue at the end of the earlier terrain renderer (4240), rather
+  // than the world overlay renderer (5029), to place it behind avatars.
+  // Later patches keep working on the original function indices.
   const glued = installBlockGluePass(output);
   const prePatched = Buffer.from(
     patchDyeAppearance(patchItemAppearance(hideTickerSetting(patchDisplayForegroundPass(glued))))
@@ -219,8 +218,25 @@ export function patchDisplayForegroundPass(wasm: Buffer): Buffer {
   );
 
   const needle5029 = Buffer.from("200128020028020c110e00200d28029c034100109a03", "hex");
+  // Clean O(N) pass over ALL visible dropped items ([0x64080..0x64084]), drawn
+  // right after TileOverlayComponent::PostRender (func 1518, which already runs
+  // AFTER players and foreground tiles like Display Box / Laser) + batch flush.
   const insert5029 = Buffer.from(
-    "41808119280200220c41848119280200220447044041f48019280200220e41f88019280200220f470440230041c0006b2206240041940a109903430000803f92430000003f94430000404094430000004192211c20064180808088043602242006201c38022803400240200c280200210b4100211141f48019280200210e41f88019280200210f200b2a0204430000004192430000003d94a82109200b2a0208430000004192430000003d94a8210a0340200e28020022102f0100418e0b46044020102d000620094620102d0007200a46710440410121110b0b200e41046a220e200f47201145710d000b2011450d00200b10f806221b43cdcccc3d5d0d00419481182802002203418c0e6a2202280204200b2f010c220141b4026c6a410020012002280208481b2202450d002301280230221245044020032802880e28029001410c6a21120b2006200b2a02043802142006201c200b2a020892380218200641306a2012200641146a10e8022006200629033037030c200b41046a21032006201b20122a0218943802082006201b20122a021494380204200d200b2f010c2003200641246a2201201b20064100200b4101410010f706200d200b2f010c20032001201b10c20d200b2d000e4102490d0020022d00044104460d00200d200b2f010c20032001200b41001080130b200c41046a220c2004470d000b200d28029c0341ecf9172a020041f0f9172a02004300000000410010e509200d28029c034100109a03200641c0006a24000b0b",
+    "41808119280200220c418481192802002204470440" +
+      "230041c0006b2206240041940a109903430000803f92430000003f94430000404094430000004192211c20064180808088043602242006201c380228" +
+      "03400240200c280200210b" +
+      "200b10f806221b43cdcccc3d5d0d00" +
+      "419481182802002203418c0e6a2202280204200b2f010c220141b4026c6a410020012002280208481b2202450d00" +
+      "2301280230221245044020032802880e28029001410c6a21120b" +
+      "2006200b2a02043802142006201c200b2a020892380218200641306a2012200641146a10e802" +
+      "2006200629033037030c200b41046a21032006201b20122a0218943802082006201b20122a021494380204" +
+      "200d200b2f010c2003200641246a2201201b20064100200b4101410010f706" +
+      "200d200b2f010c20032001201b10c20d" +
+      "200b2d000e4102490d0020022d00044104460d00200d200b2f010c20032001200b4100108013" +
+      "0b200c41046a220c2004470d000b" +
+      "200d28029c0341ecf9172a020041f0f9172a02004300000000410010e509" +
+      "200d28029c034100109a03" +
+      "200641c0006a24000b",
     "hex"
   );
 
@@ -251,8 +267,15 @@ export function patchDisplayForegroundPass(wasm: Buffer): Buffer {
       body = Buffer.concat([body.subarray(0, idx), replacement4240, body.subarray(idx + needle4240.length)]);
       patched4240 = true;
     } else if (fid === 5029) {
-      // Left untouched here: installBlockGluePass() already added a `call` to
-      // the glue pass just before this pass flushes the tile batch.
+      const idx = body.indexOf(needle5029);
+      if (idx === -1 || body.indexOf(needle5029, idx + 1) !== -1) {
+        throw new Error("func 5029 needle5029 signature mismatch");
+      }
+      body = Buffer.concat([
+        body.subarray(0, idx + needle5029.length),
+        insert5029,
+        body.subarray(idx + needle5029.length),
+      ]);
       patched5029 = true;
     }
 
@@ -608,30 +631,12 @@ function patchMannequinExpression(wasm: Buffer): Buffer {
 }
 
 // ---------------------------------------------------------------------------
-// Block Glue draw order — matched to the Growtopia 1.50 APK
-//
-// `libgrowtopia.so` draws a glued tile (TILE_FLAG_GLUED = 0x800 on an empty
-// FG/BG tile) as `game/particles.rttex` frame (5,5) through the sprite
-// batcher, inside the tile pass of the world renderer.
-//
-// Three things had to line up, and each of the earlier attempts broke one:
-//
-//   1. WHERE. The quads must be queued while the visible-tile list is still
-//      populated and BEFORE the tile batch is flushed, so they are submitted in
-//      the same batch as the terrain and land on top of it. Inserting after the
-//      flush's visible-list reset iterates an empty list and draws nothing.
-//   2. HOW. The glue code must not clobber func 5029's locals (the browser
-//      build relies on them across the seam). It therefore lives in its own
-//      appended function and is reached with a single `call`.
-//   3. WHAT. The runtime atlas handle must be resolved with
-//      `resolve(9177, 32, 32)` — the same string-keyed lookup the APK does —
-//      not with a cached drawable, and the quad is emitted through the shared
-//      sprite batcher with `game/particles.rttex` frame (5,5).
-//
-// Result ordering inside 5029:
-//   terrain quads ... <<< glue quads >>> flush(410) reset object/drop pass
-// so glue paints over the ground but under avatars, and dropped items keep
-// their position at the very end of the pass (in front of everything).
+// Block Glue render pass. Draw after the terrain in func 4240, which is the
+// early TerrainRenderCache renderer. The old placement in func 5029's overlay
+// batch could be painted over the player depending on the frame renderer order.
+// The visible tile list is still populated in 4240; 5029 clears it later.
+// The isolated function preserves the caller's locals and resolves the atlas
+// via the pinned client's string-keyed texture lookup.
 const GLUE_LOCALS_SIG = "04187f0d7d067e047c";
 // End of the tile pass: flush + visible-tile list reset (unique in 5029).
 const GLUE_ANCHOR_HEX =
@@ -710,49 +715,38 @@ export function installBlockGluePass(wasm: Buffer): Buffer {
     cp = begin + size;
   }
 
-  const bodyIndex = 5029 - funcImports;
-  const original = bodies[bodyIndex];
-  if (!original || !original.subarray(0, GLUE_LOCALS_SIG.length / 2).equals(Buffer.from(GLUE_LOCALS_SIG, "hex"))) {
+  // Guard the overlay renderer and the expected visible-list reset.
+  const terrainIndex = 4240 - funcImports;
+  const terrain = bodies[terrainIndex];
+  const overlay = bodies[5029 - funcImports];
+  if (!overlay || !overlay.subarray(0, GLUE_LOCALS_SIG.length / 2).equals(Buffer.from(GLUE_LOCALS_SIG, "hex"))) {
     throw new Error("Block glue pass: func 5029 signature mismatch");
   }
-
   const anchor = Buffer.from(GLUE_ANCHOR_HEX, "hex");
-  const at = original.indexOf(anchor);
-  if (at < 0 || original.indexOf(anchor, at + 1) !== -1) {
-    throw new Error("Block glue pass: terrain/object seam not found");
-  }
-  // Ordering guarantee for drops: the object/particle pass (func 2465, which
-  // also draws dropped items) runs at the very end of 5029, after the avatar
-  // pass, so drops stay in front of everything. Refuse to patch if the
-  // structure ever changes.
-  const objectPass = Buffer.concat([Buffer.from([0x10]), writeUleb(2465)]);
-  const objectAt = original.lastIndexOf(objectPass);
-  if (objectAt < 0 || objectAt < at) {
-    throw new Error("Block glue pass: object/drop pass no longer follows the terrain pass");
+  if (overlay.indexOf(anchor) < 0 || overlay.indexOf(anchor) !== overlay.lastIndexOf(anchor)) {
+    throw new Error("Block glue pass: overlay list reset mismatch");
   }
 
-  // 1. Append the glue function and remember its index. Type 8 of the upstream
-  //    type section is `() -> nil`, so the appended entry reuses it.
+  // 4240 has one successful return, after rendering the terrain, and before
+  // its stack-frame restoration. Never insert in the cache rebuild loop: that
+  // loop is skipped on frames where cached terrain is reused.
+  const terrainReturn = Buffer.from("200941406b24000f", "hex");
+  const insertAt = terrain?.indexOf(terrainReturn) ?? -1;
+  if (insertAt < 0 || terrain.indexOf(terrainReturn, insertAt + 1) !== -1) {
+    throw new Error("Block glue pass: terrain renderer return mismatch");
+  }
   const GLUE_TYPE_INDEX = 8;
   const [declaredFuncs, funcSecTypesAt] = readUleb(wasm, funcSec.body);
-  // The appended function calls the atlas resolver (1814) and the sprite
-  // batcher (41) and uses globals 0/1, so the import/global indices in the
-  // hand-encoded body below are valid only for the 1.50 import layout.
   if (funcImports !== 308) {
     throw new Error(`Block glue pass: unexpected import count ${funcImports} (need 308)`);
   }
+
   const glueFuncIndex = funcImports + bodies.length;
   bodies.push(Buffer.from(GLUE_FUNC_BODY_HEX, "hex"));
 
-  // 2. Call it from 5029 right before the tile batch is flushed, i.e. while
-  //    the visible-tile list still holds this frame's tiles. The call pushes
-  //    and pops nothing, so 5029's stack and locals are untouched.
-  const insertAt = at;
   const callOp = Buffer.concat([Buffer.from([0x10]), writeUleb(glueFuncIndex)]);
-  bodies[bodyIndex] = Buffer.concat([
-    original.subarray(0, insertAt),
-    callOp,
-    original.subarray(insertAt),
+  bodies[terrainIndex] = Buffer.concat([
+    terrain.subarray(0, insertAt), callOp, terrain.subarray(insertAt),
   ]);
 
   const codeBody = Buffer.concat([
@@ -770,6 +764,5 @@ export function installBlockGluePass(wasm: Buffer): Buffer {
     else if (sec.id === 3) out.push(Buffer.from([3]), writeUleb(newFuncSecBody.length), newFuncSecBody);
     else out.push(wasm.subarray(sec.start, sec.end));
   }
-  console.log("DEBUG outlen", Buffer.concat(out).length);
   return Buffer.concat(out);
 }

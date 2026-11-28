@@ -8,10 +8,10 @@ const input = fs.readFileSync("data/client/upstream.wasm");
 const result = patchClient(input, false);
 assert(WebAssembly.validate(new Uint8Array(result)), "patched WASM must validate");
 
-// The glue pass is an appended function; 5029 calls it immediately BEFORE the
-// tile batch flush so the quads are queued after the terrain quads and are
-// submitted in the same batch:
-//   terrain quads ... call <glue> ; call 410 (flush) ; reset visible list ; ...
+// The glue pass is an appended function; the early terrain renderer (4240) calls
+// it right before its successful return, so the quads are queued after the
+// terrain quads and land under avatars (see tests/glue-player-layer.ts):
+//   terrain quads ... call <glue> ; epilogue ; return
 const anchor = Buffer.from(
   "200d28029c034100109a0341f8801941f480192802003602004184811941808119280200360200",
   "hex"
@@ -31,12 +31,12 @@ function readUlebBack(buf: Buffer, end: number): { value: number; start: number 
   }
   return { value, start };
 }
-// The call sits right before the flush anchor. Later patches (foreground tile
-// pass, mannequin, RmlUi bridge) rewrite parts of 5029, so locate the call by
-// scanning backwards for `call <appended>` rather than assuming an offset.
 const callBytes = Buffer.concat([Buffer.from([0x10]), Buffer.from([0x8d, 0x2c])]); // call 5645
-assert(at - 8 >= 0, "anchor too close to start");
-assert(result.subarray(at - callBytes.length, at).equals(callBytes), "glue call (to the appended function) must precede the tile batch flush");
+const terrainReturn = Buffer.from("200941406b24000f", "hex");
+assert(
+  result.includes(Buffer.concat([callBytes, terrainReturn])),
+  "glue call (to the appended function) must run at the end of the terrain renderer"
+);
 
 // The glue function itself: resolves game/particles.rttex via the string-keyed
 // lookup (address 9177), scans the visible-tile list, requires an empty FG/BG
@@ -52,21 +52,13 @@ const dropAt = result.indexOf(objectPass, at);
 assert(dropAt > at, "object/drop pass must follow the glue quads");
 assert(!result.includes(Buffer.from("10a529", "hex")), "no leftover placeholder tail call");
 
-// Dropped items must be drawn AFTER the player. 5029 is not the last renderer:
-// the frame dispatcher (2781) runs the renderer list through the vtable, and the
-// player renderer (4310) sits after 5029 (table 1806 vs 1917). So the drop loop
-// is lifted into an appended function that the dispatcher calls as its last
-// draw, and the in-frame loop is turned into dead code.
-// `i32.const 385392; i32.load; i32.const 0; call <drop>; call 2786; end`
-const dispatch = Buffer.from("41f0c217" + "280200" + "4100" + "108e2c" + "10e2150b", "hex");
-assert(result.includes(dispatch), "drop pass must be the last draw of the frame, right before the frame flag");
-// The in-frame drop loop must not run any more (dead-coded `if`).
-assert(result.includes(Buffer.from("1a4100" + "0440" + "0340", "hex")), "in-frame drop loop must be dead-coded");
-// The appended pass must carry 5029's local list so the lifted code lines up.
-assert(result.includes(Buffer.from("04187f0d7d067e047c" + "200041b4026a", "hex")), "drop pass must declare 5029's locals");
-
 // The appended function must reuse the empty () -> nil signature (type 8).
 assert.equal(WebAssembly.Module.exports(new WebAssembly.Module(new Uint8Array(result))).length > 0, true);
 
+// Dropped items are drawn by the inserted 5029 pass, right after the overlay
+// renderer (1518) already ran, so they land in front of players and FG tiles.
+assert(result.includes(Buffer.from("230041c0006b2206240041940a109903", "hex")), "5029 must draw the dropped-item list after the overlay pass");
+
 assert.throws(() => patchClient(Buffer.alloc(32), false), /Unsupported upstream client revision/);
-console.log("PASS: glue queues before the tile flush, and the drop pass is the last draw of the frame (after the player)");
+console.log("PASS: glue runs at the end of the terrain pass, before the object pass");
+console.log("PASS: dropped items are drawn last, in front of players and foreground tiles");

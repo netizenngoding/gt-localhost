@@ -17,6 +17,7 @@ import {
   OnTextOverlay,
 } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
+import { handleRenderWorldCommand } from "../world/render_world";
 import { rgbHexToGtSkinColor, sanitizeChatText, stripGtColors } from "../tools/string";
 import { openItemFinderDialog } from "../action/dialog_return/find_item";
 import { openCheatsMenu, openBackpackMenu } from "../action/dialog_return/player_dialogs";
@@ -342,6 +343,11 @@ export function handlePlayerCommand(
       .addQuickExit()
       .endDialog("rules_dialog", "OK", "");
     OnDialogRequest(session, dlg);
+    return true;
+  }
+
+  if (cmd === "renderworld") {
+    handleRenderWorldCommand(session);
     return true;
   }
 

@@ -31,6 +31,7 @@ import { applySkinColorUpdate } from "../../onVariant";
 import { makeTextPacket, NET_MESSAGE_GENERIC_TEXT } from "../../proton/packet";
 import { displayName } from "../../ranks";
 import { resetDiscordLink, sendDiscordLinkDialog } from "../../discord/service";
+import { startWorldRender } from "../../world/render_world";
 
 export function showGrowmojisDialog(session: PlayerSession): void {
   const dlg = new DialogBuilder()
@@ -331,6 +332,20 @@ export function handlePlayerDialogsReturn(
     if(btn==='billboard_edit'){openBillboardDialog(ctx,session);return true;}
     if(btn==='backpack_menu'){openBackpackMenu(ctx,session);return true;}
     if(btn==='acct_growid')showGrowIdApplyModal(session);
+    return true;
+  }
+
+  if (dlgName === "world_render_dialog") {
+    console.log("[WorldRender] dialog return button=" + JSON.stringify(btn));
+    // The client reports the accept button differently across builds; anything
+    // that is not Cancel means "Render it!".
+    if (!/cancel/i.test(btn)) void startWorldRender(ctx, session);
+    return true;
+  }
+
+  if (dlgName === "world_render_not_linked") {
+    console.log("[WorldRender] not-linked dialog button=" + JSON.stringify(btn));
+    if (!/cancel/i.test(btn)) sendDiscordLinkDialog(session);
     return true;
   }
 

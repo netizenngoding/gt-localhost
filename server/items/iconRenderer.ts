@@ -228,7 +228,8 @@ export class ItemIconRenderer {
       }
     }
 
-    const vfsKey = "/game/" + cleanRel;
+    // Everything lives under /game/ except interface art such as the country flags.
+    const vfsKey = cleanRel.startsWith("interface/") ? "/" + cleanRel : "/game/" + cleanRel;
     const slice = this.vfsIndex.get(vfsKey);
     if (!slice || slice.end <= slice.start) return null;
 
@@ -364,6 +365,15 @@ export class ItemIconRenderer {
     return nonEmpty ? tile : null;
   }
 
+  /** Decodes any packed /game/*.rttex texture (avatar parts, skies, clouds...). */
+  public getPackedTexture(
+    relGamePath: string
+  ): { width: number; height: number; rgba: Buffer } | null {
+    this.ensureInitialized();
+    const sheet = this.getDecodedSheet(relGamePath);
+    return sheet ? { width: sheet.width, height: sheet.height, rgba: sheet.rgba } : null;
+  }
+
   public getIconPng(itemId: number): Buffer {
     const id = Math.floor(Number(itemId));
     if (!Number.isFinite(id) || id <= 0) return TRANSPARENT_1X1_PNG;
@@ -371,11 +381,50 @@ export class ItemIconRenderer {
     const cached = this.pngCache.get(id);
     if (cached) return cached;
 
+    const tile = this.getIconRgba(id);
+    if (!tile) return TRANSPARENT_1X1_PNG;
+    const png = encodeRgbaPng(32, 32, tile);
+    if (this.pngCache.size >= 2048) {
+      const oldest = this.pngCache.keys().next().value;
+      if (oldest !== undefined) this.pngCache.delete(oldest);
+    }
+    this.pngCache.set(id, png);
+    return png;
+  }
+
+  // Raw cell from the item's primary texture sheet (used by world rendering for
+  // spread_type variants). Offsets are relative to items.dat texture_x/texture_y.
+  public getSpriteCell(itemId: number, cellX: number, cellY: number): Buffer | null {
+    const id = Math.floor(Number(itemId));
+    if (!Number.isFinite(id) || id <= 0) return null;
+
+    this.ensureInitialized();
+    const meta = this.itemMeta.get(id);
+    if (!meta || meta.name === "Unavailable Item") return null;
+
+    const cleanTex = meta.texture.replace(/\\/g, "/").replace(/^\/+/, "").replace(/^game\//i, "");
+    const sheet = this.getDecodedSheet(cleanTex);
+    if (!sheet) return null;
+    return this.cropTile32(sheet, meta.tx + cellX, meta.ty + cellY);
+  }
+
+  public getSpreadType(itemId: number): number {
+    const id = Math.floor(Number(itemId));
+    if (!Number.isFinite(id) || id <= 0) return 0;
+    this.ensureInitialized();
+    return this.itemMeta.get(id)?.spreadType ?? 0;
+  }
+
+  // Raw 32x32 RGBA sprite of an item, or null when it has no sprite.
+  public getIconRgba(itemId: number): Buffer | null {
+    const id = Math.floor(Number(itemId));
+    if (!Number.isFinite(id) || id <= 0) return null;
+
     this.ensureInitialized();
 
     let meta = this.itemMeta.get(id);
     if (!meta || meta.name === "Unavailable Item") {
-      return TRANSPARENT_1X1_PNG;
+      return null;
     }
 
     // If a seed item uses generic seed sheet, prefer its parent item's icon with subtle seed badge or parent icon
@@ -414,17 +463,9 @@ export class ItemIconRenderer {
       if (!tile && (ix !== meta.tx || iy !== meta.ty)) {
         tile = this.cropTile32(sheet, meta.tx, meta.ty);
       }
-      if (tile) {
-        const png = encodeRgbaPng(32, 32, tile);
-        if (this.pngCache.size >= 2048) {
-          const oldest = this.pngCache.keys().next().value;
-          if (oldest !== undefined) this.pngCache.delete(oldest);
-        }
-        this.pngCache.set(id, png);
-        return png;
-      }
+      if (tile) return tile;
     }
 
-    return TRANSPARENT_1X1_PNG;
+    return null;
   }
 }

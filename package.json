@@ -5,11 +5,12 @@
   "description": "Authentic CreativeGrowtopia (ReGrowtopia 1.50) WASM WebGL Client + Authoritative ENet-over-WebSocket Multiplayer Server",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=server/server_runtime.cjs",
+    "build": "esbuild server/index.ts --bundle --platform=node --target=node20 --format=cjs --external:@napi-rs/canvas --outfile=server/server_runtime.cjs",
     "start": "node server/server_runtime.cjs"
   },
   "dependencies": {
     "@huggingface/hub": "^2.17.11",
+    "@napi-rs/canvas": "^1.2.1",
     "express": "^4.21.2",
     "ws": "^8.18.0"
   },

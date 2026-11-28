@@ -9,7 +9,6 @@ import { CLIENT_SHA256 } from "../client/patch-client";
 import path from "node:path";
 import express, { type Express } from "express";
 import type { ServerContext } from "../database/context";
-import { ItemIconRenderer } from "../items/iconRenderer";
 import { discordAuthorizeUrl, discordConfig, discordConfigured, getPlayerHead, getPlayerHeadUrl, linkDiscordAccount, storePlayerHead } from "../discord/service";
 import { takeBannerRenderPage } from "../discord/banner";
 import { ensureRpcHeadAsset } from "../discord/rpc-assets";
@@ -157,7 +156,7 @@ export function createHttpApp(ctx: ServerContext, rootDir: string, port: number)
     res.status(200).type("text/plain").send(body);
   });
 
-  const iconRenderer = new ItemIconRenderer(ctx.itemsDb, rootDir);
+  const iconRenderer = ctx.itemIcons;
   app.get("/api/item-icon/:itemSpec", (req, res) => {
     const rawSpec = String(req.params.itemSpec || "").replace(/\.png$/i, "");
     const itemId = Number(rawSpec);

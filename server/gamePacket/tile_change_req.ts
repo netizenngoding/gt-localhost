@@ -78,6 +78,7 @@ import {
   RequestWorldSelectMenu,
 } from "../onVariant";
 import { DialogBuilder } from "../tools/create_dialog";
+import { nameColorOf } from "../ranks";
 import { stripGtColors } from "../tools/string";
 import {
   openDoorSettingsDialog,
@@ -594,6 +595,73 @@ export function handleTileActivateRequest(
   }
 }
 
+// Casino tiles (Roulette Wheel 758, Slot Machine 756) are public: anyone can punch
+// them to spin, and a punch never breaks them. Messages/effects follow ReuGT World.h.
+const CASINO_ROULETTE_ID = 758;
+const CASINO_SLOT_ID = 756;
+const CASINO_SPIN_COOLDOWN_MS = 1000;
+const CASINO_RESULT_DELAY_MS = 1500;
+const ROULETTE_RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const lastRouletteSpinMs = new WeakMap<PlayerSession, number>();
+const lastSlotSpinMs = new WeakMap<PlayerSession, number>();
+
+function spinCasinoTile(world: WorldInstance, session: PlayerSession, tx: number, ty: number, tile: WorldTile, itemId: number): void {
+  const fg = tile.fg;
+  const cooldowns = fg === CASINO_ROULETTE_ID ? lastRouletteSpinMs : lastSlotSpinMs;
+  const now = Date.now();
+  // Same as a locked tile punched by a non-owner (builder lock path): tile sync to the
+  // puncher only, no damage/punch packet, so no native break effect shows.
+  session.peer.sendPacket(0, makeTileUpdatePacket(tx, ty, tile, now), true);
+  if (now - (cooldowns.get(session) ?? 0) < CASINO_SPIN_COOLDOWN_MS) return;
+  cooldowns.set(session, now);
+
+  // Spin animation: the same punch packet ReuGT punch_tile sends (item in targetNetId, value 0).
+  // Only sent on a real spin, not on cooldown-blocked punches.
+  const punch = buildTankPacket({
+    type: PACKET_TILE_APPLY_DAMAGE,
+    netId: session.netId,
+    targetNetId: itemId,
+    value: 0,
+    punchX: tx,
+    punchY: ty,
+  });
+  for (const p of world.peers) p.peer.sendPacket(0, punch, true);
+
+  const who = nameColorOf(session.account) + session.account.name;
+  // The result is rolled now but shown after a short delay (no break/damage effect).
+  setTimeout(() => {
+    if (session.world !== world) return;
+    if (fg === CASINO_ROULETTE_ID) {
+      const n = Math.floor(Math.random() * 37);
+      const color = n === 0 ? "`2" : ROULETTE_RED.has(n) ? "`4" : "`b";
+      const text = `\`7[\`\`${who}\`\` spun the wheel and got ${color}${n}\`\`!\`7]\`\``;
+      broadcastTalkBubble(world, session.netId, text, 0, false);
+      broadcastConsoleMessage(world, text);
+      return;
+    }
+
+    // Slot Machine: 1 in 10 wins (ReuGT: rand() % 10 == 1).
+    const won = Math.floor(Math.random() * 10) === 1;
+    const result = won ? "`2wins at slots!`" : "`4loses at slots.`";
+    const text = `\`7[\`\`${who}\`\` ${result}\`\`7]\`\``;
+    broadcastTalkBubble(world, session.netId, text, 0, false);
+    broadcastConsoleMessage(world, text);
+    const sfxPkt = makeVariantPacket(["OnPlayPositioned", won ? "audio/slot_win.wav" : "audio/slot_lose.wav"]);
+    for (const p of world.peers) p.peer.sendPacket(0, sfxPkt, true);
+    if (won) {
+      const fx = buildTankPacket({
+        type: PACKET_SEND_PARTICLE_EFFECT,
+        netId: 29,
+        x: tx * 32 + 16,
+        y: ty * 32 + 16,
+        speedX: 0,
+        speedY: 29,
+      });
+      for (const p of world.peers) p.peer.sendPacket(0, fx, true);
+    }
+  }, CASINO_RESULT_DELAY_MS);
+}
+
 export function handleTileChangeRequest(
   ctx: ServerContext,
   session: PlayerSession,
@@ -926,6 +994,10 @@ export function handleTileChangeRequest(
         }
         return;
       }
+    }
+    if (tile.fg === CASINO_ROULETTE_ID || tile.fg === CASINO_SLOT_ID) {
+      spinCasinoTile(world, session, tx, ty, tile, itemId);
+      return;
     }
     infectByPunch(ctx,session,tx,ty);
     if (tile.fg === 6 && !hasPermission(session.account, "debug")) {

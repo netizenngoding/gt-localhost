@@ -109,7 +109,7 @@ export const HELP_REQUIRED: Record<string, "moderate" | "debug" | "grantItems"> 
   ipcheck: "moderate", ridcheck: "moderate", info: "moderate", warpto: "moderate", pull: "moderate", kick: "moderate", ban: "moderate", uba: "moderate",
   edit: "debug", unsafeedit: "debug", setbit: "debug", setweather: "debug", resetworld: "debug", dropall: "debug",
   modbackpack: "debug", exportworld: "debug", importworld: "debug", relocateworld: "debug", infoex: "debug", remove: "debug",
-  transferworld: "debug", renameworld: "debug", age: "debug", selfage: "moderate", gwarp: "debug", roles: "debug", renderworld: "debug",
+  transferworld: "debug", renameworld: "debug", age: "debug", selfage: "moderate", gwarp: "debug", roles: "debug",
   give: "grantItems",
 };
 

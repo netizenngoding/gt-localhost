@@ -8,6 +8,35 @@ import { OnConsoleMessage, OnModernDialogRequest, OnSetBux, OnTalkBubble, OnText
 import { ModernDialog } from "../tools/modern_dialog";
 import { progression } from "../progression/service";
 import { buildModernLinkedBanner } from "./banner";
+import { configureLlm, hasLlm, llmLabel } from "./llm";
+import { configureDeepL, deepLUsage, formatTranslated, hasDeepL, targetFlag, translateText } from "./translate";
+
+interface TranslateConfig {
+  /** Translate incoming Discord messages and reply with the translation. */
+  enabled: boolean;
+  /** Target language code, e.g. "en". */
+  target: string;
+  /** Language used when the message is already in `target` (en <-> id). */
+  secondary: string;
+  /** DeepL API key: when set, DeepL is the primary engine instead of Google. */
+  deeplKey: string;
+  /** Log every incoming message and why it was skipped (diagnosa). */
+  debug: boolean;
+  /** Language-model engine: the only one that truly understands slang. */
+  llm: {
+    provider: string;
+    key: string;
+    model: string;
+    baseUrl: string;
+    fallbacks: Array<{ provider: string; key: string; model: string; baseUrl: string }>;
+  };
+  /** Channel ids to watch; empty means every channel the bot can read. */
+  channels: string[];
+  /** Kalau diisi, hanya channel di dalam category ini yang diterjemahkan. */
+  categories: string[];
+  /** Also translate messages posted by other bots (webhook relays etc.). */
+  skipBots: boolean;
+}
 
 interface DiscordConfig {
   botToken: string;
@@ -17,6 +46,7 @@ interface DiscordConfig {
   channelId: string;
   rpcHeadChannelId: string;
   guildInvite: string;
+  translate: TranslateConfig;
 }
 
 const DEFAULT_CHANNEL_ID = "1575034325945024593";
@@ -39,6 +69,29 @@ function readConfig(): DiscordConfig {
     return typeof value === "string" && value.trim() ? value.trim() : fallback;
   };
   const publicBaseUrl = str("publicBaseUrl", "http://127.0.0.1:3000").replace(/\/+$/, "");
+  const translateRaw =
+    raw.translate && typeof raw.translate === "object" ? (raw.translate as Record<string, unknown>) : {};
+  // Config boleh pakai nama panjang ("translateChannels") atau pendek
+  // ("channels"); yang pertama menang kalau dua-duanya ada.
+  const configValue = (key: string): unknown => {
+    if (translateRaw[key] !== undefined) return translateRaw[key];
+    const short = key.replace(/^translate/, "").replace(/^[A-Z]/, (c) => c.toLowerCase());
+    return translateRaw[short];
+  };
+  const bool = (key: string, fallback: boolean): boolean => {
+    const env = process.env[key.toUpperCase()];
+    const source = typeof env === "string" && env.trim() ? env.trim() : configValue(key);
+    if (typeof source === "boolean") return source;
+    if (typeof source === "string") return !/^(0|false|no|off)$/i.test(source.trim());
+    return fallback;
+  };
+  const list = (key: string): string[] => {
+    const env = process.env[key.toUpperCase()];
+    const source = typeof env === "string" && env.trim() ? env.trim() : configValue(key);
+    if (Array.isArray(source)) return source.map((v) => String(v).trim()).filter(Boolean);
+    if (typeof source === "string") return source.split(/[,\s]+/).map((v) => v.trim()).filter(Boolean);
+    return [];
+  };
   return {
     botToken: str("botToken"),
     clientId: str("clientId"),
@@ -47,10 +100,67 @@ function readConfig(): DiscordConfig {
     channelId: str("channelId", DEFAULT_CHANNEL_ID),
     rpcHeadChannelId: str("rpcHeadChannelId", ""),
     guildInvite: str("guildInvite", "https://discord.gg/magnolia"),
+    translate: {
+      enabled: bool("translateEnabled", true),
+      target: str("translateTarget", "en").toLowerCase(),
+      secondary: str("translateSecondary", "id").toLowerCase(),
+      deeplKey: (str("deeplKey") || String(process.env.DEEPL_API_KEY || "")).trim(),
+      debug: bool("translateDebug", false) || String(process.env.TRANSLATE_DEBUG || "") === "1",
+      llm: readLlm(translateRaw),
+      channels: list("translateChannels"),
+      categories: list("translateCategories"),
+      skipBots: !bool("translateBotMessages", false),
+    },
+  };
+}
+
+function readLlm(translateRaw: Record<string, unknown>): {
+  provider: string;
+  key: string;
+  model: string;
+  baseUrl: string;
+  fallbacks: Array<{ provider: string; key: string; model: string; baseUrl: string }>;
+} {
+  const raw = translateRaw.llm && typeof translateRaw.llm === "object" ? (translateRaw.llm as Record<string, unknown>) : {};
+  const pick = (key: string, fallback = ""): string => {
+    const value = raw[key];
+    return typeof value === "string" && value.trim() ? value.trim() : fallback;
+  };
+  const key =
+    String(process.env.LLM_API_KEY || "").trim() ||
+    String(process.env.GEMINI_API_KEY || "").trim() ||
+    String(process.env.GROQ_API_KEY || "").trim() ||
+    pick("key");
+  let provider = (String(process.env.LLM_PROVIDER || "").trim() || pick("provider")).toLowerCase();
+  if (!provider && key) {
+    if (key.startsWith("gsk_")) provider = "groq";
+    else if (key.startsWith("AIza")) provider = "gemini";
+    else provider = "openai";
+  }
+  // "fallbacks": [{ "provider": "groq", "key": "gsk_..." }, ...] — dipakai
+  // berurutan kalau profil utama kena limit atau error.
+  const fallbacks = Array.isArray(raw.fallbacks)
+    ? (raw.fallbacks as Array<Record<string, unknown>>)
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          provider: String(item.provider || "").trim(),
+          key: String(item.key || "").trim(),
+          model: String(item.model || "").trim(),
+          baseUrl: String(item.baseUrl || "").trim(),
+        }))
+    : [];
+  return {
+    provider,
+    key,
+    model: String(process.env.LLM_MODEL || "").trim() || pick("model"),
+    baseUrl: String(process.env.LLM_BASE_URL || "").trim() || pick("baseUrl"),
+    fallbacks,
   };
 }
 
 const config = readConfig();
+configureDeepL(config.translate.deeplKey);
+configureLlm(config.translate.llm);
 const playerHeads = new Map<string, Buffer>();
 const playerHeadCanonical = new Map<string, Buffer>();
 const HEAD_CACHE_FILE = path.join(process.cwd(), "data", "cache", "player-heads.json");
@@ -652,7 +762,158 @@ function sendPresenceUpdate(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Auto-translate: reply under every message with its translation, so a channel
+// stays readable for everyone (target language, e.g. English).
+//
+// The bot needs GUILD_MESSAGES and the privileged MESSAGE_CONTENT intent; the
+// privileged one has to be switched on in the Discord Developer Portal.
+// ---------------------------------------------------------------------------
+const GATEWAY_INTENTS = 1 /* GUILDS */ | 512 /* GUILD_MESSAGES */ | 32768 /* MESSAGE_CONTENT */;
+const MESSAGE_CONTENT_INTENT = 32768;
+// Discord closes the socket with 4014 when a privileged intent is not enabled in
+// the developer portal. Dropping MESSAGE_CONTENT keeps the presence working (the
+// bot just cannot read message text) instead of taking the whole connection down.
+let gatewayIntents = GATEWAY_INTENTS;
+let selfBotUserId = "";
+let translateWarned = false;
+let translateInFlight = 0;
+const translatedIds = new Set<string>();
+const TRANSLATED_ID_LIMIT = 800;
+
+interface GatewayMessage {
+  id?: string;
+  channel_id?: string;
+  guild_id?: string;
+  content?: string;
+  webhook_id?: string;
+  author?: { id?: string; bot?: boolean; username?: string };
+}
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max - 1) + "\u2026";
+}
+
+// MESSAGE_CREATE tidak membawa parent_id, jadi kategori channel ditanyakan sekali
+// lalu di-cache (channel jarang pindah category).
+const channelParentCache = new Map<string, { parentId: string; at: number }>();
+const CHANNEL_PARENT_TTL_MS = 10 * 60 * 1000;
+
+async function channelParentId(channelId: string): Promise<string> {
+  const cached = channelParentCache.get(channelId);
+  if (cached && Date.now() - cached.at < CHANNEL_PARENT_TTL_MS) return cached.parentId;
+  try {
+    const res = await fetch(DISCORD_API + "/channels/" + channelId, {
+      headers: { Authorization: "Bot " + config.botToken },
+    });
+    if (!res.ok) return "";
+    const data = (await res.json()) as { parent_id?: string | null };
+    const parentId = data.parent_id || "";
+    channelParentCache.set(channelId, { parentId, at: Date.now() });
+    return parentId;
+  } catch {
+    return "";
+  }
+}
+
+function trimTranslatedIds(): void {
+  if (translatedIds.size <= TRANSLATED_ID_LIMIT) return;
+  const drop = translatedIds.size - TRANSLATED_ID_LIMIT;
+  let seen = 0;
+  for (const id of translatedIds) {
+    translatedIds.delete(id);
+    if (++seen >= drop) break;
+  }
+}
+
+async function handleTranslateMessage(msg: GatewayMessage): Promise<void> {
+  const cfg = config.translate;
+  if (!cfg.enabled || !config.botToken) return;
+  const messageId = msg.id || "";
+  const channelId = msg.channel_id || "";
+  const raw = (msg.content || "").trim();
+  // Dengan translateDebug aktif, setiap pesan yang masuk dan alasannya
+  // dilewati dicatat, jadi "kenapa di channel X nggak diterjemahin?"
+  // bisa dijawab tanpa menebak.
+  const skip = (reason: string): void => {
+    if (cfg.debug) {
+      console.log("[Discord] translate lewat (" + reason + ") in #" + (channelId || "?") + ": " + clip(raw, 80));
+    }
+  };
+  if (!messageId || !channelId) return skip("tanpa id/channel");
+  if (cfg.channels.length && !cfg.channels.includes(channelId)) return skip("channel tidak ada di daftar");
+  if (cfg.categories.length) {
+    const parentId = await channelParentId(channelId);
+    if (!parentId || !cfg.categories.includes(parentId)) return skip("bukan category yang dipilih");
+  }
+  if (translatedIds.has(messageId)) return skip("sudah pernah diterjemahkan");
+
+  const author = msg.author || {};
+  if (author.id && author.id === selfBotUserId) return skip("pesan bot sendiri");
+  // Webhook posts are how in-game chat relays show up, so those are translated
+  // even when other bots are ignored.
+  if (author.bot && !msg.webhook_id && cfg.skipBots) return skip("pesan bot lain");
+
+  if (!raw) {
+    if (!author.bot && !translateWarned) {
+      translateWarned = true;
+      console.warn(
+        "[Discord] auto-translate: isi pesan kosong. Aktifkan privileged intent " +
+          "MESSAGE_CONTENT untuk bot ini di Discord Developer Portal."
+      );
+    }
+    return skip("isi kosong");
+  }
+  if (!/\p{L}/u.test(raw)) return skip("tanpa huruf (emoji/angka saja)");
+  if (/^[!\/.$][\p{L}\p{N}]/u.test(raw)) return skip("command");
+  if (translateInFlight >= 4) return skip("antrean penuh"); // translate.ts sudah menjeda tiap request
+
+  translatedIds.add(messageId);
+  trimTranslatedIds();
+  translateInFlight++;
+  try {
+    // Anything not in the target language is translated to it; anything already
+    // in the target language is translated to the secondary one, so an English
+    // message gets an Indonesian reply and an Indonesian message gets English.
+    let chosen = await translateText(raw, cfg.target);
+    let outLang = cfg.target;
+    if (!chosen || !chosen.text) return;
+    const targetBase = cfg.target.split("-")[0];
+    const source = chosen.lang.toLowerCase();
+    if (source && (source === cfg.target || source.split("-")[0] === targetBase)) {
+      chosen = await translateText(raw, cfg.secondary);
+      outLang = cfg.secondary;
+      if (!chosen || !chosen.text) return;
+    }
+    const before = raw.replace(/\s+/g, " ").trim();
+    const after = chosen.text.replace(/\s+/g, " ").trim();
+    if (after === before) return skip("hasil sama dengan aslinya");
+
+    const body = formatTranslated(targetFlag(outLang), clip(chosen.text, 1500));
+    const res = await fetch(DISCORD_API + "/channels/" + channelId + "/messages", {
+      method: "POST",
+      headers: { Authorization: "Bot " + config.botToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: body,
+        message_reference: { message_id: messageId, channel_id: channelId, fail_if_not_exists: false },
+        allowed_mentions: { parse: [] },
+      }),
+    });
+    if (!res.ok) console.warn("[Discord] auto-translate reply HTTP " + res.status);
+    else {
+      console.log(
+        "[Discord] translated " + (chosen.lang || "auto") + " -> " + outLang + " in #" + channelId + ": " + body
+      );
+    }
+  } catch (err) {
+    console.warn("[Discord] auto-translate gagal:", err instanceof Error ? err.message : String(err));
+  } finally {
+    translateInFlight--;
+  }
+}
+
 async function connectDiscordGateway(): Promise<void> {
+
   if (!config.botToken || presenceStarted === false) return;
   try {
     const res = await fetch(`${DISCORD_API}/gateway/bot`, {
@@ -678,8 +939,37 @@ async function connectDiscordGateway(): Promise<void> {
           void handleDiscordInteraction(packet.d).catch((err) =>
             console.warn("[Discord] interaction gagal:", err instanceof Error ? err.message : String(err))
           );
+        } else if (packet.t === "MESSAGE_CREATE") {
+          void handleTranslateMessage(packet.d as GatewayMessage);
         } else if (packet.t === "READY") {
+          const ready = packet.d as { user?: { id?: string } } | undefined;
+          if (ready?.user?.id) selfBotUserId = ready.user.id;
           console.log("[Discord] gateway presence ready");
+          if (config.translate.enabled && (gatewayIntents & MESSAGE_CONTENT_INTENT) !== 0) {
+            const scope = config.translate.categories.length
+              ? "category " + config.translate.categories.join(", ")
+              : config.translate.channels.length
+                ? config.translate.channels.length + " channel"
+                : "semua channel";
+            console.log("[Discord] auto-translate aktif -> " + config.translate.target + " di " + scope);
+            if (hasLlm()) {
+              console.log("[Discord] engine: LLM (" + llmLabel() + ") -> DeepL/Google sebagai cadangan");
+            } else if (hasDeepL()) {
+              void deepLUsage().then((usage) => {
+                if (!usage) return;
+                console.log(
+                  "[Discord] engine: DeepL, " +
+                    (usage.limit - usage.used) + "/" + usage.limit + " karakter tersisa bulan ini"
+                );
+              });
+            } else {
+              console.log(
+                "[Discord] engine: Google (isi translate.llm.key atau translate.deeplKey untuk hasil lebih paham slang)"
+              );
+            }
+          } else if (config.translate.enabled) {
+            console.warn("[Discord] auto-translate nonaktif: MESSAGE_CONTENT intent tidak terpasang.");
+          }
         }
       }
       if (packet.op === 10) {
@@ -695,7 +985,7 @@ async function connectDiscordGateway(): Promise<void> {
           op: 2,
           d: {
             token: config.botToken,
-            intents: 0,
+            intents: gatewayIntents,
             properties: { os: process.platform, browser: "MagnoliaPS", device: "MagnoliaPS" },
             presence: presenceActivity(),
           },
@@ -711,7 +1001,14 @@ async function connectDiscordGateway(): Promise<void> {
       }
     });
 
-    ws.on("close", () => {
+    ws.on("close", (code) => {
+      if (code === 4014 && (gatewayIntents & MESSAGE_CONTENT_INTENT) !== 0) {
+        gatewayIntents &= ~MESSAGE_CONTENT_INTENT;
+        console.warn(
+          "[Discord] MESSAGE_CONTENT intent ditolak (4014). Aktifkan privileged intent " +
+            "MESSAGE_CONTENT di Developer Portal; auto-translate tidak bisa membaca teks."
+        );
+      }
       if (presenceHeartbeat) { clearInterval(presenceHeartbeat); presenceHeartbeat = null; }
       if (presenceSocket === ws) presenceSocket = null;
       if (presenceStarted && !presenceReconnect) {
@@ -732,6 +1029,31 @@ async function connectDiscordGateway(): Promise<void> {
         void connectDiscordGateway();
       }, 15000);
     }
+  }
+}
+
+// /renderworld output goes to this channel through the bot.
+export const WORLD_RENDER_CHANNEL_ID = "1569540697193844867";
+
+export async function sendWorldRenderToDiscord(png: Buffer, content: string): Promise<boolean> {
+  if (!config.botToken) return false;
+  try {
+    const form = new FormData();
+    form.append("payload_json", JSON.stringify({ content, allowed_mentions: { parse: [] } }));
+    form.append("files[0]", new Blob([png as unknown as BlobPart], { type: "image/png" }), `world-render-${Date.now()}.png`);
+    const res = await fetch(`${DISCORD_API}/channels/${WORLD_RENDER_CHANNEL_ID}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${config.botToken}` },
+      body: form,
+    });
+    if (!res.ok) {
+      console.warn(`[Discord] world render upload HTTP ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("[Discord] world render upload failed", err);
+    return false;
   }
 }
 
